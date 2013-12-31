@@ -77,6 +77,8 @@ autofs_unmount(struct mount *mp, int mntflags)
 {
 	int error, flags;
 
+	vrele(rootvp);
+
 	flags = 0;
 	if (mntflags & MNT_FORCE)
 		flags |= FORCECLOSE;
@@ -93,6 +95,7 @@ autofs_unmount(struct mount *mp, int mntflags)
 	MNT_ILOCK(mp);
 	mp->mnt_flag &= ~MNT_LOCAL;
 	MNT_IUNLOCK(mp);
+
 	return (error);
 }
 

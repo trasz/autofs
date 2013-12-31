@@ -82,6 +82,23 @@ autofs_readdir(struct vop_readdir_args *va)
 	return (EDOOFUS);
 }
 
+static int
+autofs_reclaim(struct vop_reclaim_args *va)
+{
+
+	return (0);
+}
+
+static int
+autofs_inactive(struct vop_inactive_args *va)
+{
+	struct vnode *vp = va->a_vp;
+
+	vrecycle(vp);
+
+	return (0);
+}
+
 struct vop_vector autofs_vnodeops = {
 	.vop_default =		&default_vnodeops,
 
@@ -102,6 +119,8 @@ struct vop_vector autofs_vnodeops = {
 	.vop_symlink =		VOP_EOPNOTSUPP,
 	.vop_vptocnp =		VOP_EOPNOTSUPP, /* XXX */
 	.vop_write =		VOP_EOPNOTSUPP,
+	.vop_reclaim =		autofs_reclaim,
+	.vop_inactive =		autofs_inactive,
 };
 
 int
