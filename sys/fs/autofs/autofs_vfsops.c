@@ -39,21 +39,12 @@
 #include <sys/sysctl.h>
 #include <sys/vnode.h>
 
+#include "autofs.h"
+
 static MALLOC_DEFINE(M_AUTOFS, "autofs", "Automounter filesystem");
 
-#define	AUTOFS_DEBUG(X, ...)					\
-	if (debug > 1) {					\
-		printf("%s: " X "\n", __func__, ## __VA_ARGS__);\
-	} while (0)
-
-#define	AUTOFS_WARN(X, ...)					\
-	if (debug > 0) {					\
-		printf("WARNING: %s: " X "\n",			\
-		    __func__, ## __VA_ARGS__);			\
-	} while (0)
-
 static const char *autofs_opts[] = {
-	"export", "from", NULL
+	"from", NULL
 };
 
 static int	autofs_ioctl(struct cdev *dev, u_long cmd, caddr_t arg,
@@ -69,10 +60,10 @@ static struct autofs_softc	*sc;
 static struct vnode		*rootvp;
 
 SYSCTL_NODE(_vfs, OID_AUTO, autofs, CTLFLAG_RD, 0, "Automounter filesystem");
-static int debug = 2;
-TUNABLE_INT("vfs.autofs.debug", &debug);
-SYSCTL_INT(_vfs_autofs, OID_AUTO, debug, CTLFLAG_RW,
-    &debug, 2, "Enable debug messages");
+int autofs_debug = 2;
+TUNABLE_INT("vfs.autofs.debug", &autofs_debug);
+SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_debug, CTLFLAG_RW,
+    &autofs_debug, 2, "Enable debug messages");
 
 int	autofs_rootvp(struct mount *mp, struct vnode **vpp);
 
@@ -155,11 +146,6 @@ autofs_statfs(struct mount *mp, struct statfs *sbp)
 
 	return (0);
 }
-
-struct autofs_softc {
-	device_t			sc_dev;
-	struct cdev			*sc_cdev;
-};
 
 static int
 autofs_init(struct vfsconf *vfsp)

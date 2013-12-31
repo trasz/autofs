@@ -34,65 +34,94 @@ __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
-#include <sys/systm.h>
-#include <sys/ctype.h>
 #include <sys/dirent.h>
 #include <sys/fcntl.h>
-#include <sys/limits.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/mount.h>
 #include <sys/mutex.h>
+#include <sys/systm.h>
 #include <sys/vnode.h>
+
+#include "autofs.h"
 
 int	autofs_rootvp(struct mount *mp, struct vnode **vpp);
 
 static int
-autofs_access(struct vop_access_args *va)
+autofs_access(struct vop_access_args *ap)
 {
 
 	return (0);
 }
 
 static int
-autofs_getattr(struct vop_getattr_args *va)
+autofs_getattr(struct vop_getattr_args *ap)
 {
+	struct vattr *vap = ap->a_vap;
+
+	AUTOFS_DEBUG("go");
+
+	KASSERT(ap->a_vp->v_type == VDIR, ("not a directory"));
+
+	/*
+	 * XXX: Verify if we fill out all required fields.
+	 */
+	vap->va_mode = 0555;
+	vap->va_uid = 0;
+	vap->va_gid = 0;
+	vap->va_nlink = 1;
+	vap->va_rdev = NODEV;
+	vap->va_size = 0;
+	vap->va_mtime.tv_sec = 0;
+	vap->va_mtime.tv_nsec = 0;
+	vap->va_atime = vap->va_mtime;
+	vap->va_ctime = vap->va_mtime;
+	vap->va_birthtime = vap->va_mtime;
+	vap->va_flags = 0;
+	vap->va_gen = 0;
+	vap->va_blocksize = 512;
+	vap->va_bytes = 0;
+	vap->va_type = ap->a_vp->v_type;
+	vap->va_filerev = 0;
+
+	return (0);
+}
+
+static int
+autofs_lookup(struct vop_lookup_args *ap)
+{
+	AUTOFS_DEBUG("go");
 
 	return (EDOOFUS);
 }
 
 static int
-autofs_lookup(struct vop_lookup_args *va)
+autofs_open(struct vop_open_args *ap)
 {
+	AUTOFS_DEBUG("go");
 
 	return (EDOOFUS);
 }
 
 static int
-autofs_open(struct vop_open_args *va)
+autofs_readdir(struct vop_readdir_args *ap)
 {
+	AUTOFS_DEBUG("go");
 
 	return (EDOOFUS);
 }
 
 static int
-autofs_readdir(struct vop_readdir_args *va)
-{
-
-	return (EDOOFUS);
-}
-
-static int
-autofs_reclaim(struct vop_reclaim_args *va)
+autofs_reclaim(struct vop_reclaim_args *ap)
 {
 
 	return (0);
 }
 
 static int
-autofs_inactive(struct vop_inactive_args *va)
+autofs_inactive(struct vop_inactive_args *ap)
 {
-	struct vnode *vp = va->a_vp;
+	struct vnode *vp = ap->a_vp;
 
 	vrecycle(vp);
 
@@ -140,6 +169,6 @@ autofs_rootvp(struct mount *mp, struct vnode **vpp)
 		return (error);
 
 	*vpp = vp;
-	printf("setting rootvp to %p\n", vp);
+	AUTOFS_DEBUG("setting rootvp to %p", vp);
 	return (0);
 }
