@@ -43,6 +43,9 @@ __FBSDID("$FreeBSD$");
 #include <sys/malloc.h>
 #include <sys/mount.h>
 #include <sys/mutex.h>
+#include <sys/vnode.h>
+
+int	autofs_rootvp(struct mount *mp, struct vnode **vpp);
 
 static int
 autofs_access(struct vop_access_args *va)
@@ -100,3 +103,24 @@ struct vop_vector autofs_vnodeops = {
 	.vop_vptocnp =		VOP_EOPNOTSUPP, /* XXX */
 	.vop_write =		VOP_EOPNOTSUPP,
 };
+
+int
+autofs_rootvp(struct mount *mp, struct vnode **vpp)
+{
+	int error;
+	struct vnode *vp;
+
+	error = getnewvnode("autofs", mp, &autofs_vnodeops, &vp);
+	if (error)
+		return (error);
+
+	vp->v_type = VDIR;
+	vp->v_data = NULL;
+	error = insmntque(vp, mp);
+	if (error != 0)
+		return (error);
+
+	*vpp = vp;
+	printf("setting rootvp to %p\n", vp);
+	return (0);
+}
