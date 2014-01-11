@@ -88,14 +88,15 @@ autofs_getattr(struct vop_getattr_args *ap)
 }
 
 static void
-autofs_new_request(struct autofs_mount *amp, const char *path)
+autofs_new_request(struct autofs_mount *amp, const char *path, long pathlen)
 {
 	struct autofs_request *ar;
 
 	ar = malloc(sizeof(*ar), M_AUTOFS, M_WAITOK | M_ZERO);
 	ar->ar_softc = amp->am_softc;
 	// XXX: Check path len.
-	snprintf(ar->ar_path, sizeof(ar->ar_path), "%s/%s", amp->am_path, path);
+	snprintf(ar->ar_path, sizeof(ar->ar_path), "%s/%.*s", amp->am_path, (int)pathlen, path);
+	AUTOFS_DEBUG("looking up %s", ar->ar_path);
 	TAILQ_INSERT_TAIL(&amp->am_softc->sc_requests, ar, ar_next);
 	cv_signal(&amp->am_softc->sc_cv);
 }
@@ -108,9 +109,7 @@ autofs_lookup(struct vop_lookup_args *ap)
 
 	amp = VFSTOAUTOFS(ap->a_dvp->v_mount);
 
-	autofs_new_request(amp, ap->a_cnp->cn_nameptr);
-
-	AUTOFS_DEBUG("looking up %s/%s", amp->am_path, ap->a_cnp->cn_nameptr);
+	autofs_new_request(amp, ap->a_cnp->cn_nameptr, ap->a_cnp->cn_namelen);
 
 	AUTOFS_LOCK(amp);
 	amp->am_waiting = true;

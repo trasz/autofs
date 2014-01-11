@@ -206,7 +206,7 @@ autofs_uninit(struct vfsconf *vfsp)
 }
 
 static int
-autofs_ioctl_wait(struct autofs_softc *sc, struct autofs_wait *aw)
+autofs_ioctl_request(struct autofs_softc *sc, struct autofs_daemon_request *adr)
 {
 	struct autofs_request *ar;
 	int error;
@@ -225,7 +225,7 @@ autofs_ioctl_wait(struct autofs_softc *sc, struct autofs_wait *aw)
 		}
 		TAILQ_REMOVE(&sc->sc_requests, ar, ar_next);
 
-		strlcpy(aw->aw_path, ar->ar_path, sizeof(aw->aw_path));
+		strlcpy(adr->adr_path, ar->ar_path, sizeof(adr->adr_path));
 		sx_sunlock(&sc->sc_lock);
 
 		return (0);
@@ -241,8 +241,8 @@ autofs_ioctl(struct cdev *dev, u_long cmd, caddr_t arg, int mode,
 	sc = dev->si_drv1;
 
 	switch (cmd) {
-	case AUTOFSWAIT:
-		return (autofs_ioctl_wait(sc, (struct autofs_wait *)arg));
+	case AUTOFSREQUEST:
+		return (autofs_ioctl_request(sc, (struct autofs_daemon_request *)arg));
 	default:
 		return (EINVAL);
 	}

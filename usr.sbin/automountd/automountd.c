@@ -72,7 +72,7 @@ main(int argc, char **argv)
 	struct pidfh *pidfh;
 	pid_t otherpid;
 	const char *pidfile_path = DEFAULT_PIDFILE;
-	struct autofs_wait aw;
+	struct autofs_daemon_request request;
 
 	while ((ch = getopt(argc, argv, "d")) != -1) {
 		switch (ch) {
@@ -122,13 +122,12 @@ main(int argc, char **argv)
 	for (;;) {
 		printf("waiting for request from the kernel\n");
 
-		memset(&aw, 0, sizeof(aw));
-		error = ioctl(autofs_fd, AUTOFSWAIT, &aw);
+		memset(&request, 0, sizeof(request));
+		error = ioctl(autofs_fd, AUTOFSREQUEST, &request);
 		if (error != 0)
-			err(1, "ISCSIDWAIT");
+			err(1, "AUTOFSREQUEST");
 
-		printf("got \"%s\"\n", aw.aw_path);
-
+		printf("got \"%s\"\n", request.adr_path);
 	}
 
 	pidfile_close(pidfh);
