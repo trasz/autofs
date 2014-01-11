@@ -34,6 +34,8 @@ __FBSDID("$FreeBSD$");
 
 #define VFSTOAUTOFS(mp)    ((struct autofs_mount *)((mp)->mnt_data))
 
+MALLOC_DECLARE(M_AUTOFS);
+
 extern int autofs_debug;
 
 #define	AUTOFS_DEBUG(X, ...)					\
@@ -61,11 +63,18 @@ struct autofs_mount {
 	bool				am_waiting;
 };
 
+struct autofs_request {
+	TAILQ_ENTRY(autofs_request)	ar_next;
+	struct autofs_softc		*ar_softc;
+	char				ar_path[MAXPATHLEN];
+};
+
 struct autofs_softc {
 	device_t			sc_dev;
 	struct cdev			*sc_cdev;
 	struct cv			sc_cv;
+	struct sx			sc_lock;
 	TAILQ_HEAD(, autofs_mount)	sc_mounts;
+	TAILQ_HEAD(, autofs_request)	sc_requests;
 };
-
 

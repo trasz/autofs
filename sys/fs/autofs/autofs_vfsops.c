@@ -36,12 +36,14 @@
 #include <sys/kernel.h>
 #include <sys/module.h>
 #include <sys/mount.h>
+#include <sys/sx.h>
 #include <sys/sysctl.h>
 #include <sys/vnode.h>
 
 #include "autofs.h"
+#include "autofs_ioctl.h"
 
-static MALLOC_DEFINE(M_AUTOFS, "autofs", "Automounter filesystem");
+MALLOC_DEFINE(M_AUTOFS, "autofs", "Automounter filesystem");
 
 static const char *autofs_opts[] = {
 	"from", NULL
@@ -171,7 +173,7 @@ autofs_init(struct vfsconf *vfsp)
 {
 	int error;
 
-	sc = malloc(sizeof(*sc), M_AUTOFS, M_ZERO | M_WAITOK);
+	sc = malloc(sizeof(*sc), M_AUTOFS, M_WAITOK | M_ZERO);
 
 	error = make_dev_p(MAKEDEV_CHECKNAME, &sc->sc_cdev, &autofs_cdevsw,
 	    NULL, UID_ROOT, GID_WHEEL, 0600, "autofs");
@@ -182,7 +184,9 @@ autofs_init(struct vfsconf *vfsp)
 	sc->sc_cdev->si_drv1 = sc;
 
 	TAILQ_INIT(&sc->sc_mounts);
+	TAILQ_INIT(&sc->sc_requests);
 	cv_init(&sc->sc_cv, "autofs_cv");
+	sx_init(&sc->sc_lock, "autofs_lock");
 
 	return (0);
 }
@@ -202,6 +206,33 @@ autofs_uninit(struct vfsconf *vfsp)
 }
 
 static int
+autofs_ioctl_wait(struct autofs_softc *sc, struct autofs_wait *aw)
+{
+	struct autofs_request *ar;
+	int error;
+
+	sx_slock(&sc->sc_lock);
+	for (;;) {
+		ar = TAILQ_FIRST(&sc->sc_requests);
+		if (ar == NULL) {
+			error = cv_wait_sig(&sc->sc_cv, &sc->sc_lock);
+			if (error != 0) {
+				sx_sunlock(&sc->sc_lock);
+
+				return (error);
+			}
+			continue;
+		}
+		TAILQ_REMOVE(&sc->sc_requests, ar, ar_next);
+
+		strlcpy(aw->aw_path, ar->ar_path, sizeof(aw->aw_path));
+		sx_sunlock(&sc->sc_lock);
+
+		return (0);
+	}
+}
+
+static int
 autofs_ioctl(struct cdev *dev, u_long cmd, caddr_t arg, int mode,
     struct thread *td)
 {
@@ -210,6 +241,8 @@ autofs_ioctl(struct cdev *dev, u_long cmd, caddr_t arg, int mode,
 	sc = dev->si_drv1;
 
 	switch (cmd) {
+	case AUTOFSWAIT:
+		return (autofs_ioctl_wait(sc, (struct autofs_wait *)arg));
 	default:
 		return (EINVAL);
 	}

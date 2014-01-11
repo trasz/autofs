@@ -5,6 +5,7 @@
 
 SUBDIR=	adduser \
 	arp \
+	automountd \
 	bootparamd \
 	bsdconfig \
 	bsdinstall \
