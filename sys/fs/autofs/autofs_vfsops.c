@@ -57,7 +57,6 @@ static struct cdevsw autofs_cdevsw = {
 };
 
 static struct autofs_softc	*sc;
-static struct vnode		*rootvp;
 
 SYSCTL_NODE(_vfs, OID_AUTO, autofs, CTLFLAG_RD, 0, "Automounter filesystem");
 int autofs_debug = 2;
@@ -70,8 +69,9 @@ int	autofs_rootvp(struct mount *mp, struct vnode **vpp);
 static int
 autofs_mount(struct mount *mp)
 {
+	struct autofs_mount *amp;
+	char *from, *fspath;
 	int error;
-	char *from;
 
 	if (vfs_filteropt(mp->mnt_optnew, autofs_opts))
 		return (EINVAL);
@@ -82,9 +82,23 @@ autofs_mount(struct mount *mp)
 	if (vfs_getopt(mp->mnt_optnew, "from", (void **)&from, NULL))
 		return (EINVAL);
 
-	error = autofs_rootvp(mp, &rootvp);
-	if (error != 0)
+	if (vfs_getopt(mp->mnt_optnew, "fspath", (void **)&fspath, NULL))
+		return (EINVAL);
+
+	amp = malloc(sizeof(*amp), M_AUTOFS, M_WAITOK | M_ZERO);
+	mp->mnt_data = amp;
+	amp->am_softc = sc;
+	amp->am_path = strdup(fspath, M_AUTOFS);
+	cv_init(&amp->am_cv, "autofs_cv");
+	mtx_init(&amp->am_lock, "autofs_lock", NULL, MTX_DEF);
+
+	error = autofs_rootvp(mp, &amp->am_rootvp);
+	if (error != 0) {
+		/* XXX */
 		return (error);
+	}
+
+	TAILQ_INSERT_TAIL(&sc->sc_mounts, amp, am_next);
 
 	vfs_mountedfrom(mp, from);
 
@@ -94,9 +108,11 @@ autofs_mount(struct mount *mp)
 static int
 autofs_unmount(struct mount *mp, int mntflags)
 {
+	struct autofs_mount *amp;
 	int error, flags;
 
-	vrele(rootvp);
+	amp = VFSTOAUTOFS(mp);
+	vrele(amp->am_rootvp);
 
 	flags = 0;
 	if (mntflags & MNT_FORCE)
@@ -105,15 +121,16 @@ autofs_unmount(struct mount *mp, int mntflags)
 	if (error != 0)
 		return (error);
 
-#if 0
-	amp = VFSTOAUTOFS(mp);
-	lockdestroy(&pmp->pm_fatlock);
-	free(pmp, M_MSDOSFSMNT);
-#endif
+	// XXX: Locking.
+	TAILQ_REMOVE(&sc->sc_mounts, amp, am_next);
+	free(amp, M_AUTOFS);
 	mp->mnt_data = NULL;
+
+#if 0
 	MNT_ILOCK(mp);
 	mp->mnt_flag &= ~MNT_LOCAL;
 	MNT_IUNLOCK(mp);
+#endif
 
 	return (error);
 }
@@ -121,11 +138,13 @@ autofs_unmount(struct mount *mp, int mntflags)
 static int
 autofs_root(struct mount *mp, int flags, struct vnode **vpp)
 {
+	struct autofs_mount *amp;
 	struct vnode *vp;
 
-	vp = rootvp;
-	VREF(vp);
+	amp = VFSTOAUTOFS(mp);
 
+	vp = amp->am_rootvp;
+	VREF(vp);
 	vn_lock(vp, flags | LK_RETRY);
 	*vpp = vp;
 
@@ -161,6 +180,9 @@ autofs_init(struct vfsconf *vfsp)
 		return (error);
 	}
 	sc->sc_cdev->si_drv1 = sc;
+
+	TAILQ_INIT(&sc->sc_mounts);
+	cv_init(&sc->sc_cv, "autofs_cv");
 
 	return (0);
 }

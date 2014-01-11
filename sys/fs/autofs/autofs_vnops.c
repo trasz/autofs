@@ -34,12 +34,14 @@ __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
+#include <sys/condvar.h>
 #include <sys/dirent.h>
 #include <sys/fcntl.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/mount.h>
 #include <sys/mutex.h>
+#include <sys/namei.h>
 #include <sys/systm.h>
 #include <sys/vnode.h>
 
@@ -58,8 +60,6 @@ static int
 autofs_getattr(struct vop_getattr_args *ap)
 {
 	struct vattr *vap = ap->a_vap;
-
-	AUTOFS_DEBUG("go");
 
 	KASSERT(ap->a_vp->v_type == VDIR, ("not a directory"));
 
@@ -90,17 +90,29 @@ autofs_getattr(struct vop_getattr_args *ap)
 static int
 autofs_lookup(struct vop_lookup_args *ap)
 {
-	AUTOFS_DEBUG("go");
+	struct autofs_mount *amp;
+	int error;
 
-	return (EDOOFUS);
-}
+	amp = VFSTOAUTOFS(ap->a_dvp->v_mount);
 
-static int
-autofs_open(struct vop_open_args *ap)
-{
-	AUTOFS_DEBUG("go");
+	AUTOFS_DEBUG("looking up %s/%s", amp->am_path, ap->a_cnp->cn_nameptr);
 
-	return (EDOOFUS);
+	AUTOFS_LOCK(amp);
+	amp->am_waiting = true;
+	cv_signal(&amp->am_softc->sc_cv);
+
+	while (amp->am_waiting == true) {
+		error = cv_wait_sig(&amp->am_cv, &amp->am_lock);
+		if (error != 0) {
+			amp->am_waiting = false;
+			AUTOFS_UNLOCK(amp);
+
+			return (error);
+		}
+	}
+	AUTOFS_UNLOCK(amp);
+
+	return (0);
 }
 
 static int
@@ -138,7 +150,6 @@ struct vop_vector autofs_vnodeops = {
 	.vop_link =		VOP_EOPNOTSUPP,
 	.vop_mkdir =		VOP_EOPNOTSUPP,
 	.vop_mknod =		VOP_EOPNOTSUPP,
-	.vop_open =		autofs_open,
 	.vop_read =		VOP_EOPNOTSUPP,
 	.vop_readdir =		autofs_readdir,
 	.vop_remove =		VOP_EOPNOTSUPP,

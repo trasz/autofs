@@ -32,6 +32,8 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
+#define VFSTOAUTOFS(mp)    ((struct autofs_mount *)((mp)->mnt_data))
+
 extern int autofs_debug;
 
 #define	AUTOFS_DEBUG(X, ...)					\
@@ -45,8 +47,25 @@ extern int autofs_debug;
 		    __func__, ## __VA_ARGS__);			\
 	} while (0)
 
+#define AUTOFS_LOCK(X)		mtx_lock(&X->am_lock)
+#define AUTOFS_UNLOCK(X)	mtx_unlock(&X->am_lock)
+#define AUTOFS_LOCK_ASSERT(X)	mtx_assert(&X->am_lock, MA_OWNED)
+
+struct autofs_mount {
+	TAILQ_ENTRY(autofs_mount)	am_next;
+	struct autofs_softc		*am_softc;
+	struct vnode			*am_rootvp;
+	struct mtx			am_lock;
+	struct cv			am_cv;
+	char				*am_path;
+	bool				am_waiting;
+};
+
 struct autofs_softc {
 	device_t			sc_dev;
 	struct cdev			*sc_cdev;
+	struct cv			sc_cv;
+	TAILQ_HEAD(, autofs_mount)	sc_mounts;
 };
+
 
