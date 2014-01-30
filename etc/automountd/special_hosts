@@ -1,0 +1,8 @@
+#!/bin/sh
+
+if [ $# -eq 0 ]; then
+	exit 0
+fi
+
+showmount -e "$1" | awk 'NR > 1 { split($1, s, "/"); print s[2] }'
+
