@@ -878,6 +878,7 @@ MLINKS+=mbpool.9 mbp_alloc.9 \
 MLINKS+=\
 	mbuf.9 m_adj.9 \
 	mbuf.9 M_ALIGN.9 \
+	mbuf.9 m_append.9 \
 	mbuf.9 m_apply.9 \
 	mbuf.9 m_cat.9 \
 	mbuf.9 MCHTYPE.9 \
@@ -1185,6 +1186,7 @@ MLINKS+=sf_buf.9 sf_buf_alloc.9 \
 	sf_buf.9 sf_buf_page.9
 MLINKS+=sglist.9 sglist_alloc.9 \
 	sglist.9 sglist_append.9 \
+	sglist.9 sglist_append_bio.9 \
 	sglist.9 sglist_append_mbuf.9 \
 	sglist.9 sglist_append_phys.9 \
 	sglist.9 sglist_append_uio.9 \
