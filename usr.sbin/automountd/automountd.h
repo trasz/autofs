@@ -37,16 +37,23 @@
 #define	AUTO_MASTER_PATH	"/etc/auto_master"
 #define	AUTO_MAP_PREFIX		"/etc"
 #define	AUTO_SPECIAL_PREFIX	"/etc/automountd"
+#define	AUTO_INCLUDE_PATH	AUTO_SPECIAL_PREFIX "/include"
 
 struct node {
 	TAILQ_ENTRY(node)	n_next;
 	TAILQ_HEAD(, node)	n_children;
 	struct node		*n_parent;
-	char			*n_mountpoint;
-	char			*n_map;
+	char			*n_key;
 	char			*n_options;
-	char			*n_config_file;
-	char			n_config_line;
+	char			*n_location;
+	const char		*n_config_file;
+	int			n_config_line;
+};
+
+struct defined_value {
+	TAILQ_ENTRY(defined_value)	d_next;
+	char				*d_name;
+	char				*d_value;
 };
 
 void			log_init(int level);
