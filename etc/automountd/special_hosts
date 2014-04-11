@@ -1,8 +1,10 @@
 #!/bin/sh
 
 if [ $# -eq 0 ]; then
+	getent hosts | awk '{ print $2 }' | sort -u
 	exit 0
 fi
 
-showmount -e "$1" | awk 'NR > 1 { split($1, s, "/"); print s[2] }'
+showmount -e "$1" | awk -v host="$1" \
+    'NR > 1 { printf "%s\t%s:%s ", $1, host, $1 } END { printf "\n" }'
 
