@@ -71,6 +71,7 @@ static int nchildren = 0;
 
 static TAILQ_HEAD(, defined_value)	defined_values;
 
+static void	parse_master_yyin(struct node *root, const char *path);
 static void	parse_map(struct node *parent, const char *map);
 
 char *
@@ -146,63 +147,60 @@ node_is_include(const struct node *n)
 	return (true);
 }
 
+/*
+ * Move (reparent) node 'n' to make it sibling of 'previous', placed
+ * just after it.
+ */
 static void
-node_expand_includes(struct node *n)
+node_move_after(struct node *n, struct node *previous)
 {
-	struct node *n2, *tmp, *root;
-	bool expanded;
+
+	TAILQ_REMOVE(&n->n_parent->n_children, n, n_next);
+	TAILQ_INSERT_AFTER(&previous->n_parent->n_children, n, previous, n_next);
+	n->n_parent = previous->n_parent;
+}
+
+static void
+node_expand_includes(struct node *root)
+{
+	struct node *n, *n2, *tmp, *tmp2, *tmproot;
 	char *include = NULL;
 	int error, ret;
 
-	for (;;) {
-		expanded = false;
-
-		TAILQ_FOREACH_SAFE(n2, &n->n_children, n_next, tmp) {
-			if (node_is_include(n2) == false)
-				continue;
-
-			/*
-			 * "+1" to skip leading "+".
-			 */
-			ret = asprintf(&include, "%s %s", AUTO_INCLUDE_PATH, n2->n_key + 1);
-			if (ret < 0)
-				log_err(1, "asprintf");
-			log_debugx("include \"%s\" maps to \"%s\"", n2->n_key, include);
-
-			yyin = popen(include, "r");
-			if (yyin == NULL)
-				log_err(1, "unable to execute \"%s\"", include);
-
-			/*
-			 * We need to put the included entries at the same place
-			 * the include entry was, preserving the ordering
-			 */
-
-			root = node_new_root();
-
-			/*
-			 * XXX
-			 */
-
-			expanded = true;
-			log_warnx("cannot expand %s (%s:%d); not supported yet", n2->n_key, n2->n_config_file, n2->n_config_line);
-			node_delete(n2);
-
-			error = pclose(yyin);
-			yyin = NULL;
-			if (error != 0)
-				log_errx(1, "execution of \"%s\" failed", include);
-		}
+	TAILQ_FOREACH_SAFE(n, &root->n_children, n_next, tmp) {
+		if (node_is_include(n) == false)
+			continue;
 
 		/*
-		 * XXX: Is this the right behaviour?
+		 * "+1" to skip leading "+".
 		 */
-		if (expanded) {
-			log_debugx("expanded some includes, go around");
-			continue;
+		ret = asprintf(&include, "%s %s", AUTO_INCLUDE_PATH, n->n_key + 1);
+		if (ret < 0)
+			log_err(1, "asprintf");
+		log_debugx("include \"%s\" maps to \"%s\"", n->n_key, include);
+
+		yyin = popen(include, "r");
+		if (yyin == NULL)
+			log_err(1, "unable to execute \"%s\"", include);
+
+		tmproot = node_new_root();
+		parse_master_yyin(tmproot, include);
+
+		error = pclose(yyin);
+		yyin = NULL;
+		if (error != 0)
+			log_errx(1, "execution of \"%s\" failed", include);
+
+		/*
+		 * Entries to be included are now in tmproot.  We need to merge
+		 * them with the rest, preserving the ordering.
+		 */
+		TAILQ_FOREACH_SAFE(n2, &tmproot->n_children, n_next, tmp2) {
+			node_move_after(n2, n);
 		}
 
-		break;
+		node_delete(n);
+		node_delete(tmproot);
 	}
 }
 
@@ -525,22 +523,12 @@ parse_map(struct node *parent, const char *map)
 	node_expand_defined(parent);
 }
 
-static struct node *
-parse_master(const char *path)
+static void
+parse_master_yyin(struct node *root, const char *path)
 {
-	struct node *root;
 	char *mountpoint = NULL, *map = NULL, *options = NULL;
 	int ret;
 
-	log_debugx("parsing auto_master file at \"%s\"", path);
-
-	root = node_new_root();
-
-	yyin = fopen(path, "r");
-	if (yyin == NULL)
-		err(1, "unable to open %s", path);
-
-	lineno = 0;
 	for (;;) {
 		ret = yylex();
 		if (ret == 0 || ret == NEWLINE) {
@@ -565,6 +553,21 @@ parse_master(const char *path)
 			log_errx(1, "too many arguments in %s, line %d", path, lineno);
 		}
 	}
+}
+
+static void
+parse_master(struct node *root, const char *path)
+{
+
+	log_debugx("parsing auto_master file at \"%s\"", path);
+
+	yyin = fopen(path, "r");
+	if (yyin == NULL)
+		err(1, "unable to open %s", path);
+
+	lineno = 0;
+
+	parse_master_yyin(root, path);
 
 	fclose(yyin);
 	yyin = NULL;
@@ -573,8 +576,6 @@ parse_master(const char *path)
 
 	node_expand_includes(root);
 	node_expand_direct_maps(root);
-
-	return (root);
 }
 
 /*
@@ -1118,7 +1119,8 @@ main_automount(int argc, char **argv)
 		return (0);
 	}
 
-	root = parse_master(AUTO_MASTER_PATH);
+	root = node_new_root();
+	parse_master(root, AUTO_MASTER_PATH);
 
 	if (show_maps) {
 		node_print(root);
