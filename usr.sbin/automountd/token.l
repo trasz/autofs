@@ -34,7 +34,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "automountd.h"
+#include "common.h"
 
 int lineno;
 
@@ -48,7 +48,7 @@ extern int	yylex(void);
 %option noyywrap
 
 %%
-[a-zA-Z0-9\.\+-_/\:\[\]]+ { return STR; }
+[a-zA-Z0-9\.\+-_/\:\[\]${}]+ { return STR; }
 #.*\n			{ lineno++; return NEWLINE; };
 \\\n			{ lineno++; };
 \n			{ lineno++; return NEWLINE; }

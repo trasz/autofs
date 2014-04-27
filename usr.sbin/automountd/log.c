@@ -37,7 +37,7 @@
 #include <syslog.h>
 #include <vis.h>
 
-#include "automountd.h"
+#include "common.h"
 
 static int log_level = 0;
 static char *peer_name = NULL;

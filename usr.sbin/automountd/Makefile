@@ -1,24 +1,34 @@
 # $FreeBSD$
 
-PROG=		automountd
-SRCS=		automountd.c getmntopts.c log.c token.l
-CFLAGS+=	-I${.CURDIR}
-CFLAGS+=	-I${.CURDIR}/../../sys/fs/autofs
-MAN=		
+PROG=	automountd
+SRCS=	automount.c
+SRCS+=	automountd.c
+SRCS+=	autounmountd.c
+SRCS+=	common.c
+SRCS+=	defined.c
+SRCS+=	getmntopts.c
+SRCS+=	log.c
+SRCS+=	token.l
 
-DPADD=		${LIBUTIL}
-LDADD=		-lutil
+CFLAGS+=-I${.CURDIR}
+CFLAGS+=-I${.CURDIR}/../../sys/fs/autofs
+
+MAN=	automount.8 automountd.8 autounmountd.8
+
+DPADD=	${LIBUTIL}
+LDADD=	-lutil
 
 # Needed for getmntopts.c
-MOUNT=  	${.CURDIR}/../../sbin/mount
-CFLAGS+=	-I${MOUNT}
+MOUNT=  ${.CURDIR}/../../sbin/mount
+CFLAGS+=-I${MOUNT}
 
-CFLAGS+=	-O0 -ggdb
+CFLAGS+=-O0 -ggdb
 
-WARNS=		6
+WARNS=	6
 
-LINKS=		${BINDIR}/automountd ${BINDIR}/automount
+LINKS=	${BINDIR}/automountd ${BINDIR}/automount
+LINKS+=	${BINDIR}/automountd ${BINDIR}/autounmountd
 
-.PATH:		${MOUNT}
+.PATH:	${MOUNT}
 
 .include <bsd.prog.mk>

@@ -33,6 +33,7 @@
 #define	AUTOMOUNTD_H
 
 #include <sys/queue.h>
+#include <stdbool.h>
 
 #define	AUTO_MASTER_PATH	"/etc/auto_master"
 #define	AUTO_MAP_PREFIX		"/etc"
@@ -68,6 +69,22 @@ void			log_warnx(const char *, ...) __printflike(1, 2);
 void			log_debugx(const char *, ...) __printf0like(1, 2);
 
 char			*checked_strdup(const char *);
+
+struct node	*node_new_root(void);
+struct node	*node_new(struct node *parent, char *key, char *options, char *location, const char *config_file, int config_line);
+struct node *node_find(struct node *root, const char *mountpoint);
+bool		node_is_direct_map(const struct node *n);
+char * node_mountpoint(const struct node *n);
+void node_print(const struct node *n);
+void parse_master(struct node *root, const char *path);
+void parse_map(struct node *parent, const char *map);
+char	* defined_expand(const char *string);
+void defined_init(void);
+void defined_parse_and_add(char *def);
+
+int main_automount(int argc, char **argv);
+int main_automountd(int argc, char **argv);
+int main_autounmountd(int argc, char **argv);
 
 /*
  * lex(1) stuff.
