@@ -191,7 +191,7 @@ expire_automounted(double expiration_time)
 		mounted_for = difftime(now, af->af_mount_time);
 
 		if (mounted_for < expiration_time) {
-			log_debugx("skipping %s, mounted for %f seconds",
+			log_debugx("skipping %s, mounted for %.0f seconds",
 			    af->af_mountpoint, mounted_for);
 
 			if (mounted_for > mounted_max)
@@ -201,7 +201,7 @@ expire_automounted(double expiration_time)
 		}
 
 		log_debugx("filesystem with FSID:%d:%d, mounted on %s, "
-		    "was mounted for %f seconds; unmounting",
+		    "was mounted for %.0f seconds; unmounting",
 		    af->af_fsid.val[0], af->af_fsid.val[1], af->af_mountpoint,
 		    mounted_for);
 		error = unmount_by_fsid(af->af_fsid);
@@ -237,7 +237,7 @@ do_wait(double sleep_time)
 		if (kq < 0)
 			log_err(1, "kqueue");
 
-		EV_SET(&event, 0, EVFILT_FS, EV_ADD, VQ_MOUNT, 0, NULL);
+		EV_SET(&event, 0, EVFILT_FS, EV_ADD | EV_CLEAR, 0, 0, NULL);
 		error = kevent(kq, NULL, 0, &event, 1, &timeout);
 		if (error < 0)
 			log_err(1, "kevent");
@@ -251,7 +251,7 @@ do_wait(double sleep_time)
 	 * XXX: For some reason this doesn't work - it always returns after
 	 * 	a timeout, ignoring filesystem events.
 	 */
-	log_debugx("waiting for filesystem event for %f seconds", sleep_time);
+	log_debugx("waiting for filesystem event for %.0f seconds", sleep_time);
 	error = kevent(kq, NULL, 0, &event, 1, &timeout);
 	if (error < 0)
 		log_err(1, "kevent");
@@ -264,7 +264,7 @@ main_autounmountd(int argc, char **argv)
 	pid_t otherpid;
 	const char *pidfile_path = AUTOUNMOUNTD_PIDFILE;
 	int ch, debug = 0;
-	double expiration_time = 10, retry_time = 3, mounted_max, sleep_time;
+	double expiration_time = 600, retry_time = 600, mounted_max, sleep_time;
 	bool dont_daemonize = false;
 
 	while ((ch = getopt(argc, argv, "dr:t:v")) != -1) {
@@ -325,12 +325,12 @@ main_autounmountd(int argc, char **argv)
 		mounted_max = expire_automounted(expiration_time);
 		if (mounted_max < expiration_time) {
 			sleep_time = difftime(expiration_time, mounted_max);
-			log_debugx("filesystem expires in %f seconds",
+			log_debugx("filesystem expires in %.0f seconds",
 			    sleep_time);
 		} else {
 			sleep_time = retry_time;
 			log_debugx("some expired filesystems remain mounted, "
-			    "will retry in %f seconds", sleep_time);
+			    "will retry in %.0f seconds", sleep_time);
 		}
 
 		do_wait(sleep_time);

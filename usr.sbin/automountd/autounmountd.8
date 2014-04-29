@@ -36,6 +36,8 @@
 .Sh SYNOPSIS
 .Nm
 .Op Fl d
+.Op Fl r time
+.Op Fl t time
 .Op Fl v
 .Sh DESCRIPTION
 When called without options, the
@@ -45,6 +47,12 @@ The following options are available:
 .Bl -tag -width ".Fl v"
 .It Fl d
 Debug mode - increase verbosity and do not daemonize.
+.It Fl r
+Set time interval before attempting to unmount expired filesystem.
+Default is 600, which amounts to 10 minutes.
+.It Fl t
+Set time interval before expiring a filesystem.
+Default is 600, which amounts to 10 minutes.
 .It Fl v
 Increase verbosity.
 .El
