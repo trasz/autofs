@@ -76,11 +76,6 @@ automounted_add(fsid_t fsid, const char *mountpoint)
 {
 	struct automounted_fs *af;
 
-#if 0
-	log_debugx("adding filesystem with FSID:%d:%d, mounted on %s",
-	    fsid.val[0], fsid.val[1], mountpoint);
-#endif
-
 	af = calloc(sizeof(*af), 1);
 	if (af == NULL)
 		log_err(1, "calloc");
@@ -96,11 +91,6 @@ automounted_add(fsid_t fsid, const char *mountpoint)
 static void
 automounted_remove(struct automounted_fs *af)
 {
-
-#if 0
-	log_debugx("removing filesystem with FSID:%d:%d, mounted on %s",
-	    af->af_fsid.val[0], af->af_fsid.val[1], af->af_mountpoint);
-#endif
 
 	TAILQ_REMOVE(&automounted, af, af_next);
 	free(af);
@@ -139,13 +129,15 @@ refresh_automounted(void)
 
 		af = automounted_find(mntbuf[i].f_fsid);
 		if (af == NULL) {
-			log_debugx("new automounted filesystem on %s",
-			    mntbuf[i].f_mntonname);
+			log_debugx("new automounted filesystem found on %s "
+			    "(FSID:%d:%d)", mntbuf[i].f_mntonname,
+			    mntbuf[i].f_fsid.val[0], mntbuf[i].f_fsid.val[1]);
 			af = automounted_add(mntbuf[i].f_fsid,
 			    mntbuf[i].f_mntonname);
 		} else {
-			log_debugx("already known automounted filesystem on %s",
-			    mntbuf[i].f_mntonname);
+			log_debugx("already known automounted filesystem "
+			    "found on %s (FSID:%d:%d)", mntbuf[i].f_mntonname,
+			    mntbuf[i].f_fsid.val[0], mntbuf[i].f_fsid.val[1]);
 		}
 		af->af_mark = true;
 	}
@@ -153,14 +145,14 @@ refresh_automounted(void)
 	TAILQ_FOREACH_SAFE(af, &automounted, af_next, tmpaf) {
 		if (af->af_mark)
 			continue;
-		log_debugx("lost filesystem with FSID:%d:%d, mounted on %s",
-	    	    af->af_fsid.val[0], af->af_fsid.val[1], af->af_mountpoint);
+		log_debugx("lost filesystem mounted on %s (FSID:%d:%d)",
+	    	    af->af_mountpoint, af->af_fsid.val[0], af->af_fsid.val[1]);
 		automounted_remove(af);
 	}
 }
 
 static int
-unmount_by_fsid(const fsid_t fsid)
+unmount_by_fsid(const fsid_t fsid, const char *mountpoint)
 {
 	char *fsid_str;
 	int error, ret;
@@ -170,9 +162,10 @@ unmount_by_fsid(const fsid_t fsid)
 		log_err(1, "asprintf");
 
 	error = unmount(fsid_str, MNT_BYFSID);
-	free(fsid_str);
 	if (error != 0 && errno != EBUSY)
-		log_warn("unmount");
+		log_warn("cannot unmount %s (%s)", mountpoint, fsid_str);
+
+	free(fsid_str);
 
 	return (error);
 }
@@ -187,12 +180,16 @@ expire_automounted(double expiration_time)
 
 	now = time(NULL);
 
+	log_debugx("expiring automounted filesystems");
+
 	TAILQ_FOREACH_SAFE(af, &automounted, af_next, tmpaf) {
 		mounted_for = difftime(now, af->af_mount_time);
 
 		if (mounted_for < expiration_time) {
-			log_debugx("skipping %s, mounted for %.0f seconds",
-			    af->af_mountpoint, mounted_for);
+			log_debugx("skipping %s (FSID:%d:%d), mounted "
+			    "for %.0f seconds", af->af_mountpoint,
+			    af->af_fsid.val[0], af->af_fsid.val[1],
+			    mounted_for);
 
 			if (mounted_for > mounted_max)
 				mounted_max = mounted_for;
@@ -200,11 +197,11 @@ expire_automounted(double expiration_time)
 			continue;
 		}
 
-		log_debugx("filesystem with FSID:%d:%d, mounted on %s, "
+		log_debugx("filesystem mounted on %s (FSID:%d:%d), "
 		    "was mounted for %.0f seconds; unmounting",
-		    af->af_fsid.val[0], af->af_fsid.val[1], af->af_mountpoint,
+		    af->af_mountpoint, af->af_fsid.val[0], af->af_fsid.val[1],
 		    mounted_for);
-		error = unmount_by_fsid(af->af_fsid);
+		error = unmount_by_fsid(af->af_fsid, af->af_mountpoint);
 		if (error != 0) {
 			if (mounted_for > mounted_max)
 				mounted_max = mounted_for;
@@ -241,8 +238,11 @@ do_wait(int kq, double sleep_time)
 	error = kevent(kq, NULL, 0, &unused, 1, &timeout);
 	if (error < 0)
 		log_err(1, "kevent");
-	else if (error == 0)
+
+	if (error == 0)
 		log_debugx("timeout reached");
+	else
+		log_debugx("got filesystem event");
 }
 
 int
