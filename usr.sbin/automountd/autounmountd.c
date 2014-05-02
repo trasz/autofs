@@ -223,25 +223,11 @@ usage_autounmountd(void)
 }
 
 static void
-do_wait(double sleep_time)
+do_wait(int kq, double sleep_time)
 {
-	struct kevent event;
 	struct timespec timeout;
-	static int kq = -1;
+	struct kevent unused;
 	int error;
-
-	if (kq == -1) {
-		log_debugx("setting up EVFILT_FS");
-
-		kq = kqueue();
-		if (kq < 0)
-			log_err(1, "kqueue");
-
-		EV_SET(&event, 0, EVFILT_FS, EV_ADD | EV_CLEAR, 0, 0, NULL);
-		error = kevent(kq, NULL, 0, &event, 1, &timeout);
-		if (error < 0)
-			log_err(1, "kevent");
-	}
 
 	assert(sleep_time > 0);
 	timeout.tv_sec = sleep_time;
@@ -252,18 +238,21 @@ do_wait(double sleep_time)
 	 * 	a timeout, ignoring filesystem events.
 	 */
 	log_debugx("waiting for filesystem event for %.0f seconds", sleep_time);
-	error = kevent(kq, NULL, 0, &event, 1, &timeout);
+	error = kevent(kq, NULL, 0, &unused, 1, &timeout);
 	if (error < 0)
 		log_err(1, "kevent");
+	else if (error == 0)
+		log_debugx("timeout reached");
 }
 
 int
 main_autounmountd(int argc, char **argv)
 {
+	struct kevent event;
 	struct pidfh *pidfh;
 	pid_t otherpid;
 	const char *pidfile_path = AUTOUNMOUNTD_PIDFILE;
-	int ch, debug = 0;
+	int ch, debug = 0, error, kq;
 	double expiration_time = 600, retry_time = 600, mounted_max, sleep_time;
 	bool dont_daemonize = false;
 
@@ -320,6 +309,15 @@ main_autounmountd(int argc, char **argv)
 
 	TAILQ_INIT(&automounted);
 
+	kq = kqueue();
+	if (kq < 0)
+		log_err(1, "kqueue");
+
+	EV_SET(&event, 0, EVFILT_FS, EV_ADD | EV_CLEAR, 0, 0, NULL);
+	error = kevent(kq, &event, 1, NULL, 0, NULL);
+	if (error < 0)
+		log_err(1, "kevent");
+
 	for (;;) {
 		refresh_automounted();
 		mounted_max = expire_automounted(expiration_time);
@@ -333,7 +331,7 @@ main_autounmountd(int argc, char **argv)
 			    "will retry in %.0f seconds", sleep_time);
 		}
 
-		do_wait(sleep_time);
+		do_wait(kq, sleep_time);
 	}
 
 	return (0);
