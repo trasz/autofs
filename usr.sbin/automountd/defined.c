@@ -85,6 +85,8 @@ defined_expand(const char *string)
 	int i, ret, before_len = 0, name_off = 0, name_len = 0, after_off = 0;
 	bool backslashed = false, bracketed = false;
 
+	expanded = checked_strdup(string);
+
 	for (i = 0; string[i] != '\0'; i++) {
 		c = string[i];
 		if (c == '\\' && backslashed == false) {

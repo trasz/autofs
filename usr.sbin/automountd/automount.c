@@ -108,23 +108,21 @@ concat(char **p1, char **p2)
 	assert(p1 != NULL);
 	assert(p2 != NULL);
 
-	if (*p1 == NULL) {
-		assert(*p2 != NULL);
-		*p1 = *p2;
-		return;
-	}
-	if (*p2 == NULL) {
-		assert(*p1 != NULL);
-		*p2 = *p1;
-		return;
-	}
+	if (*p1 == NULL)
+		*p1 = checked_strdup("");
+
+	if (*p2 == NULL)
+		*p2 = checked_strdup("");
 
 	ret = asprintf(&path, "%s/%s", *p1, *p2);
 	if (ret < 0)
 		log_err(1, "asprintf");
 
-	free(*p1);
-	free(*p2);
+	/*
+	 * XXX
+	 */
+	//free(*p1);
+	//free(*p2);
 
 	*p1 = path;
 	*p2 = NULL;
@@ -182,19 +180,21 @@ mount_autofs(const char *from, const char *fspath, const char *opts)
 	build_iovec(&iov, &iovlen, "from", (void *)from, (size_t)-1);
 	build_iovec(&iov, &iovlen, "errmsg", errmsg, sizeof(errmsg));
 
-	/*
-	 * Append the options defined in auto_master.  The autofs
-	 * will pass them to automountd(8), which will then append
-	 * them to options specified in the map.
-	 */
-	options = tofree = checked_strdup(opts);
+	if (opts != NULL) {
+		/*
+		 * Append the options defined in auto_master.  The autofs
+		 * will pass them to automountd(8), which will then append
+		 * them to options specified in the map.
+		 */
+		options = tofree = checked_strdup(opts);
 
-	while ((option = strsep(&options, ",")) != NULL) {
-		build_iovec(&iov, &iovlen,
-		    "master_option", option, sizeof(option));
+		while ((option = strsep(&options, ",")) != NULL) {
+			build_iovec(&iov, &iovlen,
+			    "master_option", option, sizeof(option));
+		}
+
+		free(tofree);
 	}
-
-	free(tofree);
 
 	error = nmount(iov, iovlen, 0);
 	if (error != 0) {
