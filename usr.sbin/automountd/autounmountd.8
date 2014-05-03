@@ -1,4 +1,4 @@
-.\" Copyright (c) 2012 The FreeBSD Foundation
+.\" Copyright (c) 2014 The FreeBSD Foundation
 .\" All rights reserved.
 .\"
 .\" This software was developed by Edward Tomasz Napierala under sponsorship
@@ -40,18 +40,27 @@
 .Op Fl t time
 .Op Fl v
 .Sh DESCRIPTION
-When called without options, the
+The
 .Nm
-command forks into background and waits for newly mounted filesystems.
+daemon is responsible for unmounting filesystems mounted by automountd(8).
+Upon startup it retrieves a list of filesystems that have the "automounted"
+mount option set.
+The list gets refreshed every time a filesystem gets mounted or unmounted.
+After specified time passes, the
+.Nm
+attempts to unmount a filesystem, retrying after some time if neccessary.
+.Pp
 The following options are available:
 .Bl -tag -width ".Fl v"
 .It Fl d
 Debug mode - increase verbosity and do not daemonize.
 .It Fl r
-Set time interval before attempting to unmount expired filesystem.
+Number of seconds to wait before reattempting to unmount expired
+filesystem, after the previous attempt failed due to eg. filesystem
+being busy.
 Default is 600, which amounts to 10 minutes.
 .It Fl t
-Set time interval before expiring a filesystem.
+Number of seconds to wait before trying to unmount a filesystem.
 Default is 600, which amounts to 10 minutes.
 .It Fl v
 Increase verbosity.

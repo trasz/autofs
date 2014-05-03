@@ -13,7 +13,7 @@ SRCS+=	token.l
 CFLAGS+=-I${.CURDIR}
 CFLAGS+=-I${.CURDIR}/../../sys/fs/autofs
 
-MAN=	automount.8 automountd.8 autounmountd.8
+MAN=	automount.8 automountd.8 autounmountd.8 auto_master.5
 
 DPADD=	${LIBUTIL}
 LDADD=	-lutil

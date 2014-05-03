@@ -1,4 +1,4 @@
-.\" Copyright (c) 2012 The FreeBSD Foundation
+.\" Copyright (c) 2014 The FreeBSD Foundation
 .\" All rights reserved.
 .\"
 .\" This software was developed by Edward Tomasz Napierala under sponsorship
@@ -40,7 +40,11 @@
 .Op Fl d
 .Op Fl v
 .Sh DESCRIPTION
-When called without options, the
+The
+.Nm
+daemon is responsible for handling autofs(4) mount requests, parsing maps,
+and mounting appropriate filesystems.
+Upon startup the
 .Nm
 command forks into background and waits for kernel requests.
 .Bl -tag -width ".Fl v"

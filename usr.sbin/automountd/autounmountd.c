@@ -162,8 +162,15 @@ unmount_by_fsid(const fsid_t fsid, const char *mountpoint)
 		log_err(1, "asprintf");
 
 	error = unmount(fsid_str, MNT_BYFSID);
-	if (error != 0 && errno != EBUSY)
-		log_warn("cannot unmount %s (%s)", mountpoint, fsid_str);
+	if (error != 0) {
+		if (errno == EBUSY) {
+			log_debugx("cannot unmount %s (%s): %s",
+			    mountpoint, fsid_str, strerror(errno));
+		} else {
+			log_warn("cannot unmount %s (%s)",
+			    mountpoint, fsid_str);
+		}
+	}
 
 	free(fsid_str);
 
