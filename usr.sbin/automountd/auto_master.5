@@ -1,0 +1,172 @@
+.\" Copyright (c) 2014 The FreeBSD Foundation
+.\" All rights reserved.
+.\"
+.\" This software was developed by Edward Tomasz Napierala under sponsorship
+.\" from the FreeBSD Foundation.
+.\"
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\"
+.\" THIS SOFTWARE IS PROVIDED BY THE AUTHORS AND CONTRIBUTORS ``AS IS'' AND
+.\" ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+.\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+.\" ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHORS OR CONTRIBUTORS BE LIABLE
+.\" FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+.\" DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+.\" OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+.\" HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+.\" LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+.\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+.\" SUCH DAMAGE.
+.\"
+.\" $FreeBSD$
+.\"
+.Dd April 20, 2014
+.Dt AUTO_MASTER 5
+.Os
+.Sh NAME
+.Nm auto_master
+.Nd auto_master and map file format
+.Sh DESCRIPTION
+The
+.Nm
+configuration file is used by the
+.Xr automount 8
+command.
+Map files are read by the
+.Xr automountd 8
+daemon.
+.Sh AUTO_MASTER SYNTAX
+The
+.Nm
+file consists of lines with two or three entries, separated by whitespace,
+terminated by newline, as follows:
+.Bd -literal -offset indent
+mountpoint map_name [-options]
+.Ed
+.Pp
+The "mountpoint" is either a fully specified path, or "/-".
+In the former case the "map_name" must reference an indirect map; otherwise
+it must reference a direct map.
+.Pp
+The "map_name" specifies map to use.
+If the map name begins with "-", it specifies a special map, see below.
+Otherwise, if it is not a fully specified path (ie. it doesn't start with "/"),
+.Xr automountd 8
+will search for it in the /etc directory; otherwise it will use the path
+specified.
+If the file is executable,
+.Xr automountd 8
+will assume it's an executable map, see below.
+Otherwise it will open the file and parse its contents.
+.Pp
+The "options" is an optional field that starts with "-" and can contain generic 
+filesystem mount options.
+.Pp
+The following example specifies that the /etc/auto_example indirect map
+map will be mounted on /example.
+.Bd -literal -offset indent
+/example auto_example
+.Ed
+.Sh MAP SYNTAX
+Map files consist of lines with a number of entries, separated by whitespace,
+terminated by newline, as follows:
+.Bd -literal -offset indent
+key [-options] [mountpoint [-options]] location [...]
+.Ed
+.Pp
+In most cases it's simplified to:
+.Bd -literal -offset indent
+key [-options] location
+.Ed
+.Pp
+The "key" specifies path component used by
+.Xr automountd 8
+to find the right map entry to use.
+It is also used to form the final mountpoint.
+.Pp
+The "options" field, if present, must begin with "-" and specifies mount options
+to be used when mounting the filesystem.
+All the options - from
+.Nm ,
+and from the map entry - are concatenated together.
+.Pp
+The optional "mountpoint" field is used to specify multiple mount points
+for a single key.
+.Pp
+The location field specifies the filesystem to be mounted.
+.Pp
+The following example, when used with
+.Nm
+example above, specifies that the NFS share "192.168.1.1:/share/example/x"
+will get mounted on /example/x/ when any process attempts to access that
+mountpoint, with "intr" and "nfsv4" mount options:
+.Bd -literal -offset indent
+x -intr,nfsv4 192.168.1.1:/share/example/x
+.Ed
+.Sh SPECIAL MAPS
+Special maps have names beginning with "-".
+Supported special maps are:
+.Pp
+.Bl -tag -width "-host" -compact
+.It -host
+This map queries the remote NFS server and maps exported volumes.
+It's traditionally mounted on /net.
+It enables access to files on a remote NFS server by accessing
+/net/nfs-server-hostname/volume-name/ directory, without need for any
+further configuration.
+.It -null
+This map prevents the
+.Xr automountd 8
+daemon from mounting anything on the mountpoint.
+.Sh EXECUTABLE MAPS
+If the map file specified in auto_master has execute bit set, the
+.Xr automountd 8
+daemon will execute it and parse its standard output instead of parsing
+its contents.
+.Sh INDIRECT VS DIRECT MAPS
+Indirect maps are referred to in
+.Nm
+by entries with a fully qualified path as a mountpoint, and must contain only
+relative paths as keys.
+Direct maps are referred to in
+.Nm
+by entries with "/-" as the mountpoint, and must contain only fully qualified
+paths as keys.
+For indirect maps, the final mount point is determined by concatenating
+.Nm
+mountpoint, the map entry key, and optional map entry mountpoint.
+For direct maps, the final mount point is determined by concatenating map entry key and optional map entry mountpoint.
+.Pp
+The example above could be rewritten using direct map, by placing the following
+in
+.Nm :
+.Bd -literal -offset indent
+/- auto_example
+.Ed
+.Pp
+and the following in /etc/auto_example map file:
+.Bd -literal -offset indent
+/example/x -intr,nfsv4 192.168.1.1:/share/example/x
+.Ed
+.Sh FILES
+.Bl -tag -width ".Pa /etc/auto_master" -compact
+.It Pa /etc/auto_master
+The default location of the auto_master file
+.El
+.Sh SEE ALSO
+.Xr automount 8 ,
+.Xr automountd 8 ,
+.Xr autounmountd 8
+.Sh AUTHORS
+The
+.Nm
+configuration file functionality was developed by
+.An Edward Tomasz Napierala Aq trasz@FreeBSD.org
+under sponsorship from the FreeBSD Foundation.

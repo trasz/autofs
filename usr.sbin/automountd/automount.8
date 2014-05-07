@@ -42,26 +42,36 @@
 .Sh DESCRIPTION
 When called without options, the
 .Nm
-command updates autofs mounts, according to automountd configuration file.
+command parses the
+.Xr auto_master 5
+configuration file and any indirect maps it references, and mounts or unmounts
+.Xr autofs 4
+filesystems to match.
 The following options are available:
 .Bl -tag -width ".Fl v"
 .It Fl D
 Define a variable.
 Note that in case of automount, it is only useful with -L.
 .It Fl L
-Parse auto_master and indirect maps and output them.
-This is useful when debugging maps.
+Do not mount or unmount anything; instead parse
+.Xr auto_master 5
+and indirect maps and output them.
+This is useful when debugging configuration problems.
 .It Fl u
-Try to unmount filesystems mounted by automountd daemon.
-Note that this does not include autofs mounts done by automount.
-To unmount autofs mounts, use "umount -At autofs".
+Try to unmount filesystems mounted by
+.Xr automountd 8
+daemon.
+Note that this does not include autofs mounts done by
+.Nm .
+To unmount all autofs mounts, use "umount -At autofs".
 .It Fl v
 Increase verbosity.
 .El
 .Sh EXIT STATUS
 .Ex -std
 .Sh EXAMPLES
-Unmount all filesystems mounted by automountd(8):
+Unmount all filesystems mounted by
+Xr automountd 8 :
 .Dl Nm Fl u
 .Sh SEE ALSO
 .Xr auto_master 5 ,

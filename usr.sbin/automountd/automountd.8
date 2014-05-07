@@ -46,7 +46,12 @@ daemon is responsible for handling autofs(4) mount requests, parsing maps,
 and mounting appropriate filesystems.
 Upon startup the
 .Nm
-command forks into background and waits for kernel requests.
+daemon forks into background and waits for kernel requests.
+When a request is received,
+.Nm
+forks a child process, which then parses appropriate map, mounts filesystems
+accordingly, and signals the kernel to release blocked processes that were
+waiting for mount.
 .Bl -tag -width ".Fl v"
 .It Fl D
 Define a variable.
@@ -67,7 +72,7 @@ Increase verbosity.
 .Sh HISTORY
 The
 .Nm
-command appeared in
+daemon appeared in
 .Fx 10.2 .
 .Sh AUTHORS
 The
