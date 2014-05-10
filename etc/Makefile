@@ -7,7 +7,8 @@
 SUBDIR=	sendmail
 .endif
 
-BIN1=	crontab \
+BIN1=	auto_master \
+	crontab \
 	devd.conf \
 	devfs.conf \
 	ddb.conf \
