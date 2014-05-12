@@ -1,0 +1,21 @@
+#!/bin/sh
+
+# Modify this to suit your needs.  The "$1" is the map name, eg. "auto_master".
+# To debug, simply run this script with map name as the only parameter.  It's
+# supposed to output map contents ("key location" pairs) to standard output.
+SEARCHBASE="ou=$1,dc=example,dc=com"
+ENTRY_ATTRIBUTE="cn"
+VALUE_ATTRIBUTE="automountInformation"
+
+ldapsearch -LLL -x -b "$SEARCHBASE" "$ENTRY_ATTRIBUTE" "$VALUE_ATTRIBUTE" | awk '
+$1 == "'$ENTRY_ATTRIBUTE':" {
+	t["key"] = $2
+}
+
+$1 == "'$VALUE_ATTRIBUTE':" {
+	t["location"] = $2
+}
+
+$1 == "" && t["key"] {
+	print t["key"], t["location"]; t["key"] = ""; t["location"] = ""
+}'
