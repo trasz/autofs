@@ -251,7 +251,7 @@ defined_init(void)
 	if (error != 0)
 		log_err(1, "uname");
 
-	defined_add("ARCH", name.sysname); // XXX: What should go here?
+	defined_add("ARCH", name.machine);
 	defined_add("CPU", name.machine);
 	defined_add("HOST", name.nodename);
 	defined_add("OSNAME", name.sysname);

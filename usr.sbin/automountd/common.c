@@ -174,7 +174,8 @@ node_expand_includes(struct node *root, bool is_master)
 		    AUTO_INCLUDE_PATH, n->n_key + 1);
 		if (ret < 0)
 			log_err(1, "asprintf");
-		log_debugx("include \"%s\" maps to \"%s\"", n->n_key, include);
+		log_debugx("include \"%s\" maps to executable \"%s\"",
+		    n->n_key, include);
 
 		yyin = popen(include, "r");
 		if (yyin == NULL)
@@ -234,13 +235,18 @@ node_is_direct_map(const struct node *n)
 }
 
 static void
-node_expand_direct_maps(struct node *n)
+node_expand_maps(struct node *n, bool indirect)
 {
 	struct node *n2, *tmp;
 
 	TAILQ_FOREACH_SAFE(n2, &n->n_children, n_next, tmp) {
-		if (node_is_direct_map(n2) == false)
-			continue;
+		if (node_is_direct_map(n2)) {
+			if (indirect)
+				continue;
+		} else {
+			if (indirect == false)
+				continue;
+		}
 
 		/*
 		 * This is the first-level map node; the one that contains
@@ -249,10 +255,29 @@ node_expand_direct_maps(struct node *n)
 		if (n2->n_location == NULL)
 			continue;
 
-		log_debugx("map \"%s\" is a direct map, parsing",
-		    n2->n_location);
+		if (indirect) {
+			log_debugx("map \"%s\" is an indirect map, parsing",
+			    n2->n_location);
+		} else {
+			log_debugx("map \"%s\" is a direct map, parsing",
+			    n2->n_location);
+		}
 		parse_map(n2, n2->n_location);
 	}
+}
+
+static void
+node_expand_direct_maps(struct node *n)
+{
+
+	node_expand_maps(n, false);
+}
+
+void
+node_expand_indirect_maps(struct node *n)
+{
+
+	node_expand_maps(n, true);
 }
 
 static char *
@@ -349,7 +374,7 @@ parse_map_yyin(struct node *parent, const char *map)
 		ret = yylex();
 		if (ret == 0 || ret == NEWLINE) {
 			if (key != NULL || options != NULL) {
-				log_errx(1, "truncated x entry in %s, line %d",
+				log_errx(1, "truncated entry in %s, line %d",
 				    map, lineno);
 			}
 			if (ret == 0) {
@@ -364,6 +389,12 @@ parse_map_yyin(struct node *parent, const char *map)
 		}
 		if (key == NULL) {
 			key = checked_strdup(yytext);
+			if (key[0] == '+') {
+				node = node_new(parent, key, NULL, NULL,
+				    map, lineno);
+				key = options = NULL;
+				continue;
+			}
 			continue;
 		} else if (yytext[0] == '-') {
 			if (options != NULL) {
@@ -374,7 +405,7 @@ parse_map_yyin(struct node *parent, const char *map)
 			continue;
 		}
 
-		log_debugx("adding map node, %s", key);
+		//log_debugx("adding map node, %s", key);
 		node = node_new(parent, key, options, NULL, map, lineno);
 		key = options = NULL;
 
@@ -416,8 +447,10 @@ parse_map_yyin(struct node *parent, const char *map)
 			if (options2 == NULL)
 				options2 = checked_strdup("");
 
+#if 0
 			log_debugx("adding map node, %s %s %s",
 			    mountpoint, options2, location);
+#endif
 			node_new(node, mountpoint, options2, location,
 			    map, lineno);
 			mountpoint = options2 = location = NULL;
@@ -453,7 +486,7 @@ file_is_executable(const char *path)
 void
 parse_map(struct node *parent, const char *map)
 {
-	char *new_map = NULL;
+	char *path = NULL;
 	int error, ret;
 	bool executable = false;
 
@@ -463,36 +496,53 @@ parse_map(struct node *parent, const char *map)
 	log_debugx("parsing map \"%s\"", map);
 
 	if (map[0] == '-') {
-		ret = asprintf(&new_map, "%s/special_%s",
+		ret = asprintf(&path, "%s/special_%s",
 		    AUTO_SPECIAL_PREFIX, map + 1);
 		if (ret < 0)
 			log_err(1, "asprintf");
 		log_debugx("special map \"%s\" maps to executable \"%s\"",
-		    map, new_map);
-		map = new_map;
+		    map, path);
 		executable = true;
-	} else if (map[0] != '/') {
-		ret = asprintf(&new_map, "%s/%s", AUTO_MAP_PREFIX, map);
+	} else if (map[0] == '/') {
+		path = checked_strdup(map);
+	} else {
+		ret = asprintf(&path, "%s/%s", AUTO_MAP_PREFIX, map);
 		if (ret < 0)
 			log_err(1, "asprintf");
-		log_debugx("map \"%s\" maps to \"%s\"", map, new_map);
-		map = new_map;
+		log_debugx("map \"%s\" maps to \"%s\"", map, path);
+
+		/*
+		 * See if the file exists.  If not, try to obtain the map
+		 * from directory services.
+		 */
+		error = access(path, F_OK);
+		if (error != 0) {
+			log_debugx("map file \"%s\" does not exist; falling "
+			    "back to directory services", path);
+
+			ret = asprintf(&path, "%s %s", AUTO_INCLUDE_PATH, map);
+			if (ret < 0)
+				log_err(1, "asprintf");
+			log_debugx("map \"%s\" maps to executable \"%s\"",
+			    map, path);
+			executable = true;
+		}
 	}
 
 	if (!executable) {
-		executable = file_is_executable(map);
+		executable = file_is_executable(path);
 		if (executable)
 			log_debugx("map \"%s\" is executable", map);
 	}
 
 	if (executable) {
-		yyin = popen(map, "r");
+		yyin = popen(path, "r");
 		if (yyin == NULL)
-			log_err(1, "unable to execute \"%s\"", map);
+			log_err(1, "unable to execute \"%s\"", path);
 	} else {
-		yyin = fopen(map, "r");
+		yyin = fopen(path, "r");
 		if (yyin == NULL)
-			log_err(1, "unable to open \"%s\"", map);
+			log_err(1, "unable to open \"%s\"", path);
 	}
 
 	/*
@@ -505,7 +555,7 @@ parse_map(struct node *parent, const char *map)
 	if (executable) {
 		error = pclose(yyin);
 		if (error != 0) {
-			log_err(1, "execution of dynamic map \"%s\" failed",
+			log_errx(1, "execution of dynamic map \"%s\" failed",
 			    map);
 		}
 	} else {
@@ -530,7 +580,7 @@ parse_master_yyin(struct node *root, const char *master)
 		ret = yylex();
 		if (ret == 0 || ret == NEWLINE) {
 			if (mountpoint != NULL) {
-				log_debugx("adding map for %s", mountpoint);
+				//log_debugx("adding map for %s", mountpoint);
 				node_new(root, mountpoint, options, map,
 				    master, lineno);
 			}

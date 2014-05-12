@@ -57,34 +57,35 @@ struct defined_value {
 	char				*d_value;
 };
 
-void			log_init(int level);
-void			log_set_peer_name(const char *name);
-void			log_set_peer_addr(const char *addr);
-void			log_err(int, const char *, ...)
-			    __dead2 __printf0like(2, 3);
-void			log_errx(int, const char *, ...)
-			    __dead2 __printf0like(2, 3);
-void			log_warn(const char *, ...) __printf0like(1, 2);
-void			log_warnx(const char *, ...) __printflike(1, 2);
-void			log_debugx(const char *, ...) __printf0like(1, 2);
+void	log_init(int level);
+void	log_set_peer_name(const char *name);
+void	log_set_peer_addr(const char *addr);
+void	log_err(int, const char *, ...)
+	    __dead2 __printf0like(2, 3);
+void	log_errx(int, const char *, ...)
+	    __dead2 __printf0like(2, 3);
+void	log_warn(const char *, ...) __printf0like(1, 2);
+void	log_warnx(const char *, ...) __printflike(1, 2);
+void	log_debugx(const char *, ...) __printf0like(1, 2);
 
-char			*checked_strdup(const char *);
+char	*checked_strdup(const char *);
 
 struct node	*node_new_root(void);
 struct node	*node_new(struct node *parent, char *key, char *options, char *location, const char *config_file, int config_line);
-struct node *node_find(struct node *root, const char *mountpoint);
+struct node	*node_find(struct node *root, const char *mountpoint);
 bool		node_is_direct_map(const struct node *n);
-char * node_mountpoint(const struct node *n);
-void node_print(const struct node *n);
-void parse_master(struct node *root, const char *path);
-void parse_map(struct node *parent, const char *map);
-char	* defined_expand(const char *string);
-void defined_init(void);
-void defined_parse_and_add(char *def);
+char	*node_mountpoint(const struct node *n);
+void	node_expand_indirect_maps(struct node *n);
+void	node_print(const struct node *n);
+void	parse_master(struct node *root, const char *path);
+void	parse_map(struct node *parent, const char *map);
+char	*defined_expand(const char *string);
+void	defined_init(void);
+void	defined_parse_and_add(char *def);
 
-int main_automount(int argc, char **argv);
-int main_automountd(int argc, char **argv);
-int main_autounmountd(int argc, char **argv);
+int	main_automount(int argc, char **argv);
+int	main_automountd(int argc, char **argv);
+int	main_autounmountd(int argc, char **argv);
 
 /*
  * lex(1) stuff.

@@ -335,8 +335,8 @@ int
 main_automount(int argc, char **argv)
 {
 	struct node *root;
-	int ch, debug = 0;
-	bool show_maps = false, unmount = false;
+	int ch, debug = 0, show_maps = 0;
+	bool unmount = false;
 
 	/*
 	 * Note that in automount(8), the only purpose of variable
@@ -350,7 +350,7 @@ main_automount(int argc, char **argv)
 			defined_parse_and_add(optarg);
 			break;
 		case 'L':
-			show_maps = true;
+			show_maps++;
 			break;
 		case 'u':
 			unmount = true;
@@ -378,6 +378,8 @@ main_automount(int argc, char **argv)
 	parse_master(root, AUTO_MASTER_PATH);
 
 	if (show_maps) {
+		if (show_maps > 1)
+			node_expand_indirect_maps(root);
 		node_print(root);
 		return (0);
 	}
