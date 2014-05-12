@@ -66,7 +66,8 @@ extern char *yytext;
 extern int lineno;
 extern int yylex(void);
 
-static void parse_master_yyin(struct node *root, const char *path);
+static void parse_master_yyin(struct node *root, const char *master);
+static void parse_map_yyin(struct node *parent, const char *map);
 
 char *
 checked_strdup(const char *s)
@@ -151,13 +152,12 @@ node_move_after(struct node *n, struct node *previous)
 {
 
 	TAILQ_REMOVE(&n->n_parent->n_children, n, n_next);
-	TAILQ_INSERT_AFTER(&previous->n_parent->n_children,
-	    n, previous, n_next);
 	n->n_parent = previous->n_parent;
+	TAILQ_INSERT_AFTER(&previous->n_parent->n_children, previous, n, n_next);
 }
 
 static void
-node_expand_includes(struct node *root)
+node_expand_includes(struct node *root, bool is_master)
 {
 	struct node *n, *n2, *tmp, *tmp2, *tmproot;
 	char *include = NULL;
@@ -181,7 +181,10 @@ node_expand_includes(struct node *root)
 			log_err(1, "unable to execute \"%s\"", include);
 
 		tmproot = node_new_root();
-		parse_master_yyin(tmproot, include);
+		if (is_master)
+			parse_master_yyin(tmproot, include);
+		else
+			parse_map_yyin(tmproot, include);
 
 		error = pclose(yyin);
 		yyin = NULL;
@@ -192,9 +195,8 @@ node_expand_includes(struct node *root)
 		 * Entries to be included are now in tmproot.  We need to merge
 		 * them with the rest, preserving the ordering.
 		 */
-		TAILQ_FOREACH_SAFE(n2, &tmproot->n_children, n_next, tmp2) {
+		TAILQ_FOREACH_SAFE(n2, &tmproot->n_children, n_next, tmp2)
 			node_move_after(n2, n);
-		}
 
 		node_delete(n);
 		node_delete(tmproot);
@@ -513,13 +515,13 @@ parse_map(struct node *parent, const char *map)
 
 	log_debugx("done parsing map \"%s\"", map);
 
-	node_expand_includes(parent);
+	node_expand_includes(parent, false);
 	node_expand_direct_maps(parent);
 	node_expand_defined(parent);
 }
 
 static void
-parse_master_yyin(struct node *root, const char *path)
+parse_master_yyin(struct node *root, const char *master)
 {
 	char *mountpoint = NULL, *map = NULL, *options = NULL;
 	int ret;
@@ -530,7 +532,7 @@ parse_master_yyin(struct node *root, const char *path)
 			if (mountpoint != NULL) {
 				log_debugx("adding map for %s", mountpoint);
 				node_new(root, mountpoint, options, map,
-				    path, lineno);
+				    master, lineno);
 			}
 			if (ret == 0) {
 				break;
@@ -547,31 +549,31 @@ parse_master_yyin(struct node *root, const char *path)
 			options = checked_strdup(yytext);
 		} else {
 			log_errx(1, "too many arguments in %s, line %d",
-			    path, lineno);
+			    master, lineno);
 		}
 	}
 }
 
 void
-parse_master(struct node *root, const char *path)
+parse_master(struct node *root, const char *master)
 {
 
-	log_debugx("parsing auto_master file at \"%s\"", path);
+	log_debugx("parsing auto_master file at \"%s\"", master);
 
-	yyin = fopen(path, "r");
+	yyin = fopen(master, "r");
 	if (yyin == NULL)
-		err(1, "unable to open %s", path);
+		err(1, "unable to open %s", master);
 
 	lineno = 0;
 
-	parse_master_yyin(root, path);
+	parse_master_yyin(root, master);
 
 	fclose(yyin);
 	yyin = NULL;
 
-	log_debugx("done parsing \"%s\"", path);
+	log_debugx("done parsing \"%s\"", master);
 
-	node_expand_includes(root);
+	node_expand_includes(root, true);
 	node_expand_direct_maps(root);
 	node_expand_defined(root);
 }

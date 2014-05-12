@@ -37,7 +37,7 @@
 
 #define	AUTO_MASTER_PATH	"/etc/auto_master"
 #define	AUTO_MAP_PREFIX		"/etc"
-#define	AUTO_SPECIAL_PREFIX	"/etc/automountd"
+#define	AUTO_SPECIAL_PREFIX	"/etc/autofs"
 #define	AUTO_INCLUDE_PATH	AUTO_SPECIAL_PREFIX "/include"
 
 struct node {

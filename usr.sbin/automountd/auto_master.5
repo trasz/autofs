@@ -155,6 +155,32 @@ and the following in /etc/auto_example map file:
 .Bd -literal -offset indent
 /example/x -intr,nfsv4 192.168.1.1:/share/example/x
 .Ed
+.Sh DIRECTORY SERVICES
+Both
+.Nm
+and maps may contain entries consisting of plus sign and map name:
+.Bd -literal -offset indent
++auto_master
+.Ed
+.Pp
+Those entries cause
+.Xr automountd 8
+daemon to retrieve named map from directory services (eg. LDAP)
+and include it where the entry was.
+.Pp
+If the file containing map referenced in
+.Nm
+is not found, the map will be retrieved from directory services instead.
+.Pp
+To retrieve entries from directory services, the
+.Xr automountd 8
+daemon runs /etc/autofs/include - which is usually a shell script - with map
+name as the only command line parameter.
+The script should output entries, formatted according to
+.Nm
+or automounter map syntax, to its standard output.
+Example script to use LDAP is included in /etc/autofs/include_ldap; one can
+simply symlink it to /etc/autofs/include.
 .Sh FILES
 .Bl -tag -width ".Pa /etc/auto_master" -compact
 .It Pa /etc/auto_master
