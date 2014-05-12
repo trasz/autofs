@@ -177,6 +177,12 @@ node_expand_includes(struct node *root, bool is_master)
 		log_debugx("include \"%s\" maps to executable \"%s\"",
 		    n->n_key, include);
 
+		error = access(AUTO_INCLUDE_PATH, F_OK);
+		if (error != 0) {
+			log_errx(1, "directory services not configured; "
+			    "%s does not exist", AUTO_INCLUDE_PATH);
+		}
+
 		yyin = popen(include, "r");
 		if (yyin == NULL)
 			log_err(1, "unable to execute \"%s\"", include);
@@ -283,8 +289,10 @@ node_expand_indirect_maps(struct node *n)
 static char *
 node_mountpoint_x(const struct node *n, char *x)
 {
+	const char *fmt;
 	char *path;
 	int ret;
+	size_t len;
 
 	if (n->n_parent == NULL)
 		return (x);
@@ -292,10 +300,27 @@ node_mountpoint_x(const struct node *n, char *x)
 	if (n->n_parent->n_parent == NULL && strcmp(n->n_key, "/-") == 0)
 		return (x);
 
-	ret = asprintf(&path, "%s%s", n->n_key, x);
+	/*
+	 * If both strings are not empty and the second one does not start
+	 * with slash, then separate them with slash; otherwise just concat.
+	 */
+	if (n->n_key[0] == '\0' || x[0] == '\0' ||
+	    x[0] == '/' || n->n_key[strlen(n->n_key) - 1] == '/')
+		fmt = "%s%s";
+	else
+		fmt = "%s/%s";
+	ret = asprintf(&path, fmt, n->n_key, x);
 	if (ret < 0)
 		log_err(1, "asprintf");
 	free(x);
+
+	/*
+	 * Strip trailing slash.
+	 */
+	len = strlen(path);
+	assert(path > 0);
+	if (path[len - 1] == '/')
+		path[len - 1] = '\0';
 
 	return (node_mountpoint_x(n->n_parent, path));
 }
@@ -519,6 +544,12 @@ parse_map(struct node *parent, const char *map)
 		if (error != 0) {
 			log_debugx("map file \"%s\" does not exist; falling "
 			    "back to directory services", path);
+
+			error = access(AUTO_INCLUDE_PATH, F_OK);
+			if (error != 0) {
+				log_errx(1, "directory services not configured;"
+				    " %s does not exist", AUTO_INCLUDE_PATH);
+			}
 
 			ret = asprintf(&path, "%s %s", AUTO_INCLUDE_PATH, map);
 			if (ret < 0)

@@ -208,14 +208,51 @@ mount_autofs(const char *from, const char *fspath, const char *opts)
 }
 
 static void
+mount_if_not_already(const struct node *n, const char *location,
+    const struct statfs *mntbuf, int nitems)
+{
+	const struct statfs *mount;
+	char *mountpoint;
+	char *from;
+	int ret;
+
+	ret = asprintf(&from, "map %s", location);
+	if (ret < 0)
+		log_err(1, "asprintf");
+
+	mountpoint = node_mountpoint(n);
+	mount = find_statfs(mntbuf, nitems, mountpoint);
+	if (mount != NULL) {
+		if (strcmp(mount->f_fstypename, "autofs") != 0) {
+			log_debugx("unknown filesystem mounted "
+			    "on %s; mounting", mountpoint);
+			/*
+			 * XXX: Compare options and 'from',
+			 * and update the mount if neccessary.
+			 */
+		} else {
+			log_debugx("autofs already mounted "
+			    "on %s", mountpoint);
+			free(from);
+			free(mountpoint);
+			return;
+		}
+	} else {
+		log_debugx("nothing mounted on %s; mounting",
+		    mountpoint);
+	}
+
+	mount_autofs(from, mountpoint, n->n_options);
+	free(from);
+	free(mountpoint);
+}
+
+static void
 mount_unmount(struct node *root)
 {
 	struct statfs *mntbuf;
-	const struct statfs *mount;
 	struct node *n, *n2, *n3;
-	char *mountpoint;
-	char *from;
-	int i, nitems, ret;
+	int i, nitems;
 
 	nitems = getmntinfo(&mntbuf, MNT_WAIT);
 	if (nitems <= 0)
@@ -246,47 +283,14 @@ mount_unmount(struct node *root)
 
 	TAILQ_FOREACH(n, &root->n_children, n_next) {
 		if (!node_is_direct_map(n)) {
-			ret = asprintf(&from, "map %s", n->n_location);
-			if (ret < 0)
-				log_err(1, "asprintf");
-
-			mountpoint = node_mountpoint(n);
-			mount = find_statfs(mntbuf, nitems, mountpoint);
-			if (mount != NULL) {
-				if (strcmp(mount->f_fstypename, "autofs") != 0) {
-					log_debugx("unknown filesystem mounted "
-					    "on %s; mounting", mountpoint);
-					/*
-					 * XXX: Compare options and 'from',
-					 * and update the mount if neccessary.
-					 */
-				} else {
-					log_debugx("autofs already mounted "
-					    "on %s", mountpoint);
-					free(from);
-					free(mountpoint);
-					continue;
-				}
-			}
-
-			mount_autofs(from, mountpoint, n->n_options);
-			free(from);
-			free(mountpoint);
+			mount_if_not_already(n, n->n_location, mntbuf, nitems);
 			continue;
 		}
 
 		TAILQ_FOREACH(n2, &n->n_children, n_next) {
 			TAILQ_FOREACH(n3, &n2->n_children, n_next) {
-				ret = asprintf(&from, "map %s", n->n_location);
-				if (ret < 0)
-					log_err(1, "asprintf");
-				/*
-				 * XXX: Check if it's alrady mounted.
-				 */
-				mountpoint = node_mountpoint(n3);
-				mount_autofs(from, mountpoint, n3->n_options);
-				free(from);
-				free(mountpoint);
+				mount_if_not_already(n3, n->n_location,
+				    mntbuf, nitems);
 			}
 		}
 	}
@@ -311,13 +315,11 @@ unmount_automounted(void)
 			continue;
 		}
 
-#if 0
 		if ((mntbuf[i].f_flags & MNT_AUTOMOUNTED) == 0) {
 			log_debugx("skipping %s, not automounted",
 			    mntbuf[i].f_mntonname);
 			continue;
 		}
-#endif
 
 		unmount_by_statfs(&(mntbuf[i]));
 	}

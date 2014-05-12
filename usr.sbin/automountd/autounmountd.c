@@ -119,13 +119,11 @@ refresh_automounted(void)
 			continue;
 		}
 
-#if 0
 		if ((mntbuf[i].f_flags & MNT_AUTOMOUNTED) == 0) {
 			log_debugx("skipping %s, not automounted",
 			    mntbuf[i].f_mntonname);
 			continue;
 		}
-#endif
 
 		af = automounted_find(mntbuf[i].f_fsid);
 		if (af == NULL) {
