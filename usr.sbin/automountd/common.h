@@ -42,7 +42,7 @@
 
 struct node {
 	TAILQ_ENTRY(node)	n_next;
-	TAILQ_HEAD(, node)	n_children;
+	TAILQ_HEAD(nodehead, node)	n_children;
 	struct node		*n_parent;
 	char			*n_key;
 	char			*n_options;

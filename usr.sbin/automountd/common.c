@@ -187,6 +187,8 @@ node_expand_includes(struct node *root, bool is_master)
 		if (yyin == NULL)
 			log_err(1, "unable to execute \"%s\"", include);
 
+		lineno = 0;
+
 		tmproot = node_new_root();
 		if (is_master)
 			parse_master_yyin(tmproot, include);
@@ -200,10 +202,12 @@ node_expand_includes(struct node *root, bool is_master)
 
 		/*
 		 * Entries to be included are now in tmproot.  We need to merge
-		 * them with the rest, preserving the ordering.
+		 * them with the rest, preserving their place and ordering.
 		 */
-		TAILQ_FOREACH_SAFE(n2, &tmproot->n_children, n_next, tmp2)
+		TAILQ_FOREACH_REVERSE_SAFE(n2,
+		    &tmproot->n_children, nodehead, n_next, tmp2) {
 			node_move_after(n2, n);
+		}
 
 		node_delete(n);
 		node_delete(tmproot);
@@ -297,15 +301,23 @@ node_mountpoint_x(const struct node *n, char *x)
 	if (n->n_parent == NULL)
 		return (x);
 
-	if (n->n_parent->n_parent == NULL && strcmp(n->n_key, "/-") == 0)
+	/*
+	 * Return "/-" for direct maps only if we were asked for path
+	 * to the "/-" node itself, not to any of its subnodes.
+	 */
+	if (n->n_parent->n_parent == NULL &&
+	    strcmp(n->n_key, "/-") == 0 &&
+	    x[0] != '\0') {
 		return (x);
+	}
 
 	/*
-	 * If both strings are not empty and the second one does not start
-	 * with slash, then separate them with slash; otherwise just concat.
+	 * If any of the strings is empty, or the first one ends with slash,
+	 * or the second one begins with slash, then simply concatenate them;
+	 * otherwise separate them by slash.
 	 */
 	if (n->n_key[0] == '\0' || x[0] == '\0' ||
-	    x[0] == '/' || n->n_key[strlen(n->n_key) - 1] == '/')
+	    n->n_key[strlen(n->n_key) - 1] == '/' || x[0] == '/')
 		fmt = "%s%s";
 	else
 		fmt = "%s/%s";
@@ -337,7 +349,7 @@ node_print_indent(const struct node *n, int indent)
 {
 	const struct node *n2;
 
-	printf("%*.s%s\t%s\t%s # %s defined at %s:%d\n", indent, "",
+	printf("%*.s%s    %s    %s\t# %s defined at %s:%d\n", indent, "",
 	    node_mountpoint(n),
 	    n->n_options != NULL ? n->n_options : "",
 	    n->n_location != NULL ? n->n_location : "",
@@ -345,7 +357,7 @@ node_print_indent(const struct node *n, int indent)
 	    n->n_config_file, n->n_config_line);
 
 	TAILQ_FOREACH(n2, &n->n_children, n_next)
-		node_print_indent(n2, indent + 3);
+		node_print_indent(n2, indent + 2);
 }
 
 void
@@ -362,6 +374,9 @@ node_find(struct node *root, const char *mountpoint)
 {
 	struct node *n, *n2;
 	char *tmp;
+
+	if (strcmp(root->n_key, "*") == 0)
+		return (root);
 
 	tmp = node_mountpoint(root);
 	if (strcmp(tmp, mountpoint) == 0) {
