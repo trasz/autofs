@@ -80,6 +80,28 @@ checked_strdup(const char *s)
 	return (c);
 }
 
+/*
+ * Concatenate two strings, inserting separator between them, unless not needed.
+ */
+char *
+separated_concat(const char *s1, const char *s2, char separator)
+{
+	char *result;
+	int ret;
+
+	if (s1[0] == '\0' || s2[0] == '\0' ||
+	    s1[strlen(s1) - 1] == separator || s2[0] == separator) {
+		ret = asprintf(&result, "%s%s", s1, s2);
+	} else {
+		ret = asprintf(&result, "%s%c%s", s1, separator, s2);
+	}
+	if (ret < 0)
+		log_err(1, "asprintf");
+
+	return (result);
+}
+
+
 struct node *
 node_new_root(void)
 {
@@ -125,7 +147,7 @@ node_delete(struct node *n)
 	struct node *n2, *tmp;
 
 	TAILQ_FOREACH_SAFE(n2, &n->n_children, n_next, tmp)
-		node_delete(n);
+		node_delete(n2);
 
 	if (n->n_parent != NULL)
 		TAILQ_REMOVE(&n->n_parent->n_children, n, n_next);
@@ -293,9 +315,7 @@ node_expand_indirect_maps(struct node *n)
 static char *
 node_mountpoint_x(const struct node *n, char *x)
 {
-	const char *fmt;
 	char *path;
-	int ret;
 	size_t len;
 
 	if (n->n_parent == NULL)
@@ -311,19 +331,7 @@ node_mountpoint_x(const struct node *n, char *x)
 		return (x);
 	}
 
-	/*
-	 * If any of the strings is empty, or the first one ends with slash,
-	 * or the second one begins with slash, then simply concatenate them;
-	 * otherwise separate them by slash.
-	 */
-	if (n->n_key[0] == '\0' || x[0] == '\0' ||
-	    n->n_key[strlen(n->n_key) - 1] == '/' || x[0] == '/')
-		fmt = "%s%s";
-	else
-		fmt = "%s/%s";
-	ret = asprintf(&path, fmt, n->n_key, x);
-	if (ret < 0)
-		log_err(1, "asprintf");
+	path = separated_concat(n->n_key, x, '/');
 	free(x);
 
 	/*
@@ -347,14 +355,29 @@ node_mountpoint(const struct node *n)
 static void
 node_print_indent(const struct node *n, int indent)
 {
-	const struct node *n2;
+	const struct node *n2, *first_child;
+	char *n_mountpoint;
 
-	printf("%*.s%s    %s    %s\t# %s defined at %s:%d\n", indent, "",
-	    node_mountpoint(n),
-	    n->n_options != NULL ? n->n_options : "",
-	    n->n_location != NULL ? n->n_location : "",
-	    node_is_direct_map(n) ? "direct map" : "indirect map",
-	    n->n_config_file, n->n_config_line);
+	n_mountpoint = node_mountpoint(n);
+	first_child = TAILQ_FIRST(&n->n_children);
+
+	/*
+	 * Do not show both parent and child node if they have the same
+	 * mountpoint; only show the child node.  This means the typical,
+	 * "key location", map entries are shown in a single line;
+	 * the "key mountpoint1 location2 mountpoint2 location2" entries
+	 * take multiple lines.
+	 */
+	if (first_child == NULL || TAILQ_NEXT(first_child, n_next) != NULL ||
+	    strcmp(n_mountpoint, node_mountpoint(first_child)) != 0) {
+		printf("%*.s%s    %s    %s\t# %s map %s at %s:%d\n", indent, "",
+		    n_mountpoint,
+		    n->n_options != NULL ? n->n_options : "",
+		    n->n_location != NULL ? n->n_location : "",
+		    node_is_direct_map(n) ? "direct" : "indirect",
+		    indent == 0 ? "referenced" : "defined",
+		    n->n_config_file, n->n_config_line);
+	}
 
 	TAILQ_FOREACH(n2, &n->n_children, n_next)
 		node_print_indent(n2, indent + 2);
@@ -430,8 +453,7 @@ parse_map_yyin(struct node *parent, const char *map)
 		if (key == NULL) {
 			key = checked_strdup(yytext);
 			if (key[0] == '+') {
-				node = node_new(parent, key, NULL, NULL,
-				    map, lineno);
+				node_new(parent, key, NULL, NULL, map, lineno);
 				key = options = NULL;
 				continue;
 			}
@@ -590,6 +612,9 @@ parse_map(struct node *parent, const char *map)
 		if (yyin == NULL)
 			log_err(1, "unable to open \"%s\"", path);
 	}
+
+	free(path);
+	path = NULL;
 
 	/*
 	 * XXX: Here it's 1, below it's 0, and both work correctly; investigate.

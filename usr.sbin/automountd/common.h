@@ -69,6 +69,7 @@ void	log_warnx(const char *, ...) __printflike(1, 2);
 void	log_debugx(const char *, ...) __printf0like(1, 2);
 
 char	*checked_strdup(const char *);
+char	*separated_concat(const char *s1, const char *s2, char separator);
 
 struct node	*node_new_root(void);
 struct node	*node_new(struct node *parent, char *key, char *options, char *location, const char *config_file, int config_line);

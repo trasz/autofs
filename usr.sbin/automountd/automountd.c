@@ -78,37 +78,73 @@ done(int autofs_fd, const char *mountpoint)
 		log_err(1, "AUTOFSDONE");
 }
 
+/*
+ * Remove "fstype=whatever" from optionsp and return the "whatever" part.
+ */
+static char *
+pick_fstype(char **optionsp)
+{
+	char *tofree, *fstype, *pair, *newoptions;
+	bool first = true;
+
+	tofree = *optionsp;
+
+	newoptions = calloc(strlen(*optionsp) + 1, 1);
+	if (newoptions == NULL)
+		log_err(1, "calloc");
+
+	while ((pair = strsep(optionsp, ",")) != NULL) {
+		if (strncmp(pair, "fstype=", strlen("fstype=")) == 0) {
+			fstype = checked_strdup(pair + strlen("fstype="));
+		} else {
+			if (first == false)
+				strcat(newoptions, ",");
+			else
+				first = false;
+			strcat(newoptions, pair);
+		}
+	}
+
+	free(tofree);
+	*optionsp = newoptions;
+
+	return (fstype);
+}
+
 static void
-handle_mount(int autofs_fd, const char *from, const char *mountpoint,
-    const char *fspath)
+handle_mount(int autofs_fd, const struct autofs_daemon_request *adr)
 {
 	const char *map;
 	struct node *root, *node;
 	FILE *f;
-	char *mount_cmd;
+	char *mount_cmd, *options, *fstype;
 	int error, ret;
 
 	log_debugx("got mount request for %s on %s/%s",
-	    from, mountpoint, fspath);
+	    adr->adr_from, adr->adr_mountpoint, adr->adr_path);
 
-	if (strncmp(from, "map ", 4) != 0)
-		log_errx(1, "invalid mountfrom \"%s\"; failing mount", from);
+	if (strncmp(adr->adr_from, "map ", 4) != 0) {
+		log_errx(1, "invalid mountfrom \"%s\"; failing mount",
+		    adr->adr_from);
+	}
 
-	map = from + 4; /* 4 for strlen("map "); */
+	map = adr->adr_from + 4; /* 4 for strlen("map "); */
 	root = node_new_root();
 	parse_map(root, map);
 
-	log_debugx("searching for key for \"%s\" in map %s", mountpoint, map);
-	node = node_find(root, mountpoint);
-	if (node == NULL)
+	log_debugx("searching for key for \"%s\" in map %s",
+	    adr->adr_mountpoint, map);
+	node = node_find(root, adr->adr_mountpoint);
+	if (node == NULL) {
 		log_errx(1, "map %s does not contain key for \"%s\"; "
-		    "failing mount", map, mountpoint);
+		    "failing mount", map, adr->adr_mountpoint);
+	}
 
-	/*
-	 * XXX: Filesystem type.
-	 */
-	ret = asprintf(&mount_cmd, "%s %s %s", "mount_nfs",
-	    node->n_location, mountpoint);
+	options = separated_concat(node->n_options, adr->adr_options, ',');
+	fstype = pick_fstype(&options);
+
+	ret = asprintf(&mount_cmd, "mount -t %s %s %s %s", fstype, options,
+	    node->n_location, adr->adr_mountpoint);
 	if (ret < 0)
 		log_err(1, "asprintf");
 
@@ -125,7 +161,7 @@ handle_mount(int autofs_fd, const char *from, const char *mountpoint,
 		log_errx(1, "failed to execute \"%s\"", mount_cmd);
 
 	log_debugx("mount done");
-	done(autofs_fd, mountpoint);
+	done(autofs_fd, adr->adr_mountpoint);
 
 	log_debugx("nothing more to do; exiting");
 	exit(0);
@@ -288,8 +324,7 @@ main_automountd(int argc, char **argv)
 		}
 
 		pidfile_close(pidfh);
-		handle_mount(autofs_fd, request.adr_from,
-		    request.adr_mountpoint, request.adr_path);
+		handle_mount(autofs_fd, &request);
 	}
 
 	pidfile_close(pidfh);
