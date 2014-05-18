@@ -382,6 +382,7 @@ main_automount(int argc, char **argv)
 	if (show_maps) {
 		if (show_maps > 1)
 			node_expand_indirect_maps(root);
+		node_expand_defined(root);
 		node_print(root);
 		return (0);
 	}

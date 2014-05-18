@@ -140,6 +140,8 @@ handle_mount(int autofs_fd, const struct autofs_daemon_request *adr)
 		    "failing mount", map, adr->adr_mountpoint);
 	}
 
+	node_expand_defined(node);
+
 	options = separated_concat(node->n_options, adr->adr_options, ',');
 	fstype = pick_fstype(&options);
 

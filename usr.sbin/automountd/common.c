@@ -236,7 +236,7 @@ node_expand_includes(struct node *root, bool is_master)
 	}
 }
 
-static void
+void
 node_expand_defined(struct node *root)
 {
 	struct node *n;
@@ -638,7 +638,6 @@ parse_map(struct node *parent, const char *map)
 
 	node_expand_includes(parent, false);
 	node_expand_direct_maps(parent);
-	node_expand_defined(parent);
 }
 
 static void
@@ -696,7 +695,6 @@ parse_master(struct node *root, const char *master)
 
 	node_expand_includes(root, true);
 	node_expand_direct_maps(root);
-	node_expand_defined(root);
 }
 
 int
