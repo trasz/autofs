@@ -48,7 +48,7 @@ extern int	yylex(void);
 %option noyywrap
 
 %%
-[a-zA-Z0-9\.\+-_/\:\[\]${}]+ { return STR; }
+[a-zA-Z0-9\.\+-_/\:\[\]$&{}]+ { return STR; }
 #.*\n			{ lineno++; return NEWLINE; };
 \\\n			{ lineno++; };
 \n			{ lineno++; return NEWLINE; }

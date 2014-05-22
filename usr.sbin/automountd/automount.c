@@ -383,6 +383,7 @@ main_automount(int argc, char **argv)
 		if (show_maps > 1)
 			node_expand_indirect_maps(root);
 		node_expand_defined(root);
+		node_expand_ampersand(root, NULL);
 		node_print(root);
 		return (0);
 	}

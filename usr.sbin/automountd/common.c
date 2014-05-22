@@ -236,6 +236,81 @@ node_expand_includes(struct node *root, bool is_master)
 	}
 }
 
+static char *
+expand_ampersand(const char *key, char *string)
+{
+	char c, *expanded;
+	int i, ret, before_len = 0;
+	bool backslashed = false;
+
+	expanded = checked_strdup(string);
+
+	for (i = 0; string[i] != '\0'; i++) {
+		c = string[i];
+		if (c == '\\' && backslashed == false) {
+			backslashed = true;
+			continue;
+		}
+		if (backslashed) {
+			backslashed = false;
+			continue;
+		}
+		backslashed = false;
+		if (c != '&')
+			continue;
+
+		/*
+		 * The 'before_len' variable contains the number
+		 * of characters before the '&'.
+		 */
+		before_len = i;
+		//assert(i + 1 < (int)strlen(string));
+
+		ret = asprintf(&expanded, "%.*s%s%s",
+		    before_len, string, key, string + before_len + 1);
+		if (ret < 0)
+			log_err(1, "asprintf");
+
+		log_debugx("\"%s\" expanded to \"%s\"", string, expanded);
+
+		/*
+		 * Figure out where to start searching for next variable.
+		 */
+		string = expanded;
+		i = before_len + strlen(key);
+		backslashed = false;
+		//assert(i < (int)strlen(string));
+	}
+
+	return (expanded);
+}
+
+/*
+ * Expand "&" in n_location.  If node's n_key is not "*", use it; otherwise
+ * use the provided key, if provided; otherwise do nothing.
+ */
+void
+node_expand_ampersand(struct node *root, const char *key)
+{
+	struct node *n;
+
+	TAILQ_FOREACH(n, &root->n_children, n_next) {
+		if (n->n_location != NULL) {
+			if (strcmp(n->n_location, "*") == 0) {
+				if (key != NULL) {
+					n->n_location = expand_ampersand(key,
+					    n->n_location);
+				}
+			} else {
+				n->n_location =
+				    expand_ampersand(n->n_parent->n_key,
+				    n->n_location);
+			}
+		}
+		node_expand_ampersand(n, key);
+	}
+}
+
 void
 node_expand_defined(struct node *root)
 {

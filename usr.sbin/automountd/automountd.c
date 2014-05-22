@@ -84,7 +84,8 @@ done(int autofs_fd, const char *mountpoint)
 static char *
 pick_fstype(char **optionsp)
 {
-	char *tofree, *fstype, *pair, *newoptions;
+	char *tofree, *pair, *newoptions;
+	char *fstype = NULL;
 	bool first = true;
 
 	tofree = *optionsp;
@@ -141,9 +142,29 @@ handle_mount(int autofs_fd, const struct autofs_daemon_request *adr)
 	}
 
 	node_expand_defined(node);
+	/*
+	 * XXX: Is the key right?
+	 */
+	node_expand_ampersand(node, adr->adr_mountpoint);
 
-	options = separated_concat(node->n_options, adr->adr_options, ',');
+	/*
+	 * Given the entry "key -options [ mountpoint -options2 ] location",
+	 * the line below concatenates "-options2" (node->n_options) and
+	 * "-options" (node->n_parent->n_options).
+	 */
+	options = separated_concat(node->n_options,
+	    node->n_parent->n_options, ',');
+
+	/*
+	 * Append options defined in auto_master, passed via autofs.
+	 */
+	options = separated_concat(options, adr->adr_options, ',');
 	fstype = pick_fstype(&options);
+
+	if (fstype == NULL) {
+		log_debugx("fstype not specified; defaulting to \"nfs\"");
+		fstype = checked_strdup("nfs");
+	}
 
 	ret = asprintf(&mount_cmd, "mount -t %s %s %s %s", fstype, options,
 	    node->n_location, adr->adr_mountpoint);

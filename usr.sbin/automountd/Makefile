@@ -22,8 +22,6 @@ LDADD=	-lutil
 MOUNT=  ${.CURDIR}/../../sbin/mount
 CFLAGS+=-I${MOUNT}
 
-CFLAGS+=-O0 -ggdb
-
 WARNS=	6
 
 LINKS=	${BINDIR}/automountd ${BINDIR}/automount
