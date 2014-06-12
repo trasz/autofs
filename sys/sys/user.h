@@ -271,7 +271,7 @@ struct user {
 #define	KF_FD_TYPE_CWD	-1	/* Current working directory */
 #define	KF_FD_TYPE_ROOT	-2	/* Root directory */
 #define	KF_FD_TYPE_JAIL	-3	/* Jail directory */
-#define	KF_FD_TYPE_TRACE	-4	/* ptrace vnode */
+#define	KF_FD_TYPE_TRACE	-4	/* Ktrace vnode */
 #define	KF_FD_TYPE_TEXT	-5	/* Text vnode */
 #define	KF_FD_TYPE_CTTY	-6	/* Controlling terminal */
 
@@ -414,6 +414,7 @@ struct kinfo_file {
 #define	KVME_TYPE_PHYS		5
 #define	KVME_TYPE_DEAD		6
 #define	KVME_TYPE_SG		7
+#define	KVME_TYPE_MGTDEVICE	8
 #define	KVME_TYPE_UNKNOWN	255
 
 #define	KVME_PROT_READ		0x00000001

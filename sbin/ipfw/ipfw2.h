@@ -165,6 +165,7 @@ enum tokens {
 	TOK_BURST,
 	TOK_RED,
 	TOK_GRED,
+	TOK_ECN,
 	TOK_DROPTAIL,
 	TOK_PROTO,
 	/* dummynet tokens */
@@ -268,11 +269,14 @@ void ipfw_flush(int force);
 void ipfw_zero(int ac, char *av[], int optname);
 void ipfw_list(int ac, char *av[], int show_counters);
 
+#ifdef PF
 /* altq.c */
 void altq_set_enabled(int enabled);
 u_int32_t altq_name_to_qid(const char *name);
-
 void print_altq_cmd(struct _ipfw_insn_altq *altqptr);
+#else
+#define NO_ALTQ
+#endif
 
 /* dummynet.c */
 void dummynet_list(int ac, char *av[], int show_counters);

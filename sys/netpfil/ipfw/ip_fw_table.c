@@ -123,6 +123,7 @@ struct table_xentry {
 #define OFF_LEN_IFACE	(8 * offsetof(struct xaddr_iface, ifname))
 
 
+#ifdef INET6
 static inline void
 ipv6_writemask(struct in6_addr *addr6, uint8_t mask)
 {
@@ -132,6 +133,7 @@ ipv6_writemask(struct in6_addr *addr6, uint8_t mask)
 		*cp++ = 0xFFFFFFFF;
 	*cp = htonl(mask ? ~((1 << (32 - mask)) - 1) : 0);
 }
+#endif
 
 int
 ipfw_add_table_entry(struct ip_fw_chain *ch, uint16_t tbl, void *paddr,
@@ -695,6 +697,7 @@ dump_table_xentry_base(struct radix_node *rn, void *arg)
 		xent->masklen = 33 - ffs(ntohl(n->mask.sin_addr.s_addr));
 	/* Save IPv4 address as deprecated IPv6 compatible */
 	xent->k.addr6.s6_addr32[3] = n->addr.sin_addr.s_addr;
+	xent->flags = IPFW_TCF_INET;
 	xent->value = n->value;
 	tbl->cnt++;
 	return (0);

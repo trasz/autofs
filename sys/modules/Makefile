@@ -1,6 +1,8 @@
 # $FreeBSD$
 
-.include <bsd.own.mk>
+.include <src.opts.mk>
+
+SUBDIR_PARALLEL=
 
 # Modules that include binary-only blobs of microcode should be selectable by
 # MK_SOURCELESS_UCODE option (see below).
@@ -137,7 +139,6 @@ SUBDIR=	\
 	if_bridge \
 	if_disc \
 	if_edsc \
-	if_ef \
 	if_epair \
 	if_faith \
 	if_gif \
@@ -150,6 +151,7 @@ SUBDIR=	\
 	if_vlan \
 	${_igb} \
 	${_iir} \
+	imgact_binmisc \
 	${_io} \
         ${_ipoib} \
 	${_ipdivert} \
@@ -187,7 +189,6 @@ SUBDIR=	\
 	libiconv \
 	libmbpool \
 	libmchain \
-	${_lindev} \
 	${_linprocfs} \
 	${_linsysfs} \
 	${_linux} \
@@ -217,9 +218,11 @@ SUBDIR=	\
 	${_mly} \
 	mmc \
 	mmcsd \
+	mpr \
 	mps \
 	mpt \
 	mqueue \
+	mrsas \
 	msdosfs \
 	msdosfs_iconv \
 	${_mse} \
@@ -235,6 +238,7 @@ SUBDIR=	\
 	${_ncp} \
 	${_ncv} \
 	${_ndis} \
+	netfpga10g \
 	${_netgraph} \
 	${_nfe} \
 	nfs_common \
@@ -252,7 +256,6 @@ SUBDIR=	\
 	nullfs \
 	${_ntb} \
 	${_nvd} \
-	${_nve} \
 	${_nvme} \
 	${_nvram} \
 	${_nxge} \
@@ -273,6 +276,7 @@ SUBDIR=	\
 	ppi \
 	pps \
 	procfs \
+	proto \
 	pseudofs \
 	${_pst} \
 	pty  \
@@ -513,7 +517,6 @@ _io=		io
 .if ${MK_OFED} != "no" || defined(ALL_MODULES)
 _ipoib=         ipoib
 .endif
-_lindev=	lindev
 _linprocfs=	linprocfs
 _linsysfs=	linsysfs
 _linux=		linux
@@ -561,7 +564,9 @@ _acpi=		acpi
 .if ${MK_CRYPT} != "no" || defined(ALL_MODULES)
 _aesni=		aesni
 .endif
+.if ${MK_EISA} != "no"
 _ahb=		ahb
+.endif
 _amdsbwd=	amdsbwd
 _amdtemp=	amdtemp
 _arcmsr=	arcmsr
@@ -610,9 +615,6 @@ _ixgbe=		ixgbe
 _mly=		mly
 _nfe=		nfe
 _nvd=		nvd
-.if ${MK_SOURCELESS_HOST} != "no"
-_nve=		nve
-.endif
 _nvme=		nvme
 _nvram=		nvram
 _nxge=		nxge
@@ -716,7 +718,6 @@ _iwnfw=		iwnfw
 .endif
 _ixgb=		ixgb
 _ixgbe=		ixgbe
-_lindev=	lindev
 _linprocfs=	linprocfs
 _linsysfs=	linsysfs
 _linux=		linux
@@ -731,9 +732,6 @@ _ndis=		ndis
 _nfe=		nfe
 _ntb=		ntb
 _nvd=		nvd
-.if ${MK_SOURCELESS_HOST} != "no"
-_nve=		nve
-.endif
 _nvme=		nvme
 _nvram=		nvram
 _nxge=		nxge
@@ -781,6 +779,7 @@ _zfs=		zfs
 .if ${MACHINE_CPUARCH} == "arm"
 _cfi=		cfi
 _cpsw=		cpsw
+_sound=		sound
 .endif
 
 .if ${MACHINE_CPUARCH} == "ia64"

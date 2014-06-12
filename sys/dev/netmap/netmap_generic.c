@@ -81,30 +81,70 @@ __FBSDID("$FreeBSD$");
 #include <dev/netmap/netmap_kern.h>
 #include <dev/netmap/netmap_mem2.h>
 
-#define rtnl_lock() D("rtnl_lock called");
-#define rtnl_unlock() D("rtnl_unlock called");
+#define rtnl_lock()	ND("rtnl_lock called")
+#define rtnl_unlock()	ND("rtnl_unlock called")
 #define MBUF_TXQ(m)	((m)->m_pkthdr.flowid)
+#define MBUF_RXQ(m)	((m)->m_pkthdr.flowid)
 #define smp_mb()
+
+/*
+ * FreeBSD mbuf allocator/deallocator in emulation mode:
+ *
+ * We allocate EXT_PACKET mbuf+clusters, but need to set M_NOFREE
+ * so that the destructor, if invoked, will not free the packet.
+ *    In principle we should set the destructor only on demand,
+ * but since there might be a race we better do it on allocation.
+ * As a consequence, we also need to set the destructor or we
+ * would leak buffers.
+ */
 
 /*
  * mbuf wrappers
  */
 
 /*
- * we allocate an EXT_PACKET
- */
-#define netmap_get_mbuf(len) m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR|M_NOFREE)
-
-/* mbuf destructor, also need to change the type to EXT_EXTREF,
+ * mbuf destructor, also need to change the type to EXT_EXTREF,
  * add an M_NOFREE flag, and then clear the flag and
  * chain into uma_zfree(zone_pack, mf)
  * (or reinstall the buffer ?)
+ *
+ * On FreeBSD 9 the destructor is called as ext_free(ext_arg1, ext_arg2)
+ * whereas newer version have ext_free(m, ext_arg1, ext_arg2)
+ * For compatibility we set ext_arg1 = m on allocation so we have
+ * the same code on both.
  */
 #define SET_MBUF_DESTRUCTOR(m, fn)	do {		\
-	(m)->m_ext.ext_free = (void *)fn;	\
-	(m)->m_ext.ext_type = EXT_EXTREF;	\
-} while (0)
+		(m)->m_ext.ext_free = (void *)fn;	\
+		(m)->m_ext.ext_type = EXT_EXTREF;	\
+	} while (0)
 
+static void 
+netmap_default_mbuf_destructor(struct mbuf *m)
+{ 
+	/* restore original data pointer and type */
+	m->m_ext.ext_buf = m->m_data = m->m_ext.ext_arg2;
+	m->m_ext.ext_type = EXT_PACKET;
+	m->m_ext.ext_free = NULL;
+	m->m_ext.ext_arg1 = m->m_ext.ext_arg2 = NULL;
+	if (*(m->m_ext.ref_cnt) == 0)
+		*(m->m_ext.ref_cnt) = 1;
+	uma_zfree(zone_pack, m);
+} 
+
+static inline struct mbuf * 
+netmap_get_mbuf(int len) 
+{ 
+	struct mbuf *m;
+	m = m_getcl(M_NOWAIT, MT_DATA, M_PKTHDR | M_NOFREE);
+	if (m) {
+		m->m_ext.ext_arg1 = m; /* FreeBSD 9 compat */
+		m->m_ext.ext_arg2 = m->m_ext.ext_buf; /* save original */
+		m->m_ext.ext_free = (void *)netmap_default_mbuf_destructor;
+		m->m_ext.ext_type = EXT_EXTREF;
+		ND(5, "create m %p refcnt %d", m, *m->m_ext.ref_cnt);
+	}
+	return m;
+} 
 
 #define GET_MBUF_REFCNT(m)	((m)->m_ext.ref_cnt ? *(m)->m_ext.ref_cnt : -1)
 
@@ -222,15 +262,23 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 #endif /* REG_RESET */
 
 	if (enable) { /* Enable netmap mode. */
+		/* Init the mitigation support on all the rx queues. */
+		gna->mit = malloc(na->num_rx_rings * sizeof(struct nm_generic_mit),
+					M_DEVBUF, M_NOWAIT | M_ZERO);
+		if (!gna->mit) {
+			D("mitigation allocation failed");
+			error = ENOMEM;
+			goto out;
+		}
+		for (r=0; r<na->num_rx_rings; r++)
+			netmap_mitigation_init(&gna->mit[r], na);
+
 		/* Initialize the rx queue, as generic_rx_handler() can
 		 * be called as soon as netmap_catch_rx() returns.
 		 */
 		for (r=0; r<na->num_rx_rings; r++) {
 			mbq_safe_init(&na->rx_rings[r].rx_queue);
 		}
-
-		/* Init the mitigation timer. */
-		netmap_mitigation_init(gna);
 
 		/*
 		 * Preallocate packet buffers for the tx rings.
@@ -306,7 +354,9 @@ generic_netmap_register(struct netmap_adapter *na, int enable)
 			mbq_safe_destroy(&na->rx_rings[r].rx_queue);
 		}
 
-		netmap_mitigation_cleanup(gna);
+		for (r=0; r<na->num_rx_rings; r++)
+			netmap_mitigation_cleanup(&gna->mit[r]);
+		free(gna->mit, M_DEVBUF);
 
 		for (r=0; r<na->num_tx_rings; r++) {
 			for (i=0; i<na->num_tx_desc; i++) {
@@ -344,10 +394,12 @@ free_tx_pools:
 		free(na->tx_rings[r].tx_pool, M_DEVBUF);
 		na->tx_rings[r].tx_pool = NULL;
 	}
-	netmap_mitigation_cleanup(gna);
 	for (r=0; r<na->num_rx_rings; r++) {
+		netmap_mitigation_cleanup(&gna->mit[r]);
 		mbq_safe_destroy(&na->rx_rings[r].rx_queue);
 	}
+	free(gna->mit, M_DEVBUF);
+out:
 
 	return error;
 }
@@ -360,15 +412,11 @@ free_tx_pools:
 static void
 generic_mbuf_destructor(struct mbuf *m)
 {
-	if (netmap_verbose)
-		D("Tx irq (%p) queue %d", m, MBUF_TXQ(m));
 	netmap_generic_irq(MBUF_IFP(m), MBUF_TXQ(m), NULL);
 #ifdef __FreeBSD__
-	m->m_ext.ext_type = EXT_PACKET;
-	m->m_ext.ext_free = NULL;
-	if (*(m->m_ext.ref_cnt) == 0)
-		*(m->m_ext.ref_cnt) = 1;
-	uma_zfree(zone_pack, m);
+	if (netmap_verbose)
+		RD(5, "Tx irq (%p) queue %d index %d" , m, MBUF_TXQ(m), (int)(uintptr_t)m->m_ext.ext_arg1);
+	netmap_default_mbuf_destructor(m);
 #endif /* __FreeBSD__ */
 	IFRATE(rate_ctx.new.txirq++);
 }
@@ -458,12 +506,12 @@ generic_set_tx_event(struct netmap_kring *kring, u_int hwcur)
 	e = generic_tx_event_middle(kring, hwcur);
 
 	m = kring->tx_pool[e];
+	ND(5, "Request Event at %d mbuf %p refcnt %d", e, m, m ? GET_MBUF_REFCNT(m) : -2 );
 	if (m == NULL) {
 		/* This can happen if there is already an event on the netmap
 		   slot 'e': There is nothing to do. */
 		return;
 	}
-	ND("Event at %d mbuf %p refcnt %d", e, m, GET_MBUF_REFCNT(m));
 	kring->tx_pool[e] = NULL;
 	SET_MBUF_DESTRUCTOR(m, generic_mbuf_destructor);
 
@@ -557,12 +605,11 @@ generic_netmap_txsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 			}
 			slot->flags &= ~(NS_REPORT | NS_BUF_CHANGED);
 			nm_i = nm_next(nm_i, lim);
+			IFRATE(rate_ctx.new.txpkt ++);
 		}
 
 		/* Update hwcur to the next slot to transmit. */
 		kring->nr_hwcur = nm_i; /* not head, we could break early */
-
-		IFRATE(rate_ctx.new.txpkt += ntx);
 	}
 
 	/*
@@ -600,7 +647,11 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 	struct netmap_adapter *na = NA(ifp);
 	struct netmap_generic_adapter *gna = (struct netmap_generic_adapter *)na;
 	u_int work_done;
-	u_int rr = 0; // receive ring number
+	u_int rr = MBUF_RXQ(m); // receive ring number
+
+	if (rr >= na->num_rx_rings) {
+		rr = rr % na->num_rx_rings; // XXX expensive...
+	}
 
 	/* limit the size of the queue */
 	if (unlikely(mbq_len(&na->rx_rings[rr].rx_queue) > 1024)) {
@@ -617,13 +668,13 @@ generic_rx_handler(struct ifnet *ifp, struct mbuf *m)
 		/* same as send combining, filter notification if there is a
 		 * pending timer, otherwise pass it up and start a timer.
 		 */
-		if (likely(netmap_mitigation_active(gna))) {
+		if (likely(netmap_mitigation_active(&gna->mit[rr]))) {
 			/* Record that there is some pending work. */
-			gna->mit_pending = 1;
+			gna->mit[rr].mit_pending = 1;
 		} else {
 			netmap_generic_irq(na->ifp, rr, &work_done);
 			IFRATE(rate_ctx.new.rxirq++);
-			netmap_mitigation_start(gna);
+			netmap_mitigation_start(&gna->mit[rr]);
 		}
 	}
 }
@@ -682,7 +733,6 @@ generic_netmap_rxsync(struct netmap_adapter *na, u_int ring_nr, int flags)
 			ring->slot[nm_i].flags = slot_flags;
 			m_freem(m);
 			nm_i = nm_next(nm_i, lim);
-			n++;
 		}
 		if (n) {
 			kring->nr_hwtail = nm_i;
@@ -755,6 +805,10 @@ generic_netmap_attach(struct ifnet *ifp)
 
 	generic_find_num_desc(ifp, &num_tx_desc, &num_rx_desc);
 	ND("Netmap ring size: TX = %d, RX = %d", num_tx_desc, num_rx_desc);
+	if (num_tx_desc == 0 || num_rx_desc == 0) {
+		D("Device has no hw slots (tx %u, rx %u)", num_tx_desc, num_rx_desc);
+		return EINVAL;
+	}
 
 	gna = malloc(sizeof(*gna), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (gna == NULL) {
@@ -772,7 +826,7 @@ generic_netmap_attach(struct ifnet *ifp)
 	/* when using generic, IFCAP_NETMAP is set so we force
 	 * NAF_SKIP_INTR to use the regular interrupt handler
 	 */
-	na->na_flags = NAF_SKIP_INTR;
+	na->na_flags = NAF_SKIP_INTR | NAF_HOST_RINGS;
 
 	ND("[GNA] num_tx_queues(%d), real_num_tx_queues(%d), len(%lu)",
 			ifp->num_tx_queues, ifp->real_num_tx_queues,

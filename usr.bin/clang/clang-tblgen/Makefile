@@ -1,6 +1,6 @@
 # $FreeBSD$
 
-NO_MAN=
+MAN=
 .include <bsd.own.mk>
 
 PROG_CXX=clang-tblgen
@@ -14,10 +14,11 @@ SRCS=	ClangASTNodesEmitter.cpp \
 	ClangDiagnosticsEmitter.cpp \
 	ClangSACheckersEmitter.cpp \
 	NeonEmitter.cpp \
-	OptParserEmitter.cpp \
 	TableGen.cpp
 
 LIBDEPS=llvmtablegen \
 	llvmsupport
+
+NO_PIE=	yes
 
 .include "../clang.prog.mk"

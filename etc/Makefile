@@ -1,10 +1,14 @@
 #	from: @(#)Makefile	5.11 (Berkeley) 5/21/91
 # $FreeBSD$
 
-.include <bsd.own.mk>
+.include <src.opts.mk>
 
 .if ${MK_SENDMAIL} != "no"
 SUBDIR=	sendmail
+.endif
+
+.if ${MK_TESTS} != "no"
+SUBDIR+=tests
 .endif
 
 BIN1=	auto_master \
@@ -171,7 +175,10 @@ afterinstall:
 .endif
 
 distribute:
-	${_+_}cd ${.CURDIR} ; ${MAKE} install DESTDIR=${DISTDIR}/${DISTRIBUTION}
+	# Avoid installing tests here; "make distribution" will do this and
+	# correctly place them in the right location.
+	${_+_}cd ${.CURDIR} ; ${MAKE} MK_TESTS=no install \
+	    DESTDIR=${DISTDIR}/${DISTRIBUTION}
 	${_+_}cd ${.CURDIR} ; ${MAKE} distribution DESTDIR=${DISTDIR}/${DISTRIBUTION}
 
 .include <bsd.endian.mk>
@@ -228,11 +235,12 @@ distribution:
 .endif
 	${_+_}cd ${.CURDIR}/defaults; ${MAKE} install
 	${_+_}cd ${.CURDIR}/devd; ${MAKE} install
+.if ${MK_DMAGENT} != "no"
+	${_+_}cd ${.CURDIR}/dma; ${MAKE} install
+.endif
 	${_+_}cd ${.CURDIR}/gss; ${MAKE} install
 	${_+_}cd ${.CURDIR}/periodic; ${MAKE} install
-.if ${MK_PKGBOOTSTRAP} != "no"
 	${_+_}cd ${.CURDIR}/pkg; ${MAKE} install
-.endif
 	${_+_}cd ${.CURDIR}/rc.d; ${MAKE} install
 	${_+_}cd ${.CURDIR}/../gnu/usr.bin/send-pr; ${MAKE} etc-gnats-freefall
 	${_+_}cd ${.CURDIR}/../share/termcap; ${MAKE} etc-termcap

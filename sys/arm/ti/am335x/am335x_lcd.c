@@ -223,7 +223,7 @@ am335x_lcd_sysctl_backlight(SYSCTL_HANDLER_ARGS)
 	int error;
 	int backlight;
        
-	backlight = sc->sc_backlight;;
+	backlight = sc->sc_backlight;
 	error = sysctl_handle_int(oidp, &backlight, 0, req);
 
 	if (error != 0 || req->newptr == NULL)
@@ -403,6 +403,9 @@ static int
 am335x_lcd_probe(device_t dev)
 {
 	int err;
+
+	if (!ofw_bus_status_okay(dev))
+		return (ENXIO);
 
 	if (!ofw_bus_is_compatible(dev, "ti,am335x-lcd"))
 		return (ENXIO);

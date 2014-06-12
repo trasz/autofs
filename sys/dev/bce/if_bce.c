@@ -1,6 +1,5 @@
 /*-
- * Copyright (c) 2006-2010 Broadcom Corporation
- *	David Christensen <davidch@broadcom.com>.  All rights reserved.
+ * Copyright (c) 2006-2014 QLogic Corporation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -11,9 +10,6 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of Broadcom Corporation nor the name of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written consent.
  *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS'
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -154,13 +150,13 @@ static const struct bce_type bce_devs[] = {
 	{ BRCM_VENDORID, BRCM_DEVICEID_BCM5706,  HP_VENDORID, 0x1709,
 		"HP NC371i Multifunction Gigabit Server Adapter" },
 	{ BRCM_VENDORID, BRCM_DEVICEID_BCM5706,  PCI_ANY_ID,  PCI_ANY_ID,
-		"Broadcom NetXtreme II BCM5706 1000Base-T" },
+		"QLogic NetXtreme II BCM5706 1000Base-T" },
 
 	/* BCM5706S controllers and OEM boards. */
 	{ BRCM_VENDORID, BRCM_DEVICEID_BCM5706S, HP_VENDORID, 0x3102,
 		"HP NC370F Multifunction Gigabit Server Adapter" },
 	{ BRCM_VENDORID, BRCM_DEVICEID_BCM5706S, PCI_ANY_ID,  PCI_ANY_ID,
-		"Broadcom NetXtreme II BCM5706 1000Base-SX" },
+		"QLogic NetXtreme II BCM5706 1000Base-SX" },
 
 	/* BCM5708C controllers and OEM boards. */
 	{ BRCM_VENDORID, BRCM_DEVICEID_BCM5708,  HP_VENDORID, 0x7037,
@@ -170,7 +166,7 @@ static const struct bce_type bce_devs[] = {
 	{ BRCM_VENDORID, BRCM_DEVICEID_BCM5708,  HP_VENDORID, 0x7045,
 		"HP NC374m PCIe Multifunction Adapter" },
 	{ BRCM_VENDORID, BRCM_DEVICEID_BCM5708,  PCI_ANY_ID,  PCI_ANY_ID,
-		"Broadcom NetXtreme II BCM5708 1000Base-T" },
+		"QLogic NetXtreme II BCM5708 1000Base-T" },
 
 	/* BCM5708S controllers and OEM boards. */
 	{ BRCM_VENDORID, BRCM_DEVICEID_BCM5708S,  HP_VENDORID, 0x1706,
@@ -180,7 +176,7 @@ static const struct bce_type bce_devs[] = {
 	{ BRCM_VENDORID, BRCM_DEVICEID_BCM5708S,  HP_VENDORID, 0x703d,
 		"HP NC373F PCIe Multifunc Giga Server Adapter" },
 	{ BRCM_VENDORID, BRCM_DEVICEID_BCM5708S,  PCI_ANY_ID,  PCI_ANY_ID,
-		"Broadcom NetXtreme II BCM5708 1000Base-SX" },
+		"QLogic NetXtreme II BCM5708 1000Base-SX" },
 
 	/* BCM5709C controllers and OEM boards. */
 	{ BRCM_VENDORID, BRCM_DEVICEID_BCM5709,  HP_VENDORID, 0x7055,
@@ -188,7 +184,7 @@ static const struct bce_type bce_devs[] = {
 	{ BRCM_VENDORID, BRCM_DEVICEID_BCM5709,  HP_VENDORID, 0x7059,
 		"HP NC382T PCIe DP Multifunction Gigabit Server Adapter" },
 	{ BRCM_VENDORID, BRCM_DEVICEID_BCM5709,  PCI_ANY_ID,  PCI_ANY_ID,
-		"Broadcom NetXtreme II BCM5709 1000Base-T" },
+		"QLogic NetXtreme II BCM5709 1000Base-T" },
 
 	/* BCM5709S controllers and OEM boards. */
 	{ BRCM_VENDORID, BRCM_DEVICEID_BCM5709S,  HP_VENDORID, 0x171d,
@@ -196,11 +192,11 @@ static const struct bce_type bce_devs[] = {
 	{ BRCM_VENDORID, BRCM_DEVICEID_BCM5709S,  HP_VENDORID, 0x7056,
 		"HP NC382i DP Multifunction Gigabit Server Adapter" },
 	{ BRCM_VENDORID, BRCM_DEVICEID_BCM5709S,  PCI_ANY_ID,  PCI_ANY_ID,
-		"Broadcom NetXtreme II BCM5709 1000Base-SX" },
+		"QLogic NetXtreme II BCM5709 1000Base-SX" },
 
 	/* BCM5716 controllers and OEM boards. */
 	{ BRCM_VENDORID, BRCM_DEVICEID_BCM5716,  PCI_ANY_ID,  PCI_ANY_ID,
-		"Broadcom NetXtreme II BCM5716 1000Base-T" },
+		"QLogic NetXtreme II BCM5716 1000Base-T" },
 
 	{ 0, 0, 0, 0, NULL }
 };
@@ -3255,21 +3251,19 @@ bce_dma_free(struct bce_softc *sc)
 	DBENTER(BCE_VERBOSE_RESET | BCE_VERBOSE_UNLOAD | BCE_VERBOSE_CTX);
 
 	/* Free, unmap, and destroy the status block. */
+	if (sc->status_block_paddr != 0) {
+		bus_dmamap_unload(
+		    sc->status_tag,
+		    sc->status_map);
+		sc->status_block_paddr = 0;
+	}
+
 	if (sc->status_block != NULL) {
 		bus_dmamem_free(
 		   sc->status_tag,
 		    sc->status_block,
 		    sc->status_map);
 		sc->status_block = NULL;
-	}
-
-	if (sc->status_map != NULL) {
-		bus_dmamap_unload(
-		    sc->status_tag,
-		    sc->status_map);
-		bus_dmamap_destroy(sc->status_tag,
-		    sc->status_map);
-		sc->status_map = NULL;
 	}
 
 	if (sc->status_tag != NULL) {
@@ -3279,21 +3273,19 @@ bce_dma_free(struct bce_softc *sc)
 
 
 	/* Free, unmap, and destroy the statistics block. */
+	if (sc->stats_block_paddr != 0) {
+		bus_dmamap_unload(
+		    sc->stats_tag,
+		    sc->stats_map);
+		sc->stats_block_paddr = 0;
+	}
+
 	if (sc->stats_block != NULL) {
 		bus_dmamem_free(
 		    sc->stats_tag,
 		    sc->stats_block,
 		    sc->stats_map);
 		sc->stats_block = NULL;
-	}
-
-	if (sc->stats_map != NULL) {
-		bus_dmamap_unload(
-		    sc->stats_tag,
-		    sc->stats_map);
-		bus_dmamap_destroy(sc->stats_tag,
-		    sc->stats_map);
-		sc->stats_map = NULL;
 	}
 
 	if (sc->stats_tag != NULL) {
@@ -3305,22 +3297,19 @@ bce_dma_free(struct bce_softc *sc)
 	/* Free, unmap and destroy all context memory pages. */
 	if (BCE_CHIP_NUM(sc) == BCE_CHIP_NUM_5709) {
 		for (i = 0; i < sc->ctx_pages; i++ ) {
+			if (sc->ctx_paddr[i] != 0) {
+				bus_dmamap_unload(
+				    sc->ctx_tag,
+				    sc->ctx_map[i]);
+				sc->ctx_paddr[i] = 0;
+			}
+
 			if (sc->ctx_block[i] != NULL) {
 				bus_dmamem_free(
 				    sc->ctx_tag,
 				    sc->ctx_block[i],
 				    sc->ctx_map[i]);
 				sc->ctx_block[i] = NULL;
-			}
-
-			if (sc->ctx_map[i] != NULL) {
-				bus_dmamap_unload(
-				    sc->ctx_tag,
-				    sc->ctx_map[i]);
-				bus_dmamap_destroy(
-				    sc->ctx_tag,
-				    sc->ctx_map[i]);
-				sc->ctx_map[i] = NULL;
 			}
 		}
 
@@ -3334,22 +3323,19 @@ bce_dma_free(struct bce_softc *sc)
 
 	/* Free, unmap and destroy all TX buffer descriptor chain pages. */
 	for (i = 0; i < sc->tx_pages; i++ ) {
+		if (sc->tx_bd_chain_paddr[i] != 0) {
+			bus_dmamap_unload(
+			    sc->tx_bd_chain_tag,
+			    sc->tx_bd_chain_map[i]);
+			sc->tx_bd_chain_paddr[i] = 0;
+		}
+
 		if (sc->tx_bd_chain[i] != NULL) {
 			bus_dmamem_free(
 			    sc->tx_bd_chain_tag,
 			    sc->tx_bd_chain[i],
 			    sc->tx_bd_chain_map[i]);
 			sc->tx_bd_chain[i] = NULL;
-		}
-
-		if (sc->tx_bd_chain_map[i] != NULL) {
-			bus_dmamap_unload(
-			    sc->tx_bd_chain_tag,
-			    sc->tx_bd_chain_map[i]);
-			bus_dmamap_destroy(
-			    sc->tx_bd_chain_tag,
-			    sc->tx_bd_chain_map[i]);
-			sc->tx_bd_chain_map[i] = NULL;
 		}
 	}
 
@@ -3362,22 +3348,19 @@ bce_dma_free(struct bce_softc *sc)
 
 	/* Free, unmap and destroy all RX buffer descriptor chain pages. */
 	for (i = 0; i < sc->rx_pages; i++ ) {
+		if (sc->rx_bd_chain_paddr[i] != 0) {
+			bus_dmamap_unload(
+			    sc->rx_bd_chain_tag,
+			    sc->rx_bd_chain_map[i]);
+			sc->rx_bd_chain_paddr[i] = 0;
+		}
+
 		if (sc->rx_bd_chain[i] != NULL) {
 			bus_dmamem_free(
 			    sc->rx_bd_chain_tag,
 			    sc->rx_bd_chain[i],
 			    sc->rx_bd_chain_map[i]);
 			sc->rx_bd_chain[i] = NULL;
-		}
-
-		if (sc->rx_bd_chain_map[i] != NULL) {
-			bus_dmamap_unload(
-			    sc->rx_bd_chain_tag,
-			    sc->rx_bd_chain_map[i]);
-			bus_dmamap_destroy(
-			    sc->rx_bd_chain_tag,
-			    sc->rx_bd_chain_map[i]);
-			sc->rx_bd_chain_map[i] = NULL;
 		}
 	}
 
@@ -3391,22 +3374,19 @@ bce_dma_free(struct bce_softc *sc)
 	/* Free, unmap and destroy all page buffer descriptor chain pages. */
 	if (bce_hdr_split == TRUE) {
 		for (i = 0; i < sc->pg_pages; i++ ) {
+			if (sc->pg_bd_chain_paddr[i] != 0) {
+				bus_dmamap_unload(
+				    sc->pg_bd_chain_tag,
+				    sc->pg_bd_chain_map[i]);
+				sc->pg_bd_chain_paddr[i] = 0;
+			}
+
 			if (sc->pg_bd_chain[i] != NULL) {
 				bus_dmamem_free(
 				    sc->pg_bd_chain_tag,
 				    sc->pg_bd_chain[i],
 				    sc->pg_bd_chain_map[i]);
 				sc->pg_bd_chain[i] = NULL;
-			}
-
-			if (sc->pg_bd_chain_map[i] != NULL) {
-				bus_dmamap_unload(
-				    sc->pg_bd_chain_tag,
-				    sc->pg_bd_chain_map[i]);
-				bus_dmamap_destroy(
-				    sc->pg_bd_chain_tag,
-				    sc->pg_bd_chain_map[i]);
-				sc->pg_bd_chain_map[i] = NULL;
 			}
 		}
 

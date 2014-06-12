@@ -45,6 +45,7 @@ extern int	noutputs;	/* how much outputs before we exit */
 extern int	numeric_addr;	/* show addresses numerically */
 extern int	numeric_port;	/* show ports numerically */
 extern int	rflag;	/* show routing tables (or routing stats) */
+extern int	Rflag;	/* show flowid / RSS information */
 extern int	sflag;	/* show protocol statistics */
 extern int	Tflag;  /* show TCP control block info */
 extern int	Wflag;	/* wide display */
@@ -60,6 +61,7 @@ extern int	live;	/* true if we are examining a live system */
 
 struct nlist;
 int	kread(u_long addr, void *buf, size_t size);
+uint64_t kread_counter(u_long addr);
 int	kread_counters(u_long addr, void *buf, size_t size);
 int	kresolve_list(struct nlist *);
 const char *plural(uintmax_t);
@@ -125,31 +127,17 @@ void	intpr(int, void (*)(char *), int);
 void	pr_rthdr(int);
 void	pr_family(int);
 void	rt_stats(void);
-char	*ipx_pnet(struct sockaddr *);
-char	*ipx_phost(struct sockaddr *);
-char	*ns_phost(struct sockaddr *);
-void	upHex(char *);
+void	flowtable_stats(void);
 
 char	*routename(in_addr_t);
 char	*netname(in_addr_t, in_addr_t);
-char	*atalk_print(struct sockaddr *, int);
-char	*atalk_print2(struct sockaddr *, struct sockaddr *, int);
-char	*ipx_print(struct sockaddr *);
 char	*ns_print(struct sockaddr *);
 void	routepr(int, int);
-
-void	ipxprotopr(u_long, const char *, int, int);
-void	spx_stats(u_long, const char *, int, int);
-void	ipx_stats(u_long, const char *, int, int);
-void	ipxerr_stats(u_long, const char *, int, int);
 
 void	nsprotopr(u_long, const char *, int, int);
 void	spp_stats(u_long, const char *, int, int);
 void	idp_stats(u_long, const char *, int, int);
 void	nserr_stats(u_long, const char *, int, int);
-
-void	atalkprotopr(u_long, const char *, int, int);
-void	ddp_stats(u_long, const char *, int, int);
 
 #ifdef NETGRAPH
 void	netgraphprotopr(u_long, const char *, int, int);

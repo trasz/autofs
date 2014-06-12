@@ -135,7 +135,7 @@ struct pkthdr {
 	uint8_t		 l4hlen;	/* layer 4 header length */
 	uint8_t		 l5hlen;	/* layer 5 header length */
 	union {
-		uint8_t  eigth[8];
+		uint8_t  eight[8];
 		uint16_t sixteen[4];
 		uint32_t thirtytwo[2];
 		uint64_t sixtyfour[1];
@@ -145,7 +145,7 @@ struct pkthdr {
 
 	/* Layer specific non-persistent local storage for reassembly, etc. */
 	union {
-		uint8_t  eigth[8];
+		uint8_t  eight[8];
 		uint16_t sixteen[4];
 		uint32_t thirtytwo[2];
 		uint64_t sixtyfour[1];
@@ -159,6 +159,7 @@ struct pkthdr {
 #define	tso_segsz	PH_per.sixteen[1]
 #define	csum_phsum	PH_per.sixteen[2]
 #define	csum_data	PH_per.thirtytwo[1]
+#define	pkt_tcphdr	PH_loc.ptr
 
 /*
  * Description of external storage mapped into mbuf; valid only if M_EXT is
@@ -531,7 +532,7 @@ m_gettype(int size)
 		type = EXT_JUMBO16;
 		break;
 	default:
-		panic("%s: invalid cluster size", __func__);
+		panic("%s: invalid cluster size %d", __func__, size);
 	}
 
 	return (type);
@@ -580,7 +581,7 @@ m_getzone(int size)
 		zone = zone_jumbo16;
 		break;
 	default:
-		panic("%s: invalid cluster size", __func__);
+		panic("%s: invalid cluster size %d", __func__, size);
 	}
 
 	return (zone);
@@ -725,7 +726,7 @@ m_cljset(struct mbuf *m, void *cl, int type)
 		zone = zone_jumbo16;
 		break;
 	default:
-		panic("%s: unknown cluster type", __func__);
+		panic("%s: unknown cluster type %d", __func__, type);
 		break;
 	}
 
