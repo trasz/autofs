@@ -33,6 +33,7 @@
 #include <sys/systm.h>
 #include <sys/buf.h>
 #include <sys/conf.h>
+#include <sys/ioccom.h>
 #include <sys/kernel.h>
 #include <sys/module.h>
 #include <sys/mount.h>
@@ -41,38 +42,18 @@
 #include <sys/vnode.h>
 
 #include "autofs.h"
-#include "autofs_ioctl.h"
-
-MALLOC_DEFINE(M_AUTOFS, "autofs", "Automounter filesystem");
 
 static const char *autofs_opts[] = {
-	"from", NULL
+	"from", "master_options", NULL
 };
 
-static int	autofs_ioctl(struct cdev *dev, u_long cmd, caddr_t arg,
-		    int mode, struct thread *td);
-
-static struct cdevsw autofs_cdevsw = {
-     .d_version = D_VERSION,
-     .d_ioctl   = autofs_ioctl,
-     .d_name    = "autofs",
-};
-
-static struct autofs_softc	*sc;
-
-SYSCTL_NODE(_vfs, OID_AUTO, autofs, CTLFLAG_RD, 0, "Automounter filesystem");
-int autofs_debug = 2;
-TUNABLE_INT("vfs.autofs.debug", &autofs_debug);
-SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_debug, CTLFLAG_RW,
-    &autofs_debug, 2, "Enable debug messages");
-
-int	autofs_rootvp(struct mount *mp, struct vnode **vpp);
+extern struct autofs_softc	*sc;
 
 static int
 autofs_mount(struct mount *mp)
 {
 	struct autofs_mount *amp;
-	char *from, *fspath;
+	char *from, *fspath, *options;
 	int error;
 
 	if (vfs_filteropt(mp->mnt_optnew, autofs_opts))
@@ -87,14 +68,24 @@ autofs_mount(struct mount *mp)
 	if (vfs_getopt(mp->mnt_optnew, "fspath", (void **)&fspath, NULL))
 		return (EINVAL);
 
+	if (vfs_getopt(mp->mnt_optnew, "master_options", (void **)&options, NULL))
+		options = NULL;
+
 	amp = malloc(sizeof(*amp), M_AUTOFS, M_WAITOK | M_ZERO);
 	mp->mnt_data = amp;
 	amp->am_softc = sc;
-	amp->am_path = strdup(fspath, M_AUTOFS);
-	cv_init(&amp->am_cv, "autofs_cv");
-	mtx_init(&amp->am_lock, "autofs_lock", NULL, MTX_DEF);
+	strlcpy(amp->am_from, from, sizeof(amp->am_from));
+	strlcpy(amp->am_mountpoint, fspath, sizeof(amp->am_mountpoint));
+	if (options != NULL)
+		strlcpy(amp->am_options, options, sizeof(amp->am_options));
+	else
+		amp->am_options[0] = '\0';
+	mtx_init(&amp->am_lock, "autofs_mtx", NULL, MTX_DEF);
+	amp->am_last_fileno = 1;
 
-	error = autofs_rootvp(mp, &amp->am_rootvp);
+	vfs_getnewfsid(mp);
+
+	error = autofs_new_vnode(NULL, ".", -1, mp, &amp->am_rootvp);
 	if (error != 0) {
 		/* XXX */
 		return (error);
@@ -166,86 +157,6 @@ autofs_statfs(struct mount *mp, struct statfs *sbp)
 	sbp->f_ffree = 0;
 
 	return (0);
-}
-
-static int
-autofs_init(struct vfsconf *vfsp)
-{
-	int error;
-
-	sc = malloc(sizeof(*sc), M_AUTOFS, M_WAITOK | M_ZERO);
-
-	error = make_dev_p(MAKEDEV_CHECKNAME, &sc->sc_cdev, &autofs_cdevsw,
-	    NULL, UID_ROOT, GID_WHEEL, 0600, "autofs");
-	if (error != 0) {
-		AUTOFS_WARN("failed to create device node, error %d", error);
-		return (error);
-	}
-	sc->sc_cdev->si_drv1 = sc;
-
-	TAILQ_INIT(&sc->sc_mounts);
-	TAILQ_INIT(&sc->sc_requests);
-	cv_init(&sc->sc_cv, "autofs_cv");
-	sx_init(&sc->sc_lock, "autofs_lock");
-
-	return (0);
-}
-
-static int
-autofs_uninit(struct vfsconf *vfsp)
-{
-
-	if (sc->sc_cdev != NULL) {
-		AUTOFS_DEBUG("removing device node");
-		destroy_dev(sc->sc_cdev);
-		AUTOFS_DEBUG("device node removed");
-	}
-
-	free(sc, M_AUTOFS);
-	return (0);
-}
-
-static int
-autofs_ioctl_request(struct autofs_softc *sc, struct autofs_daemon_request *adr)
-{
-	struct autofs_request *ar;
-	int error;
-
-	sx_slock(&sc->sc_lock);
-	for (;;) {
-		ar = TAILQ_FIRST(&sc->sc_requests);
-		if (ar == NULL) {
-			error = cv_wait_sig(&sc->sc_cv, &sc->sc_lock);
-			if (error != 0) {
-				sx_sunlock(&sc->sc_lock);
-
-				return (error);
-			}
-			continue;
-		}
-		TAILQ_REMOVE(&sc->sc_requests, ar, ar_next);
-
-		strlcpy(adr->adr_path, ar->ar_path, sizeof(adr->adr_path));
-		sx_sunlock(&sc->sc_lock);
-
-		return (0);
-	}
-}
-
-static int
-autofs_ioctl(struct cdev *dev, u_long cmd, caddr_t arg, int mode,
-    struct thread *td)
-{
-	struct autofs_softc *sc;
-
-	sc = dev->si_drv1;
-
-	switch (cmd) {
-	case AUTOFSREQUEST:
-		return (autofs_ioctl_request(sc, (struct autofs_daemon_request *)arg));
-	default:
-		return (EINVAL);
-	}
 }
 
 static struct vfsops autofs_vfsops = {

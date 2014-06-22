@@ -29,12 +29,18 @@
  * $FreeBSD$
  */
 
+#ifndef AUTOFS_H
+#define	AUTOFS_H
+
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
 #define VFSTOAUTOFS(mp)    ((struct autofs_mount *)((mp)->mnt_data))
 
 MALLOC_DECLARE(M_AUTOFS);
+
+extern uma_zone_t autofs_request_zone;
+extern uma_zone_t autofs_node_zone;
 
 extern int autofs_debug;
 
@@ -53,20 +59,40 @@ extern int autofs_debug;
 #define AUTOFS_UNLOCK(X)	mtx_unlock(&X->am_lock)
 #define AUTOFS_LOCK_ASSERT(X)	mtx_assert(&X->am_lock, MA_OWNED)
 
+struct autofs_node {
+	TAILQ_ENTRY(autofs_node)	an_next;
+	char				*an_name;
+	int				an_fileno;
+	struct autofs_node		*an_parent;
+	TAILQ_HEAD(, autofs_node)	an_children;
+	struct vnode			*an_vnode;
+	bool				an_trigger;
+	struct timespec			an_ctime;
+};
+
 struct autofs_mount {
 	TAILQ_ENTRY(autofs_mount)	am_next;
 	struct autofs_softc		*am_softc;
 	struct vnode			*am_rootvp;
 	struct mtx			am_lock;
-	struct cv			am_cv;
-	char				*am_path;
-	bool				am_waiting;
+	char				am_from[MAXPATHLEN];
+	char				am_mountpoint[MAXPATHLEN];
+	char				am_options[MAXPATHLEN];
+	int				am_last_fileno;
+	int				am_last_request_id;
 };
 
 struct autofs_request {
 	TAILQ_ENTRY(autofs_request)	ar_next;
 	struct autofs_softc		*ar_softc;
+	int				ar_id;
+	bool				ar_done;
+	bool				ar_in_progress;
+	char				ar_from[MAXPATHLEN];
+	char				ar_mountpoint[MAXPATHLEN];
 	char				ar_path[MAXPATHLEN];
+	char				ar_options[MAXPATHLEN];
+	volatile u_int			ar_refcount;
 };
 
 struct autofs_softc {
@@ -76,5 +102,24 @@ struct autofs_softc {
 	struct sx			sc_lock;
 	TAILQ_HEAD(, autofs_mount)	sc_mounts;
 	TAILQ_HEAD(, autofs_request)	sc_requests;
+	pid_t				sc_dev_pid;
+	bool				sc_dev_opened;
 };
 
+/*
+ * Limits and constants
+ */
+#define AUTOFS_NAMELEN		24
+#define AUTOFS_FSNAMELEN	16	/* equal to MFSNAMELEN */
+#define AUTOFS_DELEN		(8 + AUTOFS_NAMELEN)
+
+bool	autofs_ignore_thread(const struct thread *td);
+int	autofs_init(struct vfsconf *vfsp);
+int	autofs_uninit(struct vfsconf *vfsp);
+int	autofs_new_vnode(struct autofs_node *parent, const char *name,
+	    int namelen, struct mount *mp, struct vnode **vpp);
+int	autofs_find_vnode(struct autofs_node *parent, const char *name,
+	    int namelen, struct vnode **vpp);
+int	autofs_delete_vnode(struct autofs_node *parent, struct vnode *vp);
+
+#endif /* !AUTOFS_H */

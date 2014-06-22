@@ -35,6 +35,7 @@
 #define	AUTOFS_PATH		"/dev/autofs"
 
 struct autofs_daemon_request {
+	int		adr_id;
 	char		adr_from[MAXPATHLEN];
 	char		adr_mountpoint[MAXPATHLEN];
 	char		adr_path[MAXPATHLEN];
@@ -42,7 +43,7 @@ struct autofs_daemon_request {
 };
 
 struct autofs_daemon_done {
-	char		add_mountpoint[MAXPATHLEN];
+	int		add_id;
 };
 
 #define	AUTOFSREQUEST	_IOR('I', 0x01, struct autofs_daemon_request)
