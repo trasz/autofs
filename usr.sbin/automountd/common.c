@@ -81,6 +81,42 @@ checked_strdup(const char *s)
 }
 
 /*
+ * Take two pointers to strings, concatenate the contents with "/" in the
+ * middle, make the first pointer point to the result, the second pointer
+ * to NULL, and free the old strings.
+ *
+ * Concatenate pathnames, basically.
+ */
+static void
+concat(char **p1, char **p2)
+{
+	int ret;
+	char *path;
+
+	assert(p1 != NULL);
+	assert(p2 != NULL);
+
+	if (*p1 == NULL)
+		*p1 = checked_strdup("");
+
+	if (*p2 == NULL)
+		*p2 = checked_strdup("");
+
+	ret = asprintf(&path, "%s/%s", *p1, *p2);
+	if (ret < 0)
+		log_err(1, "asprintf");
+
+	/*
+	 * XXX
+	 */
+	//free(*p1);
+	//free(*p2);
+
+	*p1 = path;
+	*p2 = NULL;
+}
+
+/*
  * Concatenate two strings, inserting separator between them, unless not needed.
  */
 char *
@@ -88,6 +124,9 @@ separated_concat(const char *s1, const char *s2, char separator)
 {
 	char *result;
 	int ret;
+
+	assert(s1 != NULL);
+	assert(s2 != NULL);
 
 	if (s1[0] == '\0' || s2[0] == '\0' ||
 	    s1[strlen(s1) - 1] == separator || s2[0] == separator) {
@@ -98,9 +137,45 @@ separated_concat(const char *s1, const char *s2, char separator)
 	if (ret < 0)
 		log_err(1, "asprintf");
 
+	//log_debugx("separated_concat: got %s and %s, returning %s", s1, s2, result);
+
 	return (result);
 }
 
+void
+create_directory(const char *path)
+{
+	char *component, *copy, *tofree, *partial;
+	int error;
+
+	assert(path[0] == '/');
+
+	/*
+	 * +1 to skip the leading slash.
+	 */
+	copy = tofree = checked_strdup(path + 1);
+
+	partial = NULL;
+	for (;;) {
+		component = strsep(&copy, "/");
+		if (component == NULL)
+			break;
+		concat(&partial, &component);
+		//log_debugx("checking \"%s\" for existence", partial);
+		error = access(partial, F_OK);
+		if (error == 0)
+			continue;
+		if (errno != ENOENT)
+			log_err(1, "cannot access %s", partial);
+		log_debugx("directory \"%s\" does not exist, creating",
+		    partial);
+		error = mkdir(partial, 0755);
+		if (error != 0)
+			log_err(1, "cannot create %s", partial);
+	}
+
+	free(tofree);
+}
 
 struct node *
 node_new_root(void)
@@ -112,6 +187,7 @@ node_new_root(void)
 		log_err(1, "calloc");
 	// XXX
 	n->n_key = checked_strdup("/");
+	n->n_options = checked_strdup("");
 
 	TAILQ_INIT(&n->n_children);
 
@@ -129,12 +205,19 @@ node_new(struct node *parent, char *key, char *options, char *location,
 		log_err(1, "calloc");
 
 	TAILQ_INIT(&n->n_children);
+	assert(key != NULL);
 	n->n_key = key;
-	n->n_options = options;
+	if (options != NULL)
+		n->n_options = options;
+	else
+		n->n_options = strdup("");
 	n->n_location = location;
+	assert(config_file != NULL);
 	n->n_config_file = config_file;
+	assert(config_line >= 0);
 	n->n_config_line = config_line;
 
+	assert(parent != NULL);
 	n->n_parent = parent;
 	TAILQ_INSERT_TAIL(&parent->n_children, n, n_next);
 
@@ -145,6 +228,8 @@ static void
 node_delete(struct node *n)
 {
 	struct node *n2, *tmp;
+
+	assert (n != NULL);
 
 	TAILQ_FOREACH_SAFE(n2, &n->n_children, n_next, tmp)
 		node_delete(n2);
@@ -369,7 +454,7 @@ node_expand_maps(struct node *n, bool indirect)
 			log_debugx("map \"%s\" is a direct map, parsing",
 			    n2->n_location);
 		}
-		parse_map(n2, n2->n_location);
+		parse_map(n2, n2->n_location, NULL);
 	}
 }
 
@@ -468,28 +553,35 @@ node_print(const struct node *n)
 }
 
 struct node *
-node_find(struct node *root, const char *mountpoint)
+node_find(struct node *node, const char *mountpoint)
 {
-	struct node *n, *n2;
+	struct node *child, *found;
 	char *tmp;
 
-	if (strcmp(root->n_key, "*") == 0)
-		return (root);
+	//log_debugx("looking up %s in %s", mountpoint, node->n_key);
 
-	tmp = node_mountpoint(root);
-	if (strcmp(tmp, mountpoint) == 0) {
+	if (strcmp(node->n_key, "*") == 0)
+		return (node);
+
+#if 0
+	if (strcmp(node->n_key, "/") == 0 && TAILQ_EMPTY(node->n_children))
+		return (node);
+#endif
+
+	tmp = node_mountpoint(node);
+	if (strncmp(tmp, mountpoint, strlen(tmp)) != 0) {
 		free(tmp);
-		return (root);
+		return (NULL);
 	}
 	free(tmp);
 
-	TAILQ_FOREACH(n, &root->n_children, n_next) {
-		n2 = node_find(n, mountpoint);
-		if (n2 != NULL)
-			return (n2);
+	TAILQ_FOREACH(child, &node->n_children, n_next) {
+		found = node_find(child, mountpoint);
+		if (found != NULL)
+			return (found);
 	}
 
-	return (NULL);
+	return (node);
 }
 
 /*
@@ -621,7 +713,7 @@ file_is_executable(const char *path)
 }
 
 void
-parse_map(struct node *parent, const char *map)
+parse_map(struct node *parent, const char *map, const char *args)
 {
 	char *path = NULL;
 	int error, ret;
@@ -678,7 +770,16 @@ parse_map(struct node *parent, const char *map)
 			log_debugx("map \"%s\" is executable", map);
 	}
 
-	if (executable) {
+	if (executable && args == NULL) {
+		log_debugx("ignoring map due to forced -nobrowse");
+	} else if (executable) {
+		if (args != NULL) {
+			ret = asprintf(&path, "%s %s", path, args);
+			if (ret < 0)
+				log_err(1, "asprintf");
+			log_debugx("will execute \"%s\"", path);
+
+		}
 		yyin = popen(path, "r");
 		if (yyin == NULL)
 			log_err(1, "unable to execute \"%s\"", path);
@@ -696,9 +797,19 @@ parse_map(struct node *parent, const char *map)
 	 */
 	lineno = 1;
 
-	parse_map_yyin(parent, map);
+	if (executable && args == NULL) {
+		/*
+		 * XXX
+		 */
+	} else {
+		parse_map_yyin(parent, map);
+	}
 
-	if (executable) {
+	if (executable && args == NULL) {
+		/*
+		 * XXX
+		 */
+	} else if (executable) {
 		error = pclose(yyin);
 		if (error != 0) {
 			log_errx(1, "execution of dynamic map \"%s\" failed",

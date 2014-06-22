@@ -92,82 +92,11 @@ find_statfs(const struct statfs *mntbuf, int nitems, const char *mountpoint)
 	return (NULL);
 }
 
-/*
- * Take two pointers to strings, concatenate the contents with "/" in the
- * middle, make the first pointer point to the result, the second pointer
- * to NULL, and free the old strings.
- *
- * Concatenate pathnames, basically.
- */
 static void
-concat(char **p1, char **p2)
-{
-	int ret;
-	char *path;
-
-	assert(p1 != NULL);
-	assert(p2 != NULL);
-
-	if (*p1 == NULL)
-		*p1 = checked_strdup("");
-
-	if (*p2 == NULL)
-		*p2 = checked_strdup("");
-
-	ret = asprintf(&path, "%s/%s", *p1, *p2);
-	if (ret < 0)
-		log_err(1, "asprintf");
-
-	/*
-	 * XXX
-	 */
-	//free(*p1);
-	//free(*p2);
-
-	*p1 = path;
-	*p2 = NULL;
-}
-
-static void
-create_directory(const char *path)
-{
-	char *component, *copy, *tofree, *partial;
-	int error;
-
-	assert(path[0] == '/');
-
-	/*
-	 * +1 to skip the leading slash.
-	 */
-	copy = tofree = checked_strdup(path + 1);
-
-	partial = NULL;
-	for (;;) {
-		component = strsep(&copy, "/");
-		if (component == NULL)
-			break;
-		concat(&partial, &component);
-		log_debugx("checking \"%s\" for existence", partial);
-		error = access(partial, F_OK);
-		if (error == 0)
-			continue;
-		if (errno != ENOENT)
-			log_err(1, "cannot access %s", partial);
-		log_debugx("directory \"%s\" does not exist, creating",
-		    partial);
-		error = mkdir(partial, 0755);
-		if (error != 0)
-			log_err(1, "cannot create %s", partial);
-	}
-
-	free(tofree);
-}
-
-static void
-mount_autofs(const char *from, const char *fspath, const char *opts)
+mount_autofs(const char *from, const char *fspath, const char *options)
 {
 	struct iovec *iov = NULL;
-	char errmsg[255], *option, *options, *tofree;
+	char errmsg[255];
 	int error, iovlen = 0;
 
 	create_directory(fspath);
@@ -180,20 +109,13 @@ mount_autofs(const char *from, const char *fspath, const char *opts)
 	build_iovec(&iov, &iovlen, "from", (void *)from, (size_t)-1);
 	build_iovec(&iov, &iovlen, "errmsg", errmsg, sizeof(errmsg));
 
-	if (opts != NULL) {
+	if (options != NULL) {
 		/*
 		 * Append the options defined in auto_master.  The autofs
 		 * will pass them to automountd(8), which will then append
 		 * them to options specified in the map.
 		 */
-		options = tofree = checked_strdup(opts);
-
-		while ((option = strsep(&options, ",")) != NULL) {
-			build_iovec(&iov, &iovlen,
-			    "master_option", option, sizeof(option));
-		}
-
-		free(tofree);
+		build_iovec(&iov, &iovlen, "master_options", (void *)options, (size_t)-1);
 	}
 
 	error = nmount(iov, iovlen, 0);

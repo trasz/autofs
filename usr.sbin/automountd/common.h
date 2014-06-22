@@ -70,6 +70,7 @@ void	log_debugx(const char *, ...) __printf0like(1, 2);
 
 char	*checked_strdup(const char *);
 char	*separated_concat(const char *s1, const char *s2, char separator);
+void	create_directory(const char *path);
 
 struct node	*node_new_root(void);
 struct node	*node_new(struct node *parent, char *key, char *options, char *location, const char *config_file, int config_line);
@@ -81,7 +82,7 @@ void	node_expand_defined(struct node *root);
 void	node_expand_indirect_maps(struct node *n);
 void	node_print(const struct node *n);
 void	parse_master(struct node *root, const char *path);
-void	parse_map(struct node *parent, const char *map);
+void	parse_map(struct node *parent, const char *map, const char *args);
 char	*defined_expand(const char *string);
 void	defined_init(void);
 void	defined_parse_and_add(char *def);

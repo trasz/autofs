@@ -65,13 +65,13 @@
 static int nchildren = 0;
 
 static void
-done(int autofs_fd, const char *mountpoint)
+done(int autofs_fd, int id)
 {
 	struct autofs_daemon_done done;
 	int error;
 
 	memset(&done, 0, sizeof(done));
-	strlcpy(done.add_mountpoint, mountpoint, sizeof(done.add_mountpoint));
+	done.add_id = id;
 
 	error = ioctl(autofs_fd, AUTOFSDONE, &done);
 	if (error != 0)
@@ -113,25 +113,40 @@ pick_fstype(char **optionsp)
 }
 
 static void
-handle_mount(int autofs_fd, const struct autofs_daemon_request *adr)
+create_subtree(struct node *node, const char *prefix)
+{
+	struct node *child;
+	char *mountpoint, *tmp;
+
+	tmp = node_mountpoint(node);
+	mountpoint = separated_concat(prefix, tmp, '/');
+	create_directory(mountpoint);
+	free(mountpoint);
+
+	TAILQ_FOREACH(child, &node->n_children, n_next)
+		create_subtree(child, prefix);
+}
+
+static void
+handle_request(int autofs_fd, const struct autofs_daemon_request *adr)
 {
 	const char *map;
 	struct node *root, *node;
 	FILE *f;
-	char *mount_cmd, *options, *fstype;
+	char *mount_cmd, *options, *fstype, *prefix;
 	int error, ret;
 
-	log_debugx("got mount request for %s on %s/%s",
+	log_debugx("got request for %s on %s/%s",
 	    adr->adr_from, adr->adr_mountpoint, adr->adr_path);
 
 	if (strncmp(adr->adr_from, "map ", 4) != 0) {
-		log_errx(1, "invalid mountfrom \"%s\"; failing mount",
+		log_errx(1, "invalid mountfrom \"%s\"; failing request",
 		    adr->adr_from);
 	}
 
 	map = adr->adr_from + 4; /* 4 for strlen("map "); */
 	root = node_new_root();
-	parse_map(root, map);
+	parse_map(root, map, adr->adr_path[0] != '\0' ? adr->adr_path : NULL);
 
 	log_debugx("searching for key for \"%s\" in map %s",
 	    adr->adr_mountpoint, map);
@@ -147,6 +162,20 @@ handle_mount(int autofs_fd, const struct autofs_daemon_request *adr)
 	 */
 	node_expand_ampersand(node, adr->adr_mountpoint);
 
+	if (node->n_location == NULL) {
+		/*
+		 * Not a mountpoint; create directories in the autofs mount
+		 * and complete request.
+		 */
+		prefix = separated_concat(adr->adr_mountpoint, adr->adr_path, '/');
+		create_subtree(node, prefix);
+		free(prefix);
+		done(autofs_fd, adr->adr_id);
+
+		log_debugx("nothing more to do; exiting");
+		exit(0);
+	}
+
 	/*
 	 * Given the entry "key -options [ mountpoint -options2 ] location",
 	 * the line below concatenates "-options2" (node->n_options) and
@@ -159,14 +188,22 @@ handle_mount(int autofs_fd, const struct autofs_daemon_request *adr)
 	 * Append options defined in auto_master, passed via autofs.
 	 */
 	options = separated_concat(options, adr->adr_options, ',');
-	fstype = pick_fstype(&options);
 
+	/*
+	 * Append "automounted".
+	 */
+	options = separated_concat(options, "automounted", ',');
+
+	/*
+	 * Figure out fstype.
+	 */
+	fstype = pick_fstype(&options);
 	if (fstype == NULL) {
 		log_debugx("fstype not specified; defaulting to \"nfs\"");
 		fstype = checked_strdup("nfs");
 	}
 
-	ret = asprintf(&mount_cmd, "mount -t %s %s %s %s", fstype, options,
+	ret = asprintf(&mount_cmd, "mount -t %s -o %s %s %s", fstype, options,
 	    node->n_location, adr->adr_mountpoint);
 	if (ret < 0)
 		log_err(1, "asprintf");
@@ -184,7 +221,7 @@ handle_mount(int autofs_fd, const struct autofs_daemon_request *adr)
 		log_errx(1, "failed to execute \"%s\"", mount_cmd);
 
 	log_debugx("mount done");
-	done(autofs_fd, adr->adr_mountpoint);
+	done(autofs_fd, adr->adr_id);
 
 	log_debugx("nothing more to do; exiting");
 	exit(0);
@@ -347,7 +384,7 @@ main_automountd(int argc, char **argv)
 		}
 
 		pidfile_close(pidfh);
-		handle_mount(autofs_fd, &request);
+		handle_request(autofs_fd, &request);
 	}
 
 	pidfile_close(pidfh);
