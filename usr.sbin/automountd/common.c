@@ -473,7 +473,7 @@ node_expand_indirect_maps(struct node *n)
 }
 
 static char *
-node_mountpoint_x(const struct node *n, char *x)
+node_path_x(const struct node *n, char *x)
 {
 	char *path;
 	size_t len;
@@ -502,23 +502,23 @@ node_mountpoint_x(const struct node *n, char *x)
 	if (path[len - 1] == '/')
 		path[len - 1] = '\0';
 
-	return (node_mountpoint_x(n->n_parent, path));
+	return (node_path_x(n->n_parent, path));
 }
 
 char *
-node_mountpoint(const struct node *n)
+node_path(const struct node *n)
 {
 
-	return (node_mountpoint_x(n, checked_strdup("")));
+	return (node_path_x(n, checked_strdup("")));
 }
 
 static void
 node_print_indent(const struct node *n, int indent)
 {
 	const struct node *n2, *first_child;
-	char *n_mountpoint;
+	char *n_path;
 
-	n_mountpoint = node_mountpoint(n);
+	n_path = node_path(n);
 	first_child = TAILQ_FIRST(&n->n_children);
 
 	/*
@@ -529,9 +529,9 @@ node_print_indent(const struct node *n, int indent)
 	 * take multiple lines.
 	 */
 	if (first_child == NULL || TAILQ_NEXT(first_child, n_next) != NULL ||
-	    strcmp(n_mountpoint, node_mountpoint(first_child)) != 0) {
+	    strcmp(n_path, node_path(first_child)) != 0) {
 		printf("%*.s%s    %s    %s\t# %s map %s at %s:%d\n", indent, "",
-		    n_mountpoint,
+		    n_path,
 		    n->n_options != NULL ? n->n_options : "",
 		    n->n_location != NULL ? n->n_location : "",
 		    node_is_direct_map(n) ? "direct" : "indirect",
@@ -553,12 +553,12 @@ node_print(const struct node *n)
 }
 
 struct node *
-node_find(struct node *node, const char *mountpoint)
+node_find(struct node *node, const char *path)
 {
 	struct node *child, *found;
 	char *tmp;
 
-	//log_debugx("looking up %s in %s", mountpoint, node->n_key);
+	//log_debugx("looking up %s in %s", path, node->n_key);
 
 	if (strcmp(node->n_key, "*") == 0)
 		return (node);
@@ -568,15 +568,15 @@ node_find(struct node *node, const char *mountpoint)
 		return (node);
 #endif
 
-	tmp = node_mountpoint(node);
-	if (strncmp(tmp, mountpoint, strlen(tmp)) != 0) {
+	tmp = node_path(node);
+	if (strncmp(tmp, path, strlen(tmp)) != 0) {
 		free(tmp);
 		return (NULL);
 	}
 	free(tmp);
 
 	TAILQ_FOREACH(child, &node->n_children, n_next) {
-		found = node_find(child, mountpoint);
+		found = node_find(child, path);
 		if (found != NULL)
 			return (found);
 	}

@@ -142,7 +142,7 @@ mount_if_not_already(const struct node *n, const char *location,
 	if (ret < 0)
 		log_err(1, "asprintf");
 
-	mountpoint = node_mountpoint(n);
+	mountpoint = node_path(n);
 	mount = find_statfs(mntbuf, nitems, mountpoint);
 	if (mount != NULL) {
 		if (strcmp(mount->f_fstypename, "autofs") != 0) {

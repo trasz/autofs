@@ -116,12 +116,12 @@ static void
 create_subtree(struct node *node, const char *prefix)
 {
 	struct node *child;
-	char *mountpoint, *tmp;
+	char *path, *tmp;
 
-	tmp = node_mountpoint(node);
-	mountpoint = separated_concat(prefix, tmp, '/');
-	create_directory(mountpoint);
-	free(mountpoint);
+	tmp = node_path(node);
+	path = separated_concat(prefix, tmp, '/');
+	create_directory(path);
+	free(path);
 
 	TAILQ_FOREACH(child, &node->n_children, n_next)
 		create_subtree(child, prefix);
