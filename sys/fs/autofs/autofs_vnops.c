@@ -198,12 +198,21 @@ mounted:
 		return (0);
 	}
 
+	error = vfs_busy(vp->v_mountedhere, 0);
+	if (error) {
+		AUTOFS_DEBUG("vfs_busy failed");
+		*newvp = NULL;
+		return (0);
+	}
+
 	error = VFS_ROOT(vp->v_mountedhere, lock_flags, newvp);
 	if (error != 0) {
+		vfs_unbusy(vp->v_mountedhere);
 		*newvp = NULL;
 		return (error);
 	}
 
+	vfs_unbusy(vp->v_mountedhere);
 	return (0);
 }
 
@@ -258,12 +267,15 @@ autofs_lookup(struct vop_lookup_args *ap)
 			 * be locked or not given the error and cnp flags,
 			 * just "copy" the lock status from vnode returned by
 			 * mounted filesystem's VOP_LOOKUP() to our own vnode.
+			 * Get rid of the new vnode after that.
 			 */
 			lock_flags = VOP_ISLOCKED(newvp);
-			if (lock_flags == 0)
+			if (lock_flags == 0) {
 				VOP_UNLOCK(dvp, 0);
-			else
-				VOP_UNLOCK(newvp, 0);
+				vrele(newvp);
+			} else {
+				vput(newvp);
+			}
 			//AUTOFS_DEBUG("VOP_LOOKUP done");
 			return (error);
 		}
