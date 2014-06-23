@@ -81,15 +81,6 @@ autofs_init(struct vfsconf *vfsp)
 
 	sc = malloc(sizeof(*sc), M_AUTOFS, M_WAITOK | M_ZERO);
 
-	error = make_dev_p(MAKEDEV_CHECKNAME, &sc->sc_cdev, &autofs_cdevsw,
-	    NULL, UID_ROOT, GID_WHEEL, 0600, "autofs");
-	if (error != 0) {
-		AUTOFS_WARN("failed to create device node, error %d", error);
-		free(sc, M_AUTOFS);
-		return (error);
-	}
-	sc->sc_cdev->si_drv1 = sc;
-
 	autofs_request_zone = uma_zcreate("autofs_request",
 	    sizeof(struct autofs_request), NULL, NULL, NULL, NULL,
 	    UMA_ALIGN_PTR, 0);
@@ -102,6 +93,15 @@ autofs_init(struct vfsconf *vfsp)
 	cv_init(&sc->sc_cv, "autofs_cv");
 	sx_init(&sc->sc_lock, "autofs_lock");
 
+	error = make_dev_p(MAKEDEV_CHECKNAME, &sc->sc_cdev, &autofs_cdevsw,
+	    NULL, UID_ROOT, GID_WHEEL, 0600, "autofs");
+	if (error != 0) {
+		AUTOFS_WARN("failed to create device node, error %d", error);
+		free(sc, M_AUTOFS);
+		return (error);
+	}
+	sc->sc_cdev->si_drv1 = sc;
+
 	return (0);
 }
 
@@ -109,6 +109,11 @@ int
 autofs_uninit(struct vfsconf *vfsp)
 {
 
+	sx_xlock(&sc->sc_lock);
+	if (sc->sc_dev_opened) {
+		sx_xunlock(&sc->sc_lock);
+		return (EBUSY);
+	}
 	if (sc->sc_cdev != NULL) {
 		//AUTOFS_DEBUG("removing device node");
 		destroy_dev(sc->sc_cdev);
@@ -118,7 +123,12 @@ autofs_uninit(struct vfsconf *vfsp)
 	uma_zdestroy(autofs_request_zone);
 	uma_zdestroy(autofs_node_zone);
 
+	sx_xunlock(&sc->sc_lock);
+	/*
+	 * XXX: Race with open?
+	 */
 	free(sc, M_AUTOFS);
+
 	return (0);
 }
 
@@ -216,13 +226,15 @@ static int
 autofs_open(struct cdev *dev, int flags, int fmt, struct thread *td)
 {
 
-	if (sc->sc_dev_opened)
+	sx_xlock(&sc->sc_lock);
+	if (sc->sc_dev_opened) {
+		sx_xunlock(&sc->sc_lock);
 		return (EBUSY);
+	}
 
 	sc->sc_dev_pid = td->td_proc->p_pid;
 	sc->sc_dev_opened = true;
-
-	//AUTOFS_DEBUG("open, pid %d", sc->sc_dev_pid);
+	sx_xunlock(&sc->sc_lock);
 
 	return (0);
 }
@@ -232,10 +244,10 @@ static int
 autofs_close(struct cdev *dev, int flag, int fmt, struct thread *td)
 {
 
+	sx_xlock(&sc->sc_lock);
 	KASSERT(sc->sc_dev_opened, ("not opened?"));
-
 	sc->sc_dev_opened = false;
-	//AUTOFS_DEBUG("last close");
+	sx_xunlock(&sc->sc_lock);
 
 	return (0);
 }
