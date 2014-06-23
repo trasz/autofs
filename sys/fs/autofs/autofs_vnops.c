@@ -89,22 +89,28 @@ autofs_getattr(struct vop_getattr_args *ap)
 	return (0);
 }
 
+/*
+ * Send request to automountd(8) and wait for completion.
+ */
 static int
-autofs_trigger(struct autofs_mount *amp, const char *path, int pathlen)
+autofs_trigger(struct autofs_node *anp, const char *path, int pathlen)
 {
-	struct autofs_softc *sc;
+	struct autofs_mount *amp = VFSTOAUTOFS(anp->an_vnode->v_mount);
+	struct autofs_softc *sc = amp->am_softc;
 	struct autofs_request *ar;
 	int error, last;
 
-	sc = amp->am_softc;
+	sx_assert(&sc->sc_lock, SA_XLOCKED);
 
-	sx_xlock(&sc->sc_lock);
 	TAILQ_FOREACH(ar, &sc->sc_requests, ar_next) {
+		AUTOFS_DEBUG("looking at %s %s:%s", ar->ar_from, ar->ar_mountpoint, ar->ar_path);
 		if (strcmp(ar->ar_from, amp->am_from) != 0)
 			continue;
 		if (strcmp(ar->ar_mountpoint, amp->am_mountpoint) != 0)
 			continue;
-		if (strncmp(ar->ar_path, path, pathlen) != 0)
+		if (strlen(ar->ar_path) != pathlen)
+			continue;
+		if (strcmp(ar->ar_path, path) != 0)
 			continue;
 
 		/*
@@ -145,25 +151,42 @@ autofs_trigger(struct autofs_mount *amp, const char *path, int pathlen)
 		TAILQ_REMOVE(&sc->sc_requests, ar, ar_next);
 		uma_zfree(autofs_request_zone, ar);
 	}
-	sx_xunlock(&sc->sc_lock);
 
 	AUTOFS_DEBUG("done");
 
 	return (error);
 }
 
+/*
+ * Unlock the vnode, request automountd(8) action, and then lock it back.
+ * If anything got mounted on top of the vnode, return the new filesystem's
+ * root vnode in 'newvp', locked.
+ */
 static int
 autofs_trigger_vn(struct vnode *vp, const char *path, int pathlen, struct vnode **newvp)
 {
+	struct autofs_node *anp = vp->v_data;
 	struct autofs_mount *amp = VFSTOAUTOFS(vp->v_mount);
+	struct autofs_softc *sc = amp->am_softc;
 	int error, lock_flags;
 
 	lock_flags = VOP_ISLOCKED(vp);
 	vhold(vp);
 	VOP_UNLOCK(vp, 0);
 
-	error = autofs_trigger(amp, path, pathlen);
+	sx_xlock(&sc->sc_lock);
 
+	/*
+	 * XXX: Workaround for mounting the same thing multiple times; revisit.
+	 */
+	if (vp->v_mountedhere != NULL) {
+		error = 0;
+		goto mounted;
+	}
+
+	error = autofs_trigger(anp, path, pathlen);
+mounted:
+	sx_xunlock(&sc->sc_lock);
 	vn_lock(vp, lock_flags | LK_RETRY);
 	vdrop(vp);
 
@@ -192,19 +215,19 @@ autofs_lookup(struct vop_lookup_args *ap)
 	struct vnode *newvp;
 	struct autofs_node *anp = dvp->v_data;
 	struct componentname *cnp = ap->a_cnp;
-	int error, ltype;
+	int error, lock_flags;
 
 	if (cnp->cn_flags & ISDOTDOT) {
 		//AUTOFS_DEBUG("..");
 		KASSERT(anp->an_parent != NULL, ("NULL parent"));
 		KASSERT(anp->an_parent->an_vnode != NULL, ("NULL parent vnode"));
-		ltype = VOP_ISLOCKED(dvp);
+		lock_flags = VOP_ISLOCKED(dvp);
 		vhold(dvp);
 		VOP_UNLOCK(dvp, 0);
 		vn_lock(anp->an_parent->an_vnode, LK_EXCLUSIVE | LK_RETRY);
 		VREF(anp->an_parent->an_vnode);
 		*vpp = anp->an_parent->an_vnode;
-		vn_lock(dvp, ltype | LK_RETRY);
+		vn_lock(dvp, lock_flags | LK_RETRY);
 		vdrop(dvp);
 
 		return (0);
@@ -221,16 +244,27 @@ autofs_lookup(struct vop_lookup_args *ap)
 	if (anp->an_trigger == true &&
 	    autofs_ignore_thread(cnp->cn_thread) == false) {
 		error = autofs_trigger_vn(dvp, cnp->cn_nameptr, cnp->cn_namelen, &newvp);
-		if (error != 0)
+		if (error != 0) {
+			//AUTOFS_DEBUG("autofs_trigger_vn failed");
 			return (error);
+		}
 
 		if (newvp != NULL) {
+			//AUTOFS_DEBUG("VOP_LOOKUP");
 			error = VOP_LOOKUP(newvp, ap->a_vpp, ap->a_cnp);
-			if ((error == 0 || error == EJUSTRETURN) &&
-			    ((cnp->cn_flags & LOCKPARENT) == 0 ||
-			    (cnp->cn_flags & ISLASTCN) == 0)) {
+
+			/*
+			 * Instead of figuring out whether our node should
+			 * be locked or not given the error and cnp flags,
+			 * just "copy" the lock status from vnode returned by
+			 * mounted filesystem's VOP_LOOKUP() to our own vnode.
+			 */
+			lock_flags = VOP_ISLOCKED(newvp);
+			if (lock_flags == 0)
 				VOP_UNLOCK(dvp, 0);
-			}
+			else
+				VOP_UNLOCK(newvp, 0);
+			//AUTOFS_DEBUG("VOP_LOOKUP done");
 			return (error);
 		}
 	}
