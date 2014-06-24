@@ -1,5 +1,5 @@
 # $FreeBSD$
 #
-# Automounter master map
+# Automounter master map, see auto_master(5) for details.
 #
-/net		-hosts		-nobrowse
+/net		-hosts		-nosuid
