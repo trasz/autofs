@@ -136,8 +136,9 @@ handle_request(int autofs_fd, const struct autofs_daemon_request *adr)
 	char *mount_cmd, *options, *fstype;
 	int error, ret;
 
-	log_debugx("got request: from %s, prefix %s, key %s, path %s",
-	    adr->adr_from, adr->adr_prefix, adr->adr_key, adr->adr_path);
+	log_debugx("got request: from %s, prefix %s, key %s, path %s, "
+	    "options %s", adr->adr_from, adr->adr_prefix, adr->adr_key,
+	    adr->adr_path, adr->adr_options);
 
 	if (strncmp(adr->adr_from, "map ", 4) != 0) {
 		log_errx(1, "invalid mountfrom \"%s\"; failing request",
@@ -177,18 +178,7 @@ handle_request(int autofs_fd, const struct autofs_daemon_request *adr)
 		exit(0);
 	}
 
-	/*
-	 * Given the entry "key -options [ mountpoint -options2 ] location",
-	 * the line below concatenates "-options2" (node->n_options) and
-	 * "-options" (node->n_parent->n_options).
-	 */
-	options = separated_concat(node->n_options,
-	    node->n_parent->n_options, ',');
-
-	/*
-	 * Append options defined in auto_master, passed via autofs.
-	 */
-	options = separated_concat(options, adr->adr_options, ',');
+	options = node_options(node);
 
 	/*
 	 * Append "automounted".

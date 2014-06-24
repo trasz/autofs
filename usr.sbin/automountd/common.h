@@ -79,6 +79,7 @@ struct node	*node_new_map(struct node *parent, char *key, char *options, char *m
 struct node	*node_find(struct node *root, const char *mountpoint);
 bool		node_is_direct_map(const struct node *n);
 char	*node_path(const struct node *n);
+char	*node_options(const struct node *n);
 void	node_expand_ampersand(struct node *root, const char *key);
 void	node_expand_defined(struct node *root);
 void	node_expand_indirect_maps(struct node *n);

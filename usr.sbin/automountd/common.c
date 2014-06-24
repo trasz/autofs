@@ -546,6 +546,25 @@ node_path(const struct node *n)
 	return (node_path_x(n, checked_strdup("")));
 }
 
+static char *
+node_options_x(const struct node *n, char *x)
+{
+	char *options;
+
+	options = separated_concat(x, n->n_options, ',');
+	if (n->n_parent == NULL)
+		return (options);
+
+	return (node_options_x(n->n_parent, options));
+}
+
+char *
+node_options(const struct node *n)
+{
+
+	return (node_options_x(n, checked_strdup("")));
+}
+
 static void
 node_print_indent(const struct node *n, int indent)
 {
@@ -672,7 +691,10 @@ parse_map_yyin(struct node *parent, const char *map, const char *executable_key)
 				log_errx(1, "duplicated options in %s, line %d",
 				    map, lineno);
 			}
-			options = checked_strdup(yytext);
+			/*
+			 * +1 to skip leading "-".
+			 */
+			options = checked_strdup(yytext + 1);
 			continue;
 		}
 
@@ -703,7 +725,7 @@ parse_map_yyin(struct node *parent, const char *map, const char *executable_key)
 					log_errx(1, "options out of order "
 					    "in %s, line %d", map, lineno);
 				}
-				options2 = checked_strdup(yytext);
+				options2 = checked_strdup(yytext + 1);
 				goto again;
 			}
 
@@ -894,7 +916,10 @@ parse_master_yyin(struct node *root, const char *master)
 		} else if (map == NULL) {
 			map = checked_strdup(yytext);
 		} else if (options == NULL) {
-			options = checked_strdup(yytext);
+			/*
+			 * +1 to skip leading "-".
+			 */
+			options = checked_strdup(yytext + 1);
 		} else {
 			log_errx(1, "too many arguments in %s, line %d",
 			    master, lineno);
