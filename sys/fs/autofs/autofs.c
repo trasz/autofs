@@ -190,11 +190,10 @@ autofs_ioctl_request(struct autofs_softc *sc, struct autofs_daemon_request *adr)
 
 	adr->adr_id = ar->ar_id;
 	strlcpy(adr->adr_from, ar->ar_from, sizeof(adr->adr_from));
-	strlcpy(adr->adr_mountpoint, ar->ar_mountpoint, sizeof(adr->adr_mountpoint));
-	strlcpy(adr->adr_key, ar->ar_key, sizeof(adr->adr_key));
 	strlcpy(adr->adr_path, ar->ar_path, sizeof(adr->adr_path));
-	strlcpy(adr->adr_options, ar->ar_options, sizeof(adr->adr_options));
 	strlcpy(adr->adr_prefix, ar->ar_prefix, sizeof(adr->adr_prefix));
+	strlcpy(adr->adr_key, ar->ar_key, sizeof(adr->adr_key));
+	strlcpy(adr->adr_options, ar->ar_options, sizeof(adr->adr_options));
 
 	return (0);
 }

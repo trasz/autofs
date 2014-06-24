@@ -91,11 +91,10 @@ struct autofs_request {
 	bool				ar_done;
 	bool				ar_in_progress;
 	char				ar_from[MAXPATHLEN];
-	char				ar_mountpoint[MAXPATHLEN];
-	char				ar_key[MAXPATHLEN];
 	char				ar_path[MAXPATHLEN];
-	char				ar_options[MAXPATHLEN];
 	char				ar_prefix[MAXPATHLEN];
+	char				ar_key[MAXPATHLEN];
+	char				ar_options[MAXPATHLEN];
 	volatile u_int			ar_refcount;
 };
 

@@ -133,11 +133,11 @@ handle_request(int autofs_fd, const struct autofs_daemon_request *adr)
 	const char *map;
 	struct node *root, *parent, *node;
 	FILE *f;
-	char *mount_cmd, *options, *fstype, *mountpoint;
+	char *mount_cmd, *options, *fstype;
 	int error, ret;
 
-	log_debugx("got request: from %s, mountpoint %s, prefix %s, key %s, path %s",
-	    adr->adr_from, adr->adr_mountpoint, adr->adr_prefix, adr->adr_key, adr->adr_path);
+	log_debugx("got request: from %s, prefix %s, key %s, path %s",
+	    adr->adr_from, adr->adr_prefix, adr->adr_key, adr->adr_path);
 
 	if (strncmp(adr->adr_from, "map ", 4) != 0) {
 		log_errx(1, "invalid mountfrom \"%s\"; failing request",
@@ -155,12 +155,11 @@ handle_request(int autofs_fd, const struct autofs_daemon_request *adr)
 	}
 	parse_map(parent, map, adr->adr_key[0] != '\0' ? adr->adr_key : NULL);
 
-	mountpoint = separated_concat(adr->adr_mountpoint, adr->adr_path, '/');
-	log_debugx("searching for path \"%s\" in map %s", mountpoint, map);
-	node = node_find(root, mountpoint);
+	log_debugx("searching for path \"%s\" in map %s", adr->adr_path, map);
+	node = node_find(root, adr->adr_path);
 	if (node == NULL) {
 		log_errx(1, "map %s does not contain key for \"%s\"; "
-		    "failing mount", map, mountpoint);
+		    "failing mount", map, adr->adr_path);
 	}
 
 	node_expand_defined(node);
@@ -171,8 +170,7 @@ handle_request(int autofs_fd, const struct autofs_daemon_request *adr)
 		 * Not a mountpoint; create directories in the autofs mount
 		 * and complete request.
 		 */
-		//if (adr->adr_path[0] == '\0')
-			create_subtree(node);
+		create_subtree(node);
 		done(autofs_fd, adr->adr_id);
 
 		log_debugx("nothing more to do; exiting");
@@ -207,7 +205,7 @@ handle_request(int autofs_fd, const struct autofs_daemon_request *adr)
 	}
 
 	ret = asprintf(&mount_cmd, "mount -t %s -o %s %s %s", fstype, options,
-	    node->n_location, mountpoint);
+	    node->n_location, adr->adr_path);
 	if (ret < 0)
 		log_err(1, "asprintf");
 

@@ -92,6 +92,7 @@ autofs_getattr(struct vop_getattr_args *ap)
 static char *
 autofs_path(struct autofs_node *anp)
 {
+	struct autofs_mount *amp = anp->an_mount;
 	char *path, *tmp;
 
 	path = strdup("", M_AUTOFS);
@@ -104,6 +105,14 @@ autofs_path(struct autofs_node *anp)
 		path = tmp;
 		tmp = NULL;
 	}
+
+	tmp = malloc(strlen(amp->am_mountpoint) + strlen(path) + 2, M_AUTOFS, M_WAITOK);
+	strcpy(tmp, amp->am_mountpoint);
+	strcat(tmp, "/");
+	strcat(tmp, path);
+	free(path, M_AUTOFS);
+	path = tmp;
+	tmp = NULL;
 
 	//AUTOFS_DEBUG("returning \"%s\"", path);
 	return (path);
@@ -138,25 +147,23 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 	//AUTOFS_DEBUG("mountpoint '%s', key '%s', path '%s'", amp->am_mountpoint, key, path);
 
 	TAILQ_FOREACH(ar, &sc->sc_requests, ar_next) {
-		if (strcmp(ar->ar_mountpoint, amp->am_mountpoint) != 0)
+		if (strcmp(ar->ar_path, path) != 0)
 			continue;
 		if (strcmp(ar->ar_key, key) != 0)
-			continue;
-		if (strcmp(ar->ar_path, path) != 0)
 			continue;
 
 		KASSERT(strcmp(ar->ar_from, amp->am_from) == 0,
 		    ("from changed; %s != %s", ar->ar_from, amp->am_from));
-		KASSERT(strcmp(ar->ar_options, amp->am_options) == 0,
-		    ("options changed; %s != %s", ar->ar_options, amp->am_options));
 		KASSERT(strcmp(ar->ar_prefix, amp->am_prefix) == 0,
 		    ("prefix changed; %s != %s", ar->ar_prefix, amp->am_prefix));
+		KASSERT(strcmp(ar->ar_options, amp->am_options) == 0,
+		    ("options changed; %s != %s", ar->ar_options, amp->am_options));
 
 		break;
 	}
 
 	if (ar != NULL) {
-		//AUTOFS_DEBUG("found existing request for %s %s %s %s", ar->ar_from, ar->ar_mountpoint, ar->ar_key, ar->ar_path);
+		//AUTOFS_DEBUG("found existing request for %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
 		refcount_acquire(&ar->ar_refcount);
 	} else {
 		ar = uma_zalloc(autofs_request_zone, M_WAITOK | M_ZERO);
@@ -165,14 +172,13 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 		AUTOFS_LOCK(amp);
 		ar->ar_id = ++amp->am_last_request_id;
 		strlcpy(ar->ar_from, amp->am_from, sizeof(ar->ar_from));
-		strlcpy(ar->ar_mountpoint, amp->am_mountpoint, sizeof(ar->ar_mountpoint));
-		strlcpy(ar->ar_key, key, sizeof(ar->ar_key));
 		strlcpy(ar->ar_path, path, sizeof(ar->ar_path));
-		strlcpy(ar->ar_options, amp->am_options, sizeof(ar->ar_options));
 		strlcpy(ar->ar_prefix, amp->am_prefix, sizeof(ar->ar_prefix));
+		strlcpy(ar->ar_key, key, sizeof(ar->ar_key));
+		strlcpy(ar->ar_options, amp->am_options, sizeof(ar->ar_options));
 		AUTOFS_UNLOCK(amp);
 
-		//AUTOFS_DEBUG("new request for %s %s %s %s", ar->ar_from, ar->ar_mountpoint, ar->ar_key, ar->ar_path);
+		//AUTOFS_DEBUG("new request for %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
 		refcount_init(&ar->ar_refcount, 1);
 		TAILQ_INSERT_TAIL(&sc->sc_requests, ar, ar_next);
 	}
