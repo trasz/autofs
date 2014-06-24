@@ -128,8 +128,11 @@ daemon from mounting anything on the mountpoint.
 .Sh EXECUTABLE MAPS
 If the map file specified in auto_master has execute bit set, the
 .Xr automountd 8
-daemon will execute it and parse its standard output instead of parsing
-its contents.
+daemon will execute it and parse its standard output.
+When run without arguments, the executable should output a list
+of keys, separated by newlines.
+When run with argument, the executable should assume it's a map key,
+and output a single map entry without the key field.
 .Sh INDIRECT VS DIRECT MAPS
 Indirect maps are referred to in
 .Nm
