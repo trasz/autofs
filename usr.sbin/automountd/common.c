@@ -66,8 +66,9 @@ extern char *yytext;
 extern int lineno;
 extern int yylex(void);
 
-static void parse_master_yyin(struct node *root, const char *master);
-static void parse_map_yyin(struct node *parent, const char *map);
+static void	parse_master_yyin(struct node *root, const char *master);
+static void	parse_map_yyin(struct node *parent, const char *map,
+		    const char *executable_key);
 
 char *
 checked_strdup(const char *s)
@@ -224,6 +225,36 @@ node_new(struct node *parent, char *key, char *options, char *location,
 	return (n);
 }
 
+struct node *
+node_new_map(struct node *parent, char *key, char *options, char *map,
+    const char *config_file, int config_line)
+{
+	struct node *n;
+
+	n = calloc(1, sizeof(*n));
+	if (n == NULL)
+		log_err(1, "calloc");
+
+	TAILQ_INIT(&n->n_children);
+	assert(key != NULL);
+	n->n_key = key;
+	if (options != NULL)
+		n->n_options = options;
+	else
+		n->n_options = strdup("");
+	n->n_map = map;
+	assert(config_file != NULL);
+	n->n_config_file = config_file;
+	assert(config_line >= 0);
+	n->n_config_line = config_line;
+
+	assert(parent != NULL);
+	n->n_parent = parent;
+	TAILQ_INSERT_TAIL(&parent->n_children, n, n_next);
+
+	return (n);
+}
+
 static void
 node_delete(struct node *n)
 {
@@ -300,7 +331,7 @@ node_expand_includes(struct node *root, bool is_master)
 		if (is_master)
 			parse_master_yyin(tmproot, include);
 		else
-			parse_map_yyin(tmproot, include);
+			parse_map_yyin(tmproot, include, NULL);
 
 		error = pclose(yyin);
 		yyin = NULL;
@@ -381,6 +412,9 @@ node_expand_ampersand(struct node *root, const char *key)
 
 	TAILQ_FOREACH(n, &root->n_children, n_next) {
 		if (n->n_location != NULL) {
+			/*
+			 * XXX n->n_key?
+			 */
 			if (strcmp(n->n_location, "*") == 0) {
 				if (key != NULL) {
 					n->n_location = expand_ampersand(key,
@@ -444,17 +478,17 @@ node_expand_maps(struct node *n, bool indirect)
 		 * This is the first-level map node; the one that contains
 		 * the key and subnodes with mountpoints and actual map names.
 		 */
-		if (n2->n_location == NULL)
+		if (n2->n_map == NULL)
 			continue;
 
 		if (indirect) {
 			log_debugx("map \"%s\" is an indirect map, parsing",
-			    n2->n_location);
+			    n2->n_map);
 		} else {
 			log_debugx("map \"%s\" is a direct map, parsing",
-			    n2->n_location);
+			    n2->n_map);
 		}
-		parse_map(n2, n2->n_location, NULL);
+		parse_map(n2, n2->n_map, NULL);
 	}
 }
 
@@ -530,10 +564,11 @@ node_print_indent(const struct node *n, int indent)
 	 */
 	if (first_child == NULL || TAILQ_NEXT(first_child, n_next) != NULL ||
 	    strcmp(n_path, node_path(first_child)) != 0) {
+		assert(n->n_location == NULL || n->n_map == NULL);
 		printf("%*.s%s    %s    %s\t# %s map %s at %s:%d\n", indent, "",
 		    n_path,
 		    n->n_options != NULL ? n->n_options : "",
-		    n->n_location != NULL ? n->n_location : "",
+		    n->n_location != NULL ? n->n_location : n->n_map != NULL ? n->n_map : "",
 		    node_is_direct_map(n) ? "direct" : "indirect",
 		    indent == 0 ? "referenced" : "defined",
 		    n->n_config_file, n->n_config_line);
@@ -589,16 +624,23 @@ node_find(struct node *node, const char *path)
  *
  * key [-options] [ [/mountpoint] [-options2] location ... ]
  *
+ * Entries for executable maps are slightly different, as they
+ * lack the 'key' field and are always single-line; the key field
+ * for those maps is taken from 'executable_key' argument.
+ *
  * We parse it in such a way that a map always has two levels - first
  * for key, and the second, for the mountpoint.
  */
 static void
-parse_map_yyin(struct node *parent, const char *map)
+parse_map_yyin(struct node *parent, const char *map, const char *executable_key)
 {
 	char *key = NULL, *options = NULL, *mountpoint = NULL,
 	    *options2 = NULL, *location = NULL;
 	int ret;
 	struct node *node;
+
+	if (executable_key != NULL)
+		key = checked_strdup(executable_key);
 
 	for (;;) {
 		ret = yylex();
@@ -607,7 +649,7 @@ parse_map_yyin(struct node *parent, const char *map)
 				log_errx(1, "truncated entry in %s, line %d",
 				    map, lineno);
 			}
-			if (ret == 0) {
+			if (ret == 0 || executable_key != NULL) {
 				/*
 				 * End of file.
 				 */
@@ -713,7 +755,7 @@ file_is_executable(const char *path)
 }
 
 void
-parse_map(struct node *parent, const char *map, const char *args)
+parse_map(struct node *parent, const char *map, const char *key)
 {
 	char *path = NULL;
 	int error, ret;
@@ -770,11 +812,11 @@ parse_map(struct node *parent, const char *map, const char *args)
 			log_debugx("map \"%s\" is executable", map);
 	}
 
-	if (executable && args == NULL) {
+	if (executable && key == NULL) {
 		log_debugx("ignoring map due to forced -nobrowse");
 	} else if (executable) {
-		if (args != NULL) {
-			ret = asprintf(&path, "%s %s", path, args);
+		if (key != NULL) {
+			ret = asprintf(&path, "%s %s", path, key);
 			if (ret < 0)
 				log_err(1, "asprintf");
 			log_debugx("will execute \"%s\"", path);
@@ -797,15 +839,15 @@ parse_map(struct node *parent, const char *map, const char *args)
 	 */
 	lineno = 1;
 
-	if (executable && args == NULL) {
+	if (executable && key == NULL) {
 		/*
 		 * XXX
 		 */
 	} else {
-		parse_map_yyin(parent, map);
+		parse_map_yyin(parent, map, executable ? key : NULL);
 	}
 
-	if (executable && args == NULL) {
+	if (executable && key == NULL) {
 		/*
 		 * XXX
 		 */
@@ -837,7 +879,7 @@ parse_master_yyin(struct node *root, const char *master)
 		if (ret == 0 || ret == NEWLINE) {
 			if (mountpoint != NULL) {
 				//log_debugx("adding map for %s", mountpoint);
-				node_new(root, mountpoint, options, map,
+				node_new_map(root, mountpoint, options, map,
 				    master, lineno);
 			}
 			if (ret == 0) {

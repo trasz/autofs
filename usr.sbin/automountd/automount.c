@@ -93,7 +93,7 @@ find_statfs(const struct statfs *mntbuf, int nitems, const char *mountpoint)
 }
 
 static void
-mount_autofs(const char *from, const char *fspath, const char *options)
+mount_autofs(const char *from, const char *fspath, const char *options, const char *prefix)
 {
 	struct iovec *iov = NULL;
 	char errmsg[255];
@@ -101,7 +101,7 @@ mount_autofs(const char *from, const char *fspath, const char *options)
 
 	create_directory(fspath);
 
-	log_debugx("mounting %s on %s", from, fspath);
+	log_debugx("mounting %s on %s, prefix %s", from, fspath, prefix);
 	memset(errmsg, 0, sizeof(errmsg));
 
 	build_iovec(&iov, &iovlen, "fstype", (void *)"autofs", (size_t)-1);
@@ -109,14 +109,12 @@ mount_autofs(const char *from, const char *fspath, const char *options)
 	build_iovec(&iov, &iovlen, "from", (void *)from, (size_t)-1);
 	build_iovec(&iov, &iovlen, "errmsg", errmsg, sizeof(errmsg));
 
-	if (options != NULL) {
-		/*
-		 * Append the options defined in auto_master.  The autofs
-		 * will pass them to automountd(8), which will then append
-		 * them to options specified in the map.
-		 */
-		build_iovec(&iov, &iovlen, "master_options", (void *)options, (size_t)-1);
-	}
+	/*
+	 * Append the options and mountpoint defined in auto_master(5);
+	 * this way automountd(8) doesn't need to parse it.
+	 */
+	build_iovec(&iov, &iovlen, "master_options", (void *)options, (size_t)-1);
+	build_iovec(&iov, &iovlen, "master_prefix", (void *)prefix, (size_t)-1);
 
 	error = nmount(iov, iovlen, 0);
 	if (error != 0) {
@@ -130,7 +128,7 @@ mount_autofs(const char *from, const char *fspath, const char *options)
 }
 
 static void
-mount_if_not_already(const struct node *n, const char *location,
+mount_if_not_already(const struct node *n, const char *map,
     const struct statfs *mntbuf, int nitems)
 {
 	const struct statfs *mount;
@@ -138,7 +136,7 @@ mount_if_not_already(const struct node *n, const char *location,
 	char *from;
 	int ret;
 
-	ret = asprintf(&from, "map %s", location);
+	ret = asprintf(&from, "map %s", map);
 	if (ret < 0)
 		log_err(1, "asprintf");
 
@@ -164,7 +162,7 @@ mount_if_not_already(const struct node *n, const char *location,
 		    mountpoint);
 	}
 
-	mount_autofs(from, mountpoint, n->n_options);
+	mount_autofs(from, mountpoint, n->n_options, n->n_key);
 	free(from);
 	free(mountpoint);
 }
@@ -205,13 +203,13 @@ mount_unmount(struct node *root)
 
 	TAILQ_FOREACH(n, &root->n_children, n_next) {
 		if (!node_is_direct_map(n)) {
-			mount_if_not_already(n, n->n_location, mntbuf, nitems);
+			mount_if_not_already(n, n->n_map, mntbuf, nitems);
 			continue;
 		}
 
 		TAILQ_FOREACH(n2, &n->n_children, n_next) {
 			TAILQ_FOREACH(n3, &n2->n_children, n_next) {
-				mount_if_not_already(n3, n->n_location,
+				mount_if_not_already(n3, n->n_map,
 				    mntbuf, nitems);
 			}
 		}

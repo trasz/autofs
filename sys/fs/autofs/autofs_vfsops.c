@@ -44,7 +44,7 @@
 #include "autofs.h"
 
 static const char *autofs_opts[] = {
-	"from", "master_options", NULL
+	"from", "master_options", "master_prefix", NULL
 };
 
 extern struct autofs_softc	*sc;
@@ -53,7 +53,7 @@ static int
 autofs_mount(struct mount *mp)
 {
 	struct autofs_mount *amp;
-	char *from, *fspath, *options;
+	char *from, *fspath, *options, *prefix;
 	int error;
 
 	if (vfs_filteropt(mp->mnt_optnew, autofs_opts))
@@ -69,17 +69,18 @@ autofs_mount(struct mount *mp)
 		return (EINVAL);
 
 	if (vfs_getopt(mp->mnt_optnew, "master_options", (void **)&options, NULL))
-		options = NULL;
+		return (EINVAL);
+
+	if (vfs_getopt(mp->mnt_optnew, "master_prefix", (void **)&prefix, NULL))
+		return (EINVAL);
 
 	amp = malloc(sizeof(*amp), M_AUTOFS, M_WAITOK | M_ZERO);
 	mp->mnt_data = amp;
 	amp->am_softc = sc;
 	strlcpy(amp->am_from, from, sizeof(amp->am_from));
 	strlcpy(amp->am_mountpoint, fspath, sizeof(amp->am_mountpoint));
-	if (options != NULL)
-		strlcpy(amp->am_options, options, sizeof(amp->am_options));
-	else
-		amp->am_options[0] = '\0';
+	strlcpy(amp->am_options, options, sizeof(amp->am_options));
+	strlcpy(amp->am_prefix, prefix, sizeof(amp->am_prefix));
 	mtx_init(&amp->am_lock, "autofs_mtx", NULL, MTX_DEF);
 	amp->am_last_fileno = 1;
 

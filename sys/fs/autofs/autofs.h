@@ -65,6 +65,7 @@ struct autofs_node {
 	int				an_fileno;
 	struct autofs_node		*an_parent;
 	TAILQ_HEAD(, autofs_node)	an_children;
+	struct autofs_mount		*an_mount;
 	struct vnode			*an_vnode;
 	bool				an_trigger;
 	struct timespec			an_ctime;
@@ -78,6 +79,7 @@ struct autofs_mount {
 	char				am_from[MAXPATHLEN];
 	char				am_mountpoint[MAXPATHLEN];
 	char				am_options[MAXPATHLEN];
+	char				am_prefix[MAXPATHLEN];
 	int				am_last_fileno;
 	int				am_last_request_id;
 };
@@ -90,8 +92,10 @@ struct autofs_request {
 	bool				ar_in_progress;
 	char				ar_from[MAXPATHLEN];
 	char				ar_mountpoint[MAXPATHLEN];
+	char				ar_key[MAXPATHLEN];
 	char				ar_path[MAXPATHLEN];
 	char				ar_options[MAXPATHLEN];
+	char				ar_prefix[MAXPATHLEN];
 	volatile u_int			ar_refcount;
 };
 

@@ -89,38 +89,74 @@ autofs_getattr(struct vop_getattr_args *ap)
 	return (0);
 }
 
+static char *
+autofs_path(struct autofs_node *anp)
+{
+	char *path, *tmp;
+
+	path = strdup("", M_AUTOFS);
+	for (; anp->an_parent != NULL; anp = anp->an_parent) {
+		tmp = malloc(strlen(anp->an_name) + strlen(path) + 2, M_AUTOFS, M_WAITOK);
+		strcpy(tmp, anp->an_name);
+		strcat(tmp, "/");
+		strcat(tmp, path);
+		free(path, M_AUTOFS);
+		path = tmp;
+		tmp = NULL;
+	}
+
+	//AUTOFS_DEBUG("returning \"%s\"", path);
+	return (path);
+}
+
 /*
  * Send request to automountd(8) and wait for completion.
  */
 static int
-autofs_trigger(struct autofs_node *anp, const char *path, int pathlen)
+autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 {
 	struct autofs_mount *amp = VFSTOAUTOFS(anp->an_vnode->v_mount);
 	struct autofs_softc *sc = amp->am_softc;
+	struct autofs_node *firstanp;
 	struct autofs_request *ar;
+	char *key, *path;
 	int error, last;
 
 	sx_assert(&sc->sc_lock, SA_XLOCKED);
 
-	TAILQ_FOREACH(ar, &sc->sc_requests, ar_next) {
-		AUTOFS_DEBUG("looking at %s %s:%s", ar->ar_from, ar->ar_mountpoint, ar->ar_path);
-		if (strcmp(ar->ar_from, amp->am_from) != 0)
+	if (anp->an_parent == NULL) {
+		key = strndup(component, componentlen, M_AUTOFS);
+	} else {
+		for (firstanp = anp; firstanp->an_parent->an_parent != NULL;
+		    firstanp = firstanp->an_parent)
 			continue;
+		key = strdup(firstanp->an_name, M_AUTOFS);
+	}
+
+	path = autofs_path(anp);
+
+	//AUTOFS_DEBUG("mountpoint '%s', key '%s', path '%s'", amp->am_mountpoint, key, path);
+
+	TAILQ_FOREACH(ar, &sc->sc_requests, ar_next) {
 		if (strcmp(ar->ar_mountpoint, amp->am_mountpoint) != 0)
 			continue;
-		if (strlen(ar->ar_path) != pathlen)
+		if (strcmp(ar->ar_key, key) != 0)
 			continue;
 		if (strcmp(ar->ar_path, path) != 0)
 			continue;
 
-		/*
-		 * XXX: Ignore options, right?
-		 */
+		KASSERT(strcmp(ar->ar_from, amp->am_from) == 0,
+		    ("from changed; %s != %s", ar->ar_from, amp->am_from));
+		KASSERT(strcmp(ar->ar_options, amp->am_options) == 0,
+		    ("options changed; %s != %s", ar->ar_options, amp->am_options));
+		KASSERT(strcmp(ar->ar_prefix, amp->am_prefix) == 0,
+		    ("prefix changed; %s != %s", ar->ar_prefix, amp->am_prefix));
+
 		break;
 	}
 
 	if (ar != NULL) {
-		AUTOFS_DEBUG("found existing request for %s %s:%s", ar->ar_from, ar->ar_mountpoint, ar->ar_path);
+		//AUTOFS_DEBUG("found existing request for %s %s %s %s", ar->ar_from, ar->ar_mountpoint, ar->ar_key, ar->ar_path);
 		refcount_acquire(&ar->ar_refcount);
 	} else {
 		ar = uma_zalloc(autofs_request_zone, M_WAITOK | M_ZERO);
@@ -130,14 +166,18 @@ autofs_trigger(struct autofs_node *anp, const char *path, int pathlen)
 		ar->ar_id = ++amp->am_last_request_id;
 		strlcpy(ar->ar_from, amp->am_from, sizeof(ar->ar_from));
 		strlcpy(ar->ar_mountpoint, amp->am_mountpoint, sizeof(ar->ar_mountpoint));
-		strlcpy(ar->ar_path, path, min(sizeof(ar->ar_path), pathlen));
+		strlcpy(ar->ar_key, key, sizeof(ar->ar_key));
+		strlcpy(ar->ar_path, path, sizeof(ar->ar_path));
 		strlcpy(ar->ar_options, amp->am_options, sizeof(ar->ar_options));
+		strlcpy(ar->ar_prefix, amp->am_prefix, sizeof(ar->ar_prefix));
 		AUTOFS_UNLOCK(amp);
 
-		AUTOFS_DEBUG("new request for %s %s:%s", ar->ar_from, ar->ar_mountpoint, ar->ar_path);
+		//AUTOFS_DEBUG("new request for %s %s %s %s", ar->ar_from, ar->ar_mountpoint, ar->ar_key, ar->ar_path);
 		refcount_init(&ar->ar_refcount, 1);
 		TAILQ_INSERT_TAIL(&sc->sc_requests, ar, ar_next);
 	}
+	free(key, M_AUTOFS);
+	free(path, M_AUTOFS);
 
 	cv_signal(&sc->sc_cv);
 	while (ar->ar_done == false) {
@@ -152,7 +192,7 @@ autofs_trigger(struct autofs_node *anp, const char *path, int pathlen)
 		uma_zfree(autofs_request_zone, ar);
 	}
 
-	AUTOFS_DEBUG("done");
+	//AUTOFS_DEBUG("done");
 
 	return (error);
 }
@@ -369,7 +409,6 @@ autofs_readdir(struct vop_readdir_args *ap)
 			error = VOP_READDIR(newvp, ap->a_uio, ap->a_cred,
 			    ap->a_eofflag, ap->a_ncookies, ap->a_cookies);
 			vput(newvp);
-			//AUTOFS_DEBUG("VOP_READDIR and vput done");
 			return (error);
 		}
 	}
@@ -514,6 +553,7 @@ autofs_new_vnode(struct autofs_node *parent, const char *name, int namelen,
 	anp->an_trigger = true;
 	getnanotime(&anp->an_ctime);
 	anp->an_parent = parent;
+	anp->an_mount = VFSTOAUTOFS(mp);
 	if (parent != NULL) {
 #if 0
 		/*

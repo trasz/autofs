@@ -47,6 +47,7 @@ struct node {
 	char			*n_key;
 	char			*n_options;
 	char			*n_location;
+	char			*n_map;
 	const char		*n_config_file;
 	int			n_config_line;
 };
@@ -74,6 +75,7 @@ void	create_directory(const char *path);
 
 struct node	*node_new_root(void);
 struct node	*node_new(struct node *parent, char *key, char *options, char *location, const char *config_file, int config_line);
+struct node	*node_new_map(struct node *parent, char *key, char *options, char *map, const char *config_file, int config_line);
 struct node	*node_find(struct node *root, const char *mountpoint);
 bool		node_is_direct_map(const struct node *n);
 char	*node_path(const struct node *n);

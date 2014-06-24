@@ -35,14 +35,51 @@
 #define	AUTOFS_PATH		"/dev/autofs"
 
 struct autofs_daemon_request {
+	/*
+	 * Request identifier.
+	 */
 	int		adr_id;
+
+	/*
+	 * The "from" field, containing map name.  For example,
+	 * when accessing '/net/192.168.1.3/tank/vm/', that would
+	 * be '/net'.
+	 */
 	char		adr_from[MAXPATHLEN];
+
+	/*
+	 * Prefix, which is basically the mountpoint from auto_master(5).
+	 * In example above that would be "/net"; for direct maps it's "/".
+	 */
+	char		adr_prefix[MAXPATHLEN];
+
+	/*
+	 * Path the autofs is mounted on.
+	 */
 	char		adr_mountpoint[MAXPATHLEN];
+
+	/*
+	 * Key used as argument for dynamic maps; in example above that would
+	 * be '192.168.1.3'.
+	 */
+	char		adr_key[MAXPATHLEN];
+
+	/*
+	 * Path "under" the mountpoint; in example above that would
+	 * be '/tank/vm'.
+	 */
 	char		adr_path[MAXPATHLEN];
+
+	/*
+	 * Mount options from auto_master(5).
+	 */
 	char		adr_options[MAXPATHLEN];
 };
 
 struct autofs_daemon_done {
+	/*
+	 * Identifier, copied from adr_id.
+	 */
 	int		add_id;
 };
 
