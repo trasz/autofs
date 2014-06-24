@@ -130,7 +130,7 @@ autofs_trigger(struct autofs_node *anp, const char *path, int pathlen)
 		ar->ar_id = ++amp->am_last_request_id;
 		strlcpy(ar->ar_from, amp->am_from, sizeof(ar->ar_from));
 		strlcpy(ar->ar_mountpoint, amp->am_mountpoint, sizeof(ar->ar_mountpoint));
-		snprintf(ar->ar_path, sizeof(ar->ar_path), "%.*s", pathlen, path);
+		strlcpy(ar->ar_path, path, min(sizeof(ar->ar_path), pathlen));
 		strlcpy(ar->ar_options, amp->am_options, sizeof(ar->ar_options));
 		AUTOFS_UNLOCK(amp);
 
@@ -170,6 +170,10 @@ autofs_trigger_vn(struct vnode *vp, const char *path, int pathlen, struct vnode 
 	struct autofs_softc *sc = amp->am_softc;
 	int error, lock_flags;
 
+	/*
+	 * Release the vnode lock, so that other operations, in partcular
+	 * mounting a filesystem on top of it, can proceed.
+	 */
 	lock_flags = VOP_ISLOCKED(vp);
 	vhold(vp);
 	VOP_UNLOCK(vp, 0);
@@ -189,6 +193,10 @@ mounted:
 	sx_xunlock(&sc->sc_lock);
 	vn_lock(vp, lock_flags | LK_RETRY);
 	vdrop(vp);
+	if ((vp->v_iflag & VI_DOOMED) != 0) {
+		AUTOFS_DEBUG("VI_DOOMED");
+		return (ENOENT);
+	}
 
 	if (error != 0)
 		return (error);
@@ -208,7 +216,6 @@ mounted:
 	error = VFS_ROOT(vp->v_mountedhere, lock_flags, newvp);
 	if (error != 0) {
 		vfs_unbusy(vp->v_mountedhere);
-		*newvp = NULL;
 		return (error);
 	}
 
@@ -234,7 +241,7 @@ autofs_lookup(struct vop_lookup_args *ap)
 		vhold(dvp);
 		VOP_UNLOCK(dvp, 0);
 		vn_lock(anp->an_parent->an_vnode, LK_EXCLUSIVE | LK_RETRY);
-		VREF(anp->an_parent->an_vnode);
+		vref(anp->an_parent->an_vnode);
 		*vpp = anp->an_parent->an_vnode;
 		vn_lock(dvp, lock_flags | LK_RETRY);
 		vdrop(dvp);
@@ -244,7 +251,7 @@ autofs_lookup(struct vop_lookup_args *ap)
 
 	if (cnp->cn_namelen == 1 && cnp->cn_nameptr[0] == '.') {
 		//AUTOFS_DEBUG(".");
-		VREF(dvp);
+		vref(dvp);
 		*vpp = dvp;
 
 		return (0);
@@ -263,11 +270,11 @@ autofs_lookup(struct vop_lookup_args *ap)
 			error = VOP_LOOKUP(newvp, ap->a_vpp, ap->a_cnp);
 
 			/*
-			 * Instead of figuring out whether our node should
+			 * Instead of figuring out whether our vnode should
 			 * be locked or not given the error and cnp flags,
-			 * just "copy" the lock status from vnode returned by
-			 * mounted filesystem's VOP_LOOKUP() to our own vnode.
-			 * Get rid of the new vnode after that.
+			 * just "copy" the lock status from vnode returned
+			 * by mounted filesystem's VOP_LOOKUP().  Get rid
+			 * of that new vnode afterwards.
 			 */
 			lock_flags = VOP_ISLOCKED(newvp);
 			if (lock_flags == 0) {
@@ -298,7 +305,7 @@ autofs_lookup(struct vop_lookup_args *ap)
 	}
 
 	vn_lock(*vpp, LK_EXCLUSIVE | LK_RETRY);
-	VREF(*vpp);
+	vref(*vpp);
 
 	return (0);
 }
@@ -314,8 +321,7 @@ autofs_mkdir(struct vop_mkdir_args *ap)
 	    ap->a_cnp->cn_namelen, vp->v_mount, ap->a_vpp);
 
 	if (error == 0) {
-		vn_lock(*ap->a_vpp, LK_EXCLUSIVE | LK_RETRY);
-		VREF(*ap->a_vpp);
+		vref(*ap->a_vpp);
 	}
 
 	return (error);
@@ -362,7 +368,8 @@ autofs_readdir(struct vop_readdir_args *ap)
 		if (newvp != NULL) {
 			error = VOP_READDIR(newvp, ap->a_uio, ap->a_cred,
 			    ap->a_eofflag, ap->a_ncookies, ap->a_cookies);
-			VOP_UNLOCK(newvp, 0);
+			vput(newvp);
+			//AUTOFS_DEBUG("VOP_READDIR and vput done");
 			return (error);
 		}
 	}
@@ -534,10 +541,8 @@ autofs_new_vnode(struct autofs_node *parent, const char *name, int namelen,
 		vrecycle(vp);
 		return (error);
 	}
-	VOP_UNLOCK(vp, 0);
 
-	if (vpp != NULL)
-		*vpp = vp;
+	*vpp = vp;
 
 	return (0);
 }

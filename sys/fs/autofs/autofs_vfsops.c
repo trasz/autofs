@@ -90,6 +90,7 @@ autofs_mount(struct mount *mp)
 		/* XXX */
 		return (error);
 	}
+	VOP_UNLOCK(amp->am_rootvp, 0);
 
 	TAILQ_INSERT_TAIL(&sc->sc_mounts, amp, am_next);
 
