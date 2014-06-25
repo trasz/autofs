@@ -156,7 +156,6 @@ handle_request(int autofs_fd, const struct autofs_daemon_request *adr)
 	}
 	parse_map(parent, map, adr->adr_key[0] != '\0' ? adr->adr_key : NULL);
 
-	log_debugx("searching for path \"%s\" in map %s", adr->adr_path, map);
 	node = node_find(root, adr->adr_path);
 	if (node == NULL) {
 		log_errx(1, "map %s does not contain key for \"%s\"; "
@@ -169,7 +168,7 @@ handle_request(int autofs_fd, const struct autofs_daemon_request *adr)
 	if (node->n_location == NULL) {
 		/*
 		 * Not a mountpoint; create directories in the autofs mount
-		 * and complete request.
+		 * and complete the request.
 		 */
 		create_subtree(node);
 		done(autofs_fd, adr->adr_id);
@@ -190,7 +189,7 @@ handle_request(int autofs_fd, const struct autofs_daemon_request *adr)
 	 */
 	fstype = pick_fstype(&options);
 	if (fstype == NULL) {
-		log_debugx("fstype not specified; defaulting to \"nfs\"");
+		log_debugx("fstype not specified in options; defaulting to \"nfs\"");
 		fstype = checked_strdup("nfs");
 	}
 

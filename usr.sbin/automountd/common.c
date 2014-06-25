@@ -353,7 +353,7 @@ node_expand_includes(struct node *root, bool is_master)
 }
 
 static char *
-expand_ampersand(const char *key, char *string)
+expand_ampersand(char *string, const char *key)
 {
 	char c, *expanded;
 	int i, ret, before_len = 0;
@@ -387,7 +387,7 @@ expand_ampersand(const char *key, char *string)
 		if (ret < 0)
 			log_err(1, "asprintf");
 
-		log_debugx("\"%s\" expanded to \"%s\"", string, expanded);
+		log_debugx("\"%s\" expanded with key \"%s\" to \"%s\"", string, key, expanded);
 
 		/*
 		 * Figure out where to start searching for next variable.
@@ -406,40 +406,27 @@ expand_ampersand(const char *key, char *string)
  * use the provided key, if provided; otherwise do nothing.
  */
 void
-node_expand_ampersand(struct node *root, const char *key)
+node_expand_ampersand(struct node *n, const char *key)
 {
-	struct node *n;
+	struct node *child;
 
-	TAILQ_FOREACH(n, &root->n_children, n_next) {
-		if (n->n_location != NULL) {
-			/*
-			 * XXX n->n_key?
-			 */
-			if (strcmp(n->n_location, "*") == 0) {
-				if (key != NULL) {
-					n->n_location = expand_ampersand(key,
-					    n->n_location);
-				}
-			} else {
-				n->n_location =
-				    expand_ampersand(n->n_parent->n_key,
-				    n->n_location);
-			}
-		}
-		node_expand_ampersand(n, key);
-	}
+	if (n->n_location != NULL)
+		n->n_location = expand_ampersand(n->n_location, key);
+
+	TAILQ_FOREACH(child, &n->n_children, n_next)
+		node_expand_ampersand(child, key);
 }
 
 void
-node_expand_defined(struct node *root)
+node_expand_defined(struct node *n)
 {
-	struct node *n;
+	struct node *child;
 
-	TAILQ_FOREACH(n, &root->n_children, n_next) {
-		if (n->n_location != NULL)
-			n->n_location = defined_expand(n->n_location);
-		node_expand_defined(n);
-	}
+	if (n->n_location != NULL)
+		n->n_location = defined_expand(n->n_location);
+
+	TAILQ_FOREACH(child, &n->n_children, n_next)
+		node_expand_defined(child);
 }
 
 bool
