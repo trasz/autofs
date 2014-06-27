@@ -88,10 +88,9 @@ autofs_init(struct vfsconf *vfsp)
 	    sizeof(struct autofs_node), NULL, NULL, NULL, NULL,
 	    UMA_ALIGN_PTR, 0);
 
-	TAILQ_INIT(&sc->sc_mounts);
 	TAILQ_INIT(&sc->sc_requests);
-	cv_init(&sc->sc_cv, "autofs_cv");
-	sx_init(&sc->sc_lock, "autofs_lock");
+	cv_init(&sc->sc_cv, "autofs");
+	sx_init(&sc->sc_lock, "autofslk");
 
 	error = make_dev_p(MAKEDEV_CHECKNAME, &sc->sc_cdev, &autofs_cdevsw,
 	    NULL, UID_ROOT, GID_WHEEL, 0600, "autofs");

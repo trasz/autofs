@@ -76,24 +76,25 @@ autofs_mount(struct mount *mp)
 
 	amp = malloc(sizeof(*amp), M_AUTOFS, M_WAITOK | M_ZERO);
 	mp->mnt_data = amp;
+	amp->am_mp = mp;
 	amp->am_softc = sc;
 	strlcpy(amp->am_from, from, sizeof(amp->am_from));
 	strlcpy(amp->am_mountpoint, fspath, sizeof(amp->am_mountpoint));
 	strlcpy(amp->am_options, options, sizeof(amp->am_options));
 	strlcpy(amp->am_prefix, prefix, sizeof(amp->am_prefix));
-	mtx_init(&amp->am_lock, "autofs_mtx", NULL, MTX_DEF);
+	sx_init(&amp->am_lock, "autofslk");
 	amp->am_last_fileno = 1;
 
 	vfs_getnewfsid(mp);
 
-	error = autofs_new_vnode(NULL, ".", -1, mp, &amp->am_rootvp);
+	AUTOFS_LOCK(amp);
+	error = autofs_node_new(NULL, amp, ".", -1, &amp->am_root);
 	if (error != 0) {
 		/* XXX */
+		AUTOFS_UNLOCK(amp);
 		return (error);
 	}
-	VOP_UNLOCK(amp->am_rootvp, 0);
-
-	TAILQ_INSERT_TAIL(&sc->sc_mounts, amp, am_next);
+	AUTOFS_UNLOCK(amp);
 
 	vfs_mountedfrom(mp, from);
 
@@ -107,7 +108,7 @@ autofs_unmount(struct mount *mp, int mntflags)
 	int error, flags;
 
 	amp = VFSTOAUTOFS(mp);
-	vrele(amp->am_rootvp);
+	//vrele(amp->am_rootvp);
 
 	flags = 0;
 	if (mntflags & MNT_FORCE)
@@ -117,7 +118,6 @@ autofs_unmount(struct mount *mp, int mntflags)
 		return (error);
 
 	// XXX: Locking.
-	TAILQ_REMOVE(&sc->sc_mounts, amp, am_next);
 	free(amp, M_AUTOFS);
 	mp->mnt_data = NULL;
 
@@ -133,17 +133,14 @@ autofs_unmount(struct mount *mp, int mntflags)
 static int
 autofs_root(struct mount *mp, int flags, struct vnode **vpp)
 {
-	struct autofs_mount *amp;
-	struct vnode *vp;
+	struct autofs_mount *amp = VFSTOAUTOFS(mp);
+	int error;
 
-	amp = VFSTOAUTOFS(mp);
+	AUTOFS_LOCK(amp);
+	error = autofs_node_vn(amp->am_root, mp, vpp);
+	AUTOFS_UNLOCK(amp);
 
-	vp = amp->am_rootvp;
-	VREF(vp);
-	vn_lock(vp, flags | LK_RETRY);
-	*vpp = vp;
-
-	return (0);
+	return (error);
 }
 
 static int

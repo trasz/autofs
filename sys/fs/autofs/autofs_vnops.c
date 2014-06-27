@@ -169,14 +169,12 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 		ar = uma_zalloc(autofs_request_zone, M_WAITOK | M_ZERO);
 		ar->ar_softc = amp->am_softc;
 
-		AUTOFS_LOCK(amp);
 		ar->ar_id = ++amp->am_last_request_id;
 		strlcpy(ar->ar_from, amp->am_from, sizeof(ar->ar_from));
 		strlcpy(ar->ar_path, path, sizeof(ar->ar_path));
 		strlcpy(ar->ar_prefix, amp->am_prefix, sizeof(ar->ar_prefix));
 		strlcpy(ar->ar_key, key, sizeof(ar->ar_key));
 		strlcpy(ar->ar_options, amp->am_options, sizeof(ar->ar_options));
-		AUTOFS_UNLOCK(amp);
 
 		//AUTOFS_DEBUG("new request for %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
 		refcount_init(&ar->ar_refcount, 1);
@@ -275,7 +273,10 @@ autofs_lookup(struct vop_lookup_args *ap)
 	struct vnode *dvp = ap->a_dvp;
 	struct vnode **vpp = ap->a_vpp;
 	struct vnode *newvp;
+	struct mount *mp = dvp->v_mount;
+	struct autofs_mount *amp = VFSTOAUTOFS(mp);
 	struct autofs_node *anp = dvp->v_data;
+	struct autofs_node *child;
 	struct componentname *cnp = ap->a_cnp;
 	int error, lock_flags;
 
@@ -339,20 +340,33 @@ autofs_lookup(struct vop_lookup_args *ap)
 		return (EOPNOTSUPP);
 	}
 
-	error = autofs_find_vnode(anp, cnp->cn_nameptr, cnp->cn_namelen, vpp);
+	AUTOFS_LOCK(amp);
+	error = autofs_node_find(anp, cnp->cn_nameptr, cnp->cn_namelen, &child);
 	if (error != 0) {
 		if ((cnp->cn_flags & ISLASTCN) && cnp->cn_nameiop == CREATE) {
 			//AUTOFS_DEBUG("JUSTRETURN");
+			AUTOFS_UNLOCK(amp);
 			return (EJUSTRETURN);
 		}
 
 		//AUTOFS_DEBUG("ENOENT");
+		AUTOFS_UNLOCK(amp);
 		return (ENOENT);
 	}
 
-	vn_lock(*vpp, LK_EXCLUSIVE | LK_RETRY);
-	vref(*vpp);
+	error = autofs_node_vn(child, mp, vpp);
+	if (error != 0) {
+		if ((cnp->cn_flags & ISLASTCN) && cnp->cn_nameiop == CREATE) {
+			//AUTOFS_DEBUG("JUSTRETURN");
+			AUTOFS_UNLOCK(amp);
+			return (EJUSTRETURN);
+		}
 
+		AUTOFS_UNLOCK(amp);
+		return (error);
+	}
+
+	AUTOFS_UNLOCK(amp);
 	return (0);
 }
 
@@ -361,14 +375,20 @@ autofs_mkdir(struct vop_mkdir_args *ap)
 {
 	struct vnode *vp = ap->a_dvp;
 	struct autofs_node *anp = vp->v_data;
+	struct autofs_mount *amp = VFSTOAUTOFS(vp->v_mount);
+	struct autofs_node *child;
 	int error;
 
-	error = autofs_new_vnode(anp, ap->a_cnp->cn_nameptr,
-	    ap->a_cnp->cn_namelen, vp->v_mount, ap->a_vpp);
-
-	if (error == 0) {
-		vref(*ap->a_vpp);
+	AUTOFS_LOCK(amp);
+	error = autofs_node_new(anp, amp, ap->a_cnp->cn_nameptr,
+	    ap->a_cnp->cn_namelen, &child);
+	if (error) {
+		AUTOFS_UNLOCK(amp);
+		return (error);
 	}
+
+	error = autofs_node_vn(child, vp->v_mount, ap->a_vpp);
+	AUTOFS_UNLOCK(amp);
 
 	return (error);
 }
@@ -398,7 +418,9 @@ autofs_readdir(struct vop_readdir_args *ap)
 {
 	struct vnode *vp = ap->a_vp;
 	struct vnode *newvp;
-	struct autofs_node *child, *anp = vp->v_data;
+	struct autofs_mount *amp = VFSTOAUTOFS(vp->v_mount);
+	struct autofs_node *anp = vp->v_data;
+	struct autofs_node *child;
 	struct uio *uio = ap->a_uio;
 	off_t offset;
 	int error, i, resid;
@@ -454,6 +476,7 @@ autofs_readdir(struct vop_readdir_args *ap)
 	}
 
 	i = 2; /* Account for "." and "..". */
+	AUTOFS_LOCK(amp);
 	TAILQ_FOREACH(child, &anp->an_children, an_next) {
 		if (resid < AUTOFS_DELEN) {
 			if (ap->a_eofflag != NULL)
@@ -469,48 +492,46 @@ autofs_readdir(struct vop_readdir_args *ap)
 			continue;
 
 		error = autofs_readdir_one(uio, child->an_name, child->an_fileno);
-		if (error != 0)
+		if (error != 0) {
+			AUTOFS_UNLOCK(amp);
 			return (error);
+		}
 		offset += AUTOFS_DELEN;
 		resid -= AUTOFS_DELEN;
 	}
 
+	AUTOFS_UNLOCK(amp);
 	return (0);
 }
 
+#if 0 /* Since automountd(8) doesn't actually use it. */
 static int
 autofs_rmdir(struct vop_rmdir_args *ap)
 {
-	struct autofs_node *anp = ap->a_dvp->v_data;
+	struct autofs_node *anp = ap->a_vp->v_data;
 	int error;
 
-	error = autofs_delete_vnode(anp, ap->a_vp);
+	error = autofs_node_delete(anp);
 
 	return (error);
 }
+#endif
 
 static int
 autofs_reclaim(struct vop_reclaim_args *ap)
 {
-
-	AUTOFS_DEBUG("go");
-
-	return (0);
-}
-
-static int
-autofs_inactive(struct vop_inactive_args *ap)
-{
 	struct vnode *vp = ap->a_vp;
 	struct autofs_node *anp = vp->v_data;
+	struct autofs_mount *amp = anp->an_mount;
 
-	//AUTOFS_DEBUG("go");
-
-	KASSERT(TAILQ_EMPTY(&anp->an_children), ("have children"));
-	free(anp->an_name, M_AUTOFS);
-	uma_zfree(autofs_node_zone, anp);
+	/*
+	 * We don't free autofs_node here; instead we're
+	 * destroying them in autofs_node_delete().
+	 */
+	AUTOFS_LOCK(amp);
+	anp->an_vnode = NULL;
 	vp->v_data = NULL;
-	vrecycle(vp);
+	AUTOFS_UNLOCK(amp);
 
 	return (0);
 }
@@ -529,26 +550,24 @@ struct vop_vector autofs_vnodeops = {
 	.vop_readdir =		autofs_readdir,
 	.vop_remove =		VOP_EOPNOTSUPP,
 	.vop_rename =		VOP_EOPNOTSUPP,
+#if 0
 	.vop_rmdir =		autofs_rmdir,
+#else
+	.vop_rmdir =		VOP_EOPNOTSUPP,
+#endif
 	.vop_setattr =		VOP_EOPNOTSUPP,
 	.vop_symlink =		VOP_EOPNOTSUPP,
 	.vop_write =		VOP_EOPNOTSUPP,
 	.vop_reclaim =		autofs_reclaim,
-	.vop_inactive =		autofs_inactive,
 };
 
 int
-autofs_new_vnode(struct autofs_node *parent, const char *name, int namelen,
-    struct mount *mp, struct vnode **vpp)
+autofs_node_new(struct autofs_node *parent, struct autofs_mount *amp,
+    const char *name, int namelen, struct autofs_node **anpp)
 {
-	struct autofs_mount *amp = VFSTOAUTOFS(mp);
 	struct autofs_node *anp;
-	struct vnode *vp;
-	int error;
 
-	error = getnewvnode("autofsvn", mp, &autofs_vnodeops, &vp);
-	if (error)
-		return (error);
+	AUTOFS_LOCK_ASSERT(anp->an_mount);
 
 	anp = uma_zalloc(autofs_node_zone, M_WAITOK | M_ZERO);
 	if (namelen >= 0)
@@ -559,7 +578,7 @@ autofs_new_vnode(struct autofs_node *parent, const char *name, int namelen,
 	anp->an_trigger = true;
 	getnanotime(&anp->an_ctime);
 	anp->an_parent = parent;
-	anp->an_mount = VFSTOAUTOFS(mp);
+	anp->an_mount = amp;
 	if (parent != NULL) {
 #if 0
 		/*
@@ -571,33 +590,17 @@ autofs_new_vnode(struct autofs_node *parent, const char *name, int namelen,
 	}
 	TAILQ_INIT(&anp->an_children);
 
-	vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
-	vp->v_type = VDIR;
-	if (parent == NULL)
-		vp->v_vflag |= VV_ROOT;
-	vp->v_data = anp;
-	anp->an_vnode = vp;
-
-	error = insmntque(vp, mp);
-	if (error != 0) {
-		/*
-		 * XXX
-		 */
-		VOP_UNLOCK(vp, 0);
-		vrecycle(vp);
-		return (error);
-	}
-
-	*vpp = vp;
-
+	*anpp = anp;
 	return (0);
 }
 
 int
-autofs_find_vnode(struct autofs_node *parent, const char *name,
-    int namelen, struct vnode **vpp)
+autofs_node_find(struct autofs_node *parent, const char *name,
+    int namelen, struct autofs_node **anpp)
 {
 	struct autofs_node *anp;
+
+	AUTOFS_LOCK_ASSERT(anp->an_mount);
 
 	TAILQ_FOREACH(anp, &parent->an_children, an_next) {
 		if (namelen >= 0) {
@@ -608,7 +611,7 @@ autofs_find_vnode(struct autofs_node *parent, const char *name,
 				continue;
 		}
 
-		*vpp = anp->an_vnode;
+		*anpp = anp;
 		return (0);
 	}
 
@@ -616,23 +619,73 @@ autofs_find_vnode(struct autofs_node *parent, const char *name,
 }
 
 int
-autofs_delete_vnode(struct autofs_node *parent, struct vnode *vp)
+autofs_node_delete(struct autofs_node *anp)
 {
-	struct autofs_node *anp, *tmp;
+	struct autofs_node *parent, *child, *tmp;
 
-	TAILQ_FOREACH_SAFE(anp, &parent->an_children, an_next, tmp) {
-		if (anp->an_vnode != vp)
+	AUTOFS_LOCK_ASSERT(anp->an_mount);
+
+	parent = anp->an_parent;
+	KASSERT(parent != NULL, ("root node"));
+	KASSERT(TAILQ_EMPTY(&anp->an_children), ("have children"));
+
+	TAILQ_FOREACH_SAFE(child, &parent->an_children, an_next, tmp) {
+		if (child != anp)
 			continue;
 
-		TAILQ_REMOVE(&parent->an_children, anp, an_next);
+		TAILQ_REMOVE(&parent->an_children, child, an_next);
 
 #if 0
 		if (TAILQ_EMPTY(&parent->an_children))
 			parent->an_trigger = true;
 #endif
 
+		free(anp->an_name, M_AUTOFS);
+		uma_zfree(autofs_node_zone, anp);
+
 		return (0);
 	}
 
 	return (ENOENT);
+}
+
+int
+autofs_node_vn(struct autofs_node *anp, struct mount *mp, struct vnode **vpp)
+{
+	struct vnode *vp;
+	int error;
+
+	AUTOFS_LOCK_ASSERT(anp->an_mount);
+
+	if (anp->an_vnode) {
+		vp = anp->an_vnode;
+		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
+		vref(vp);
+
+		*vpp = vp;
+		return (0);
+	}
+
+	error = getnewvnode("autofs", mp, &autofs_vnodeops, &vp);
+	if (error)
+		return (error);
+
+	vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
+	vhold(vp);
+
+	vp->v_type = VDIR;
+	if (anp->an_parent == NULL)
+		vp->v_vflag |= VV_ROOT;
+	vp->v_data = anp;
+	anp->an_vnode = vp;
+
+	error = insmntque(vp, mp);
+	if (error != 0) {
+		anp->an_vnode = NULL;
+		vdrop(vp);
+		return (error);
+	}
+
+	*vpp = vp;
+	return (0);
 }

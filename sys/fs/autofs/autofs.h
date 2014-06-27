@@ -55,9 +55,9 @@ extern int autofs_debug;
 		    __func__, ## __VA_ARGS__);			\
 	} while (0)
 
-#define AUTOFS_LOCK(X)		mtx_lock(&X->am_lock)
-#define AUTOFS_UNLOCK(X)	mtx_unlock(&X->am_lock)
-#define AUTOFS_LOCK_ASSERT(X)	mtx_assert(&X->am_lock, MA_OWNED)
+#define AUTOFS_LOCK(X)		sx_xlock(&X->am_lock)
+#define AUTOFS_UNLOCK(X)	sx_xunlock(&X->am_lock)
+#define AUTOFS_LOCK_ASSERT(X)	sx_assert(&X->am_lock, SA_XLOCKED)
 
 struct autofs_node {
 	TAILQ_ENTRY(autofs_node)	an_next;
@@ -74,8 +74,9 @@ struct autofs_node {
 struct autofs_mount {
 	TAILQ_ENTRY(autofs_mount)	am_next;
 	struct autofs_softc		*am_softc;
-	struct vnode			*am_rootvp;
-	struct mtx			am_lock;
+	struct autofs_node		*am_root;
+	struct mount			*am_mp;
+	struct sx			am_lock;
 	char				am_from[MAXPATHLEN];
 	char				am_mountpoint[MAXPATHLEN];
 	char				am_options[MAXPATHLEN];
@@ -103,7 +104,6 @@ struct autofs_softc {
 	struct cdev			*sc_cdev;
 	struct cv			sc_cv;
 	struct sx			sc_lock;
-	TAILQ_HEAD(, autofs_mount)	sc_mounts;
 	TAILQ_HEAD(, autofs_request)	sc_requests;
 	pid_t				sc_dev_pid;
 	bool				sc_dev_opened;
@@ -119,10 +119,13 @@ struct autofs_softc {
 bool	autofs_ignore_thread(const struct thread *td);
 int	autofs_init(struct vfsconf *vfsp);
 int	autofs_uninit(struct vfsconf *vfsp);
-int	autofs_new_vnode(struct autofs_node *parent, const char *name,
-	    int namelen, struct mount *mp, struct vnode **vpp);
-int	autofs_find_vnode(struct autofs_node *parent, const char *name,
-	    int namelen, struct vnode **vpp);
-int	autofs_delete_vnode(struct autofs_node *parent, struct vnode *vp);
+
+int	autofs_node_new(struct autofs_node *parent, struct autofs_mount *amp,
+	    const char *name, int namelen, struct autofs_node **anpp);
+int	autofs_node_find(struct autofs_node *parent,
+	    const char *name, int namelen, struct autofs_node **anpp);
+int	autofs_node_delete(struct autofs_node *anp);
+int	autofs_node_vn(struct autofs_node *anp, struct mount *mp,
+	    struct vnode **vpp);
 
 #endif /* !AUTOFS_H */
