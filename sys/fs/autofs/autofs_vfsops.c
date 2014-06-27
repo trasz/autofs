@@ -38,7 +38,6 @@
 #include <sys/module.h>
 #include <sys/mount.h>
 #include <sys/sx.h>
-#include <sys/sysctl.h>
 #include <sys/vnode.h>
 
 #include "autofs.h"

@@ -49,6 +49,9 @@ __FBSDID("$FreeBSD$");
 
 #include "autofs.h"
 
+static int	autofs_trigger_vn(struct vnode *vp, const char *path,
+		    int pathlen, struct vnode **newvp);
+
 static int
 autofs_access(struct vop_access_args *ap)
 {
@@ -59,11 +62,28 @@ autofs_access(struct vop_access_args *ap)
 static int
 autofs_getattr(struct vop_getattr_args *ap)
 {
-	struct autofs_node *anp = ap->a_vp->v_data;
-	struct mount *mp = ap->a_vp->v_mount;
+	struct vnode *vp = ap->a_vp;
+	struct vnode *newvp;
+	struct autofs_node *anp = vp->v_data;
+	struct mount *mp = vp->v_mount;
 	struct vattr *vap = ap->a_vap;
+	int error;
 
 	KASSERT(ap->a_vp->v_type == VDIR, ("!VDIR"));
+
+	if (autofs_mount_on_stat && anp->an_trigger == true &&
+	    autofs_ignore_thread(curthread) == false) {
+		error = autofs_trigger_vn(vp, "", 0, &newvp);
+		if (error != 0)
+			return (error);
+
+		if (newvp != NULL) {
+			error = VOP_GETATTR(newvp, ap->a_vap,
+			    ap->a_cred);
+			vput(newvp);
+			return (error);
+		}
+	}
 
 	vap->va_type = VDIR;
 	vap->va_mode = 0755;
@@ -163,7 +183,7 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 	}
 
 	if (ar != NULL) {
-		//AUTOFS_DEBUG("found existing request for %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
+		AUTOFS_DEBUG("found existing request for %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
 		refcount_acquire(&ar->ar_refcount);
 	} else {
 		ar = uma_zalloc(autofs_request_zone, M_WAITOK | M_ZERO);
@@ -176,7 +196,7 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 		strlcpy(ar->ar_key, key, sizeof(ar->ar_key));
 		strlcpy(ar->ar_options, amp->am_options, sizeof(ar->ar_options));
 
-		//AUTOFS_DEBUG("new request for %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
+		AUTOFS_DEBUG("new request for %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
 		refcount_init(&ar->ar_refcount, 1);
 		TAILQ_INSERT_TAIL(&sc->sc_requests, ar, ar_next);
 	}
@@ -190,6 +210,7 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 			break;
 	}
 
+	AUTOFS_DEBUG("done with %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
 	last = refcount_release(&ar->ar_refcount);
 	if (last) {
 		TAILQ_REMOVE(&sc->sc_requests, ar, ar_next);
@@ -308,7 +329,7 @@ autofs_lookup(struct vop_lookup_args *ap)
 	    autofs_ignore_thread(cnp->cn_thread) == false) {
 		error = autofs_trigger_vn(dvp, cnp->cn_nameptr, cnp->cn_namelen, &newvp);
 		if (error != 0) {
-			//AUTOFS_DEBUG("autofs_trigger_vn failed");
+			//AUTOFS_DEBUG("autofs_trigger_vn failed, error %d", error);
 			return (error);
 		}
 
@@ -330,7 +351,8 @@ autofs_lookup(struct vop_lookup_args *ap)
 			} else {
 				vput(newvp);
 			}
-			//AUTOFS_DEBUG("VOP_LOOKUP done");
+			//if (error != 0)
+			//	AUTOFS_DEBUG("VOP_LOOKUP done with error %d", error);
 			return (error);
 		}
 	}
@@ -362,6 +384,7 @@ autofs_lookup(struct vop_lookup_args *ap)
 			return (EJUSTRETURN);
 		}
 
+		//AUTOFS_DEBUG("autofs_node_vn failed with error %d", error);
 		AUTOFS_UNLOCK(amp);
 		return (error);
 	}

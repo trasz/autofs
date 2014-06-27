@@ -43,6 +43,7 @@ extern uma_zone_t autofs_request_zone;
 extern uma_zone_t autofs_node_zone;
 
 extern int autofs_debug;
+extern int autofs_mount_on_stat;
 
 #define	AUTOFS_DEBUG(X, ...)					\
 	if (autofs_debug > 1) {					\

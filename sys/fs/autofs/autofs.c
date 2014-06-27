@@ -71,8 +71,12 @@ struct autofs_softc	*sc;
 SYSCTL_NODE(_vfs, OID_AUTO, autofs, CTLFLAG_RD, 0, "Automounter filesystem");
 int autofs_debug = 2;
 TUNABLE_INT("vfs.autofs.debug", &autofs_debug);
-SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_debug, CTLFLAG_RW,
+SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_debug, CTLFLAG_RWTUN,
     &autofs_debug, 2, "Enable debug messages");
+int autofs_mount_on_stat = 1;
+TUNABLE_INT("vfs.autofs.mount_on_stat", &autofs_mount_on_stat);
+SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_mount_on_stat, CTLFLAG_RWTUN,
+    &autofs_mount_on_stat, 1, "Enable debug messages");
 
 int
 autofs_init(struct vfsconf *vfsp)
@@ -157,6 +161,8 @@ autofs_ioctl_request(struct autofs_softc *sc, struct autofs_daemon_request *adr)
 	struct autofs_request *ar;
 	int error;
 
+	//AUTOFS_DEBUG("go");
+
 	sx_xlock(&sc->sc_lock);
 	for (;;) {
 		TAILQ_FOREACH(ar, &sc->sc_requests, ar_next) {
@@ -174,6 +180,7 @@ autofs_ioctl_request(struct autofs_softc *sc, struct autofs_daemon_request *adr)
 		error = cv_wait_sig(&sc->sc_cv, &sc->sc_lock);
 		if (error != 0) {
 			sx_xunlock(&sc->sc_lock);
+			//AUTOFS_DEBUG("failed with error %d", error);
 			return (error);
 		}
 	}
@@ -192,6 +199,8 @@ autofs_ioctl_request(struct autofs_softc *sc, struct autofs_daemon_request *adr)
 	curproc->p_flag2 |= P2_AUTOMOUNTD;
 	PROC_UNLOCK(curproc);
 
+	//AUTOFS_DEBUG("done");
+
 	return (0);
 }
 
@@ -199,6 +208,8 @@ static int
 autofs_ioctl_done(struct autofs_softc *sc, struct autofs_daemon_done *add)
 {
 	struct autofs_request *ar;
+
+	//AUTOFS_DEBUG("go");
 
 	sx_xlock(&sc->sc_lock);
 	TAILQ_FOREACH(ar, &sc->sc_requests, ar_next) {
@@ -208,6 +219,7 @@ autofs_ioctl_done(struct autofs_softc *sc, struct autofs_daemon_done *add)
 
 	if (ar == NULL) {
 		sx_xunlock(&sc->sc_lock);
+		//AUTOFS_DEBUG("id %d not found", ar->ar_id);
 		return (ESRCH);
 	}
 
@@ -216,6 +228,8 @@ autofs_ioctl_done(struct autofs_softc *sc, struct autofs_daemon_done *add)
 	cv_signal(&sc->sc_cv);
 
 	sx_xunlock(&sc->sc_lock);
+
+	//AUTOFS_DEBUG("done");
 
 	return (0);
 }
