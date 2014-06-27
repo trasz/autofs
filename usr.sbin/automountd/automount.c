@@ -101,7 +101,8 @@ mount_autofs(const char *from, const char *fspath, const char *options, const ch
 
 	create_directory(fspath);
 
-	log_debugx("mounting %s on %s, prefix %s", from, fspath, prefix);
+	log_debugx("mounting %s on %s, prefix \"%s\", options \"%s\"",
+	    from, fspath, prefix, options);
 	memset(errmsg, 0, sizeof(errmsg));
 
 	build_iovec(&iov, &iovlen, "fstype", (void *)"autofs", (size_t)-1);

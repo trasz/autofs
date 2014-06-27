@@ -168,7 +168,7 @@ create_directory(const char *path)
 			continue;
 		if (errno != ENOENT)
 			log_err(1, "cannot access %s", partial);
-		log_debugx("directory \"%s\" does not exist, creating",
+		log_debugx("directory %s does not exist, creating",
 		    partial);
 		error = mkdir(partial, 0755);
 		if (error != 0)
@@ -425,12 +425,8 @@ node_expand_wildcard(struct node *n, const char *key)
 	struct node *child;
 
 	if (n->n_key != NULL) {
-		if (strcmp(n->n_key, "*") == 0) {
-			log_debugx("replacing %s with %s", n->n_key, key);
+		if (strcmp(n->n_key, "*") == 0)
 			n->n_key = checked_strdup(key);
-		} else {
-			log_debugx("not replacing %s", n->n_key);
-		}
 	}
 
 	TAILQ_FOREACH(child, &n->n_children, n_next)

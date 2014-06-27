@@ -247,10 +247,6 @@ do_wait(int kq, double sleep_time)
 	timeout.tv_sec = sleep_time;
 	timeout.tv_nsec = 0;
 
-	/*
-	 * XXX: For some reason this doesn't work - it always returns after
-	 * 	a timeout, ignoring filesystem events.
-	 */
 	log_debugx("waiting for filesystem event for %.0f seconds", sleep_time);
 	error = kevent(kq, NULL, 0, &unused, 1, &timeout);
 	if (error < 0)

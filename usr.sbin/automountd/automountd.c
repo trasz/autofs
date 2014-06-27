@@ -142,9 +142,9 @@ handle_request(int autofs_fd, const struct autofs_daemon_request *adr)
 	char *mount_cmd, *options, *fstype;
 	int error, ret;
 
-	log_debugx("got request: from %s, prefix %s, key %s, path %s, "
-	    "options %s", adr->adr_from, adr->adr_prefix, adr->adr_key,
-	    adr->adr_path, adr->adr_options);
+	log_debugx("got request: from %s, path %s, prefix \"%s\", key \"%s\", "
+	    "options \"%s\"", adr->adr_from, adr->adr_path, adr->adr_prefix,
+	    adr->adr_key, adr->adr_options);
 
 	if (strncmp(adr->adr_from, "map ", 4) != 0) {
 		log_errx(1, "invalid mountfrom \"%s\"; failing request",
