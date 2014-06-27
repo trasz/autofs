@@ -402,8 +402,7 @@ expand_ampersand(char *string, const char *key)
 }
 
 /*
- * Expand "&" in n_location.  If node's n_key is not "*", use it; otherwise
- * use the provided key, if provided; otherwise do nothing.
+ * Expand "&" in n_location.
  */
 void
 node_expand_ampersand(struct node *n, const char *key)
@@ -415,6 +414,27 @@ node_expand_ampersand(struct node *n, const char *key)
 
 	TAILQ_FOREACH(child, &n->n_children, n_next)
 		node_expand_ampersand(child, key);
+}
+
+/*
+ * Expand "*" in n_key.
+ */
+void
+node_expand_wildcard(struct node *n, const char *key)
+{
+	struct node *child;
+
+	if (n->n_key != NULL) {
+		if (strcmp(n->n_key, "*") == 0) {
+			log_debugx("replacing %s with %s", n->n_key, key);
+			n->n_key = checked_strdup(key);
+		} else {
+			log_debugx("not replacing %s", n->n_key);
+		}
+	}
+
+	TAILQ_FOREACH(child, &n->n_children, n_next)
+		node_expand_wildcard(child, key);
 }
 
 void
@@ -600,14 +620,6 @@ node_find(struct node *node, const char *path)
 	char *tmp;
 
 	//log_debugx("looking up %s in %s", path, node->n_key);
-
-	if (strcmp(node->n_key, "*") == 0)
-		return (node);
-
-#if 0
-	if (strcmp(node->n_key, "/") == 0 && TAILQ_EMPTY(node->n_children))
-		return (node);
-#endif
 
 	tmp = node_path(node);
 	if (strncmp(tmp, path, strlen(tmp)) != 0) {

@@ -118,6 +118,12 @@ create_subtree(struct node *node)
 	struct node *child;
 	char *path;
 
+	/*
+	 * Skip wildcard nodes.
+	 */
+	if (strcmp(node->n_key, "*") == 0)
+		return;
+
 	path = node_path(node);
 	//log_debugx("creating directory %s", path);
 	create_directory(path);
@@ -155,7 +161,7 @@ handle_request(int autofs_fd, const struct autofs_daemon_request *adr)
 		    checked_strdup("[kernel request]"), lineno);
 	}
 	parse_map(parent, map, adr->adr_key[0] != '\0' ? adr->adr_key : NULL);
-
+	node_expand_wildcard(root, adr->adr_key[0] != '\0' ? adr->adr_key : NULL);
 	node = node_find(root, adr->adr_path);
 	if (node == NULL) {
 		log_errx(1, "map %s does not contain key for \"%s\"; "

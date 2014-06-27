@@ -81,6 +81,7 @@ bool		node_is_direct_map(const struct node *n);
 char	*node_path(const struct node *n);
 char	*node_options(const struct node *n);
 void	node_expand_ampersand(struct node *root, const char *key);
+void	node_expand_wildcard(struct node *root, const char *key);
 void	node_expand_defined(struct node *root);
 void	node_expand_indirect_maps(struct node *n);
 void	node_print(const struct node *n);
