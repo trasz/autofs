@@ -124,7 +124,7 @@ int	autofs_node_new(struct autofs_node *parent, struct autofs_mount *amp,
 	    const char *name, int namelen, struct autofs_node **anpp);
 int	autofs_node_find(struct autofs_node *parent,
 	    const char *name, int namelen, struct autofs_node **anpp);
-int	autofs_node_delete(struct autofs_node *anp);
+void	autofs_node_delete(struct autofs_node *anp);
 int	autofs_node_vn(struct autofs_node *anp, struct mount *mp,
 	    struct vnode **vpp);
 

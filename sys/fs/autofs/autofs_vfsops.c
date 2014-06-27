@@ -31,8 +31,8 @@
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/buf.h>
 #include <sys/conf.h>
+#include <sys/condvar.h>
 #include <sys/ioccom.h>
 #include <sys/kernel.h>
 #include <sys/module.h>
@@ -90,8 +90,8 @@ autofs_mount(struct mount *mp)
 	AUTOFS_LOCK(amp);
 	error = autofs_node_new(NULL, amp, ".", -1, &amp->am_root);
 	if (error != 0) {
-		/* XXX */
 		AUTOFS_UNLOCK(amp);
+		free(amp, M_AUTOFS);
 		return (error);
 	}
 	AUTOFS_UNLOCK(amp);
@@ -104,30 +104,40 @@ autofs_mount(struct mount *mp)
 static int
 autofs_unmount(struct mount *mp, int mntflags)
 {
-	struct autofs_mount *amp;
+	struct autofs_mount *amp = VFSTOAUTOFS(mp);
+	struct autofs_node *anp;
 	int error, flags;
-
-	amp = VFSTOAUTOFS(mp);
-	//vrele(amp->am_rootvp);
 
 	flags = 0;
 	if (mntflags & MNT_FORCE)
 		flags |= FORCECLOSE;
 	error = vflush(mp, 0, flags, curthread);
-	if (error != 0)
+	if (error != 0) {
+		AUTOFS_DEBUG("vflush failed with error %d", error);
 		return (error);
+	}
 
-	// XXX: Locking.
-	free(amp, M_AUTOFS);
-	mp->mnt_data = NULL;
+	AUTOFS_LOCK(amp);
 
-#if 0
-	MNT_ILOCK(mp);
-	mp->mnt_flag &= ~MNT_LOCAL;
-	MNT_IUNLOCK(mp);
+#if 1 /* XXX */
+	/*
+	 * Not terribly efficient, but at least not recursive.
+	 */
+	while (!TAILQ_EMPTY(&amp->am_root->an_children)) {
+		anp = TAILQ_FIRST(&amp->am_root->an_children);
+		while (!TAILQ_EMPTY(&anp->an_children))
+			anp = TAILQ_FIRST(&anp->an_children);
+		autofs_node_delete(anp);
+	}
+	autofs_node_delete(amp->am_root);
 #endif
 
-	return (error);
+	mp->mnt_data = NULL;
+	AUTOFS_UNLOCK(amp);
+
+	free(amp, M_AUTOFS);
+
+	return (0);
 }
 
 static int

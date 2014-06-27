@@ -129,7 +129,7 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 	struct autofs_node *firstanp;
 	struct autofs_request *ar;
 	char *key, *path;
-	int error, last;
+	int error = 0, last;
 
 	sx_assert(&sc->sc_lock, SA_XLOCKED);
 
@@ -511,9 +511,9 @@ autofs_rmdir(struct vop_rmdir_args *ap)
 	struct autofs_node *anp = ap->a_vp->v_data;
 	int error;
 
-	error = autofs_node_delete(anp);
+	autofs_node_delete(anp);
 
-	return (error);
+	return (0);
 }
 #endif
 
@@ -567,7 +567,8 @@ autofs_node_new(struct autofs_node *parent, struct autofs_mount *amp,
 {
 	struct autofs_node *anp;
 
-	AUTOFS_LOCK_ASSERT(anp->an_mount);
+	if (parent != NULL)
+		AUTOFS_LOCK_ASSERT(parent->an_mount);
 
 	anp = uma_zalloc(autofs_node_zone, M_WAITOK | M_ZERO);
 	if (namelen >= 0)
@@ -579,15 +580,8 @@ autofs_node_new(struct autofs_node *parent, struct autofs_mount *amp,
 	getnanotime(&anp->an_ctime);
 	anp->an_parent = parent;
 	anp->an_mount = amp;
-	if (parent != NULL) {
-#if 0
-		/*
-		 * XXX: Release blocked processes?
-		 */
-		parent->an_trigger = false;
-#endif
+	if (parent != NULL)
 		TAILQ_INSERT_TAIL(&parent->an_children, anp, an_next);
-	}
 	TAILQ_INIT(&anp->an_children);
 
 	*anpp = anp;
@@ -600,7 +594,7 @@ autofs_node_find(struct autofs_node *parent, const char *name,
 {
 	struct autofs_node *anp;
 
-	AUTOFS_LOCK_ASSERT(anp->an_mount);
+	AUTOFS_LOCK_ASSERT(parent->an_mount);
 
 	TAILQ_FOREACH(anp, &parent->an_children, an_next) {
 		if (namelen >= 0) {
@@ -618,35 +612,19 @@ autofs_node_find(struct autofs_node *parent, const char *name,
 	return (ENOENT);
 }
 
-int
+void
 autofs_node_delete(struct autofs_node *anp)
 {
-	struct autofs_node *parent, *child, *tmp;
+	struct autofs_node *parent;
 
 	AUTOFS_LOCK_ASSERT(anp->an_mount);
-
-	parent = anp->an_parent;
-	KASSERT(parent != NULL, ("root node"));
 	KASSERT(TAILQ_EMPTY(&anp->an_children), ("have children"));
 
-	TAILQ_FOREACH_SAFE(child, &parent->an_children, an_next, tmp) {
-		if (child != anp)
-			continue;
-
-		TAILQ_REMOVE(&parent->an_children, child, an_next);
-
-#if 0
-		if (TAILQ_EMPTY(&parent->an_children))
-			parent->an_trigger = true;
-#endif
-
-		free(anp->an_name, M_AUTOFS);
-		uma_zfree(autofs_node_zone, anp);
-
-		return (0);
-	}
-
-	return (ENOENT);
+	parent = anp->an_parent;
+	if (parent != NULL)
+		TAILQ_REMOVE(&parent->an_children, anp, an_next);
+	free(anp->an_name, M_AUTOFS);
+	uma_zfree(autofs_node_zone, anp);
 }
 
 int
