@@ -71,6 +71,12 @@ autofs_getattr(struct vop_getattr_args *ap)
 
 	KASSERT(ap->a_vp->v_type == VDIR, ("!VDIR"));
 
+	/*
+	 * The reason we must do this is that some tree-walking software,
+	 * namely fts(3), assumes that stat(".") results won't change
+	 * between chdir("subdir") and chdir(".."), and fails with ENOENT
+	 * otherwise.
+	 */
 	if (autofs_mount_on_stat && anp->an_trigger == true &&
 	    autofs_ignore_thread(curthread) == false) {
 		error = autofs_trigger_vn(vp, "", 0, &newvp);
