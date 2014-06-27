@@ -117,10 +117,11 @@ struct autofs_softc {
 #define AUTOFS_FSNAMELEN	16	/* equal to MFSNAMELEN */
 #define AUTOFS_DELEN		(8 + AUTOFS_NAMELEN)
 
-bool	autofs_ignore_thread(const struct thread *td);
 int	autofs_init(struct vfsconf *vfsp);
 int	autofs_uninit(struct vfsconf *vfsp);
-
+int	autofs_trigger(struct autofs_node *anp, const char *component,
+	    int componentlen);
+bool	autofs_ignore_thread(const struct thread *td);
 int	autofs_node_new(struct autofs_node *parent, struct autofs_mount *amp,
 	    const char *name, int namelen, struct autofs_node **anpp);
 int	autofs_node_find(struct autofs_node *parent,
