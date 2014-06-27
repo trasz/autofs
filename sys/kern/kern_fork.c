@@ -512,6 +512,9 @@ do_fork(struct thread *td, int flags, struct proc *p2, struct thread *td2,
 		p2->p_flag2 |= P2_INHERIT_PROTECTED;
 	}
 
+	if (p1->p_flag2 & P2_AUTOMOUNTD)
+		p2->p_flag2 |= P2_AUTOMOUNTD;
+
 	/*
 	 * p_limit is copy-on-write.  Bump its refcount.
 	 */

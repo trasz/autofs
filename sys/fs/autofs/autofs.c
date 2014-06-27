@@ -89,7 +89,7 @@ autofs_init(struct vfsconf *vfsp)
 	    UMA_ALIGN_PTR, 0);
 
 	TAILQ_INIT(&sc->sc_requests);
-	cv_init(&sc->sc_cv, "autofs");
+	cv_init(&sc->sc_cv, "autofscv");
 	sx_init(&sc->sc_lock, "autofslk");
 
 	error = make_dev_p(MAKEDEV_CHECKNAME, &sc->sc_cdev, &autofs_cdevsw,
@@ -134,25 +134,19 @@ autofs_uninit(struct vfsconf *vfsp)
 bool
 autofs_ignore_thread(const struct thread *td)
 {
-	const struct proc *p;
+	struct proc *p = td->td_proc;
 
 	if (sc->sc_dev_opened == false)
 		return (false);
 
-	p = td->td_proc;
-
-	sx_slock(&proctree_lock);
-	/*
-	 * XXX: There was something wrong about iterating this way; ask kib@.
-	 */
-	for (; p != NULL; p = p->p_pptr) {
-		if (p->p_pid == sc->sc_dev_pid) {
-			sx_sunlock(&proctree_lock);
-
-			return (true);
-		}
+	PROC_LOCK(p);
+	if (p->p_flag2 & P2_AUTOMOUNTD) {
+		AUTOFS_DEBUG("must pass pid %d (%s)", p->p_pid, p->p_comm);
+		PROC_UNLOCK(p);
+		return (true);
 	}
-	sx_sunlock(&proctree_lock);
+	AUTOFS_DEBUG("must hold pid %d (%s)", p->p_pid, p->p_comm);
+	PROC_UNLOCK(p);
 
 	return (false);
 }
@@ -194,6 +188,10 @@ autofs_ioctl_request(struct autofs_softc *sc, struct autofs_daemon_request *adr)
 	strlcpy(adr->adr_key, ar->ar_key, sizeof(adr->adr_key));
 	strlcpy(adr->adr_options, ar->ar_options, sizeof(adr->adr_options));
 
+	PROC_LOCK(curproc);
+	curproc->p_flag2 |= P2_AUTOMOUNTD;
+	PROC_UNLOCK(curproc);
+
 	return (0);
 }
 
@@ -232,13 +230,11 @@ autofs_open(struct cdev *dev, int flags, int fmt, struct thread *td)
 		return (EBUSY);
 	}
 
-	sc->sc_dev_pid = td->td_proc->p_pid;
 	sc->sc_dev_opened = true;
 	sx_xunlock(&sc->sc_lock);
 
 	return (0);
 }
-
 
 static int
 autofs_close(struct cdev *dev, int flag, int fmt, struct thread *td)

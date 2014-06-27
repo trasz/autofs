@@ -105,7 +105,6 @@ struct autofs_softc {
 	struct cv			sc_cv;
 	struct sx			sc_lock;
 	TAILQ_HEAD(, autofs_request)	sc_requests;
-	pid_t				sc_dev_pid;
 	bool				sc_dev_opened;
 };
 
