@@ -161,7 +161,7 @@ autofs_ioctl_request(struct autofs_softc *sc, struct autofs_daemon_request *adr)
 	struct autofs_request *ar;
 	int error;
 
-	//AUTOFS_DEBUG("go");
+	AUTOFS_DEBUG("go");
 
 	sx_xlock(&sc->sc_lock);
 	for (;;) {
@@ -180,7 +180,7 @@ autofs_ioctl_request(struct autofs_softc *sc, struct autofs_daemon_request *adr)
 		error = cv_wait_sig(&sc->sc_cv, &sc->sc_lock);
 		if (error != 0) {
 			sx_xunlock(&sc->sc_lock);
-			//AUTOFS_DEBUG("failed with error %d", error);
+			AUTOFS_DEBUG("failed with error %d", error);
 			return (error);
 		}
 	}
@@ -199,7 +199,7 @@ autofs_ioctl_request(struct autofs_softc *sc, struct autofs_daemon_request *adr)
 	curproc->p_flag2 |= P2_AUTOMOUNTD;
 	PROC_UNLOCK(curproc);
 
-	//AUTOFS_DEBUG("done");
+	AUTOFS_DEBUG("done");
 
 	return (0);
 }
@@ -209,7 +209,7 @@ autofs_ioctl_done(struct autofs_softc *sc, struct autofs_daemon_done *add)
 {
 	struct autofs_request *ar;
 
-	//AUTOFS_DEBUG("go");
+	AUTOFS_DEBUG("request %d, error %d", add->add_id, add->add_error);
 
 	sx_xlock(&sc->sc_lock);
 	TAILQ_FOREACH(ar, &sc->sc_requests, ar_next) {
@@ -219,17 +219,18 @@ autofs_ioctl_done(struct autofs_softc *sc, struct autofs_daemon_done *add)
 
 	if (ar == NULL) {
 		sx_xunlock(&sc->sc_lock);
-		//AUTOFS_DEBUG("id %d not found", ar->ar_id);
+		AUTOFS_DEBUG("id %d not found", ar->ar_id);
 		return (ESRCH);
 	}
 
+	ar->ar_error = add->add_error;
 	ar->ar_done = true;
 	ar->ar_in_progress = false;
 	cv_signal(&sc->sc_cv);
 
 	sx_xunlock(&sc->sc_lock);
 
-	//AUTOFS_DEBUG("done");
+	AUTOFS_DEBUG("done");
 
 	return (0);
 }

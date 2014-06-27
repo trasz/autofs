@@ -155,7 +155,7 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 	struct autofs_node *firstanp;
 	struct autofs_request *ar;
 	char *key, *path;
-	int error = 0, last;
+	int error = 0, request_error, last;
 
 	sx_assert(&sc->sc_lock, SA_XLOCKED);
 
@@ -216,6 +216,8 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 			break;
 	}
 
+	request_error = ar->ar_error;
+
 	AUTOFS_DEBUG("done with %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
 	last = refcount_release(&ar->ar_refcount);
 	if (last) {
@@ -225,7 +227,9 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 
 	//AUTOFS_DEBUG("done");
 
-	return (error);
+	if (error != 0)
+		return (error);
+	return (request_error);
 }
 
 /*

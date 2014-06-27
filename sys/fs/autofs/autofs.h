@@ -91,6 +91,7 @@ struct autofs_request {
 	struct autofs_softc		*ar_softc;
 	int				ar_id;
 	bool				ar_done;
+	int				ar_error;
 	bool				ar_in_progress;
 	char				ar_from[MAXPATHLEN];
 	char				ar_path[MAXPATHLEN];

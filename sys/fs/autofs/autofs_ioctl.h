@@ -76,6 +76,11 @@ struct autofs_daemon_done {
 	 * Identifier, copied from adr_id.
 	 */
 	int		add_id;
+
+	/*
+	 * Error number, possibly returned to userland.
+	 */
+	int		add_error;
 };
 
 #define	AUTOFSREQUEST	_IOR('I', 0x01, struct autofs_daemon_request)

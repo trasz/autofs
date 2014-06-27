@@ -63,15 +63,18 @@
 #define AUTOMOUNTD_PIDFILE	"/var/run/automountd.pid"
 
 static int nchildren = 0;
+static int autofs_fd;
+static int request_id;
 
 static void
-done(int autofs_fd, int id)
+done(int request_error)
 {
 	struct autofs_daemon_done done;
 	int error;
 
 	memset(&done, 0, sizeof(done));
-	done.add_id = id;
+	done.add_id = request_id;
+	done.add_error = request_error;
 
 	error = ioctl(autofs_fd, AUTOFSDONE, &done);
 	if (error != 0)
@@ -134,7 +137,14 @@ create_subtree(struct node *node)
 }
 
 static void
-handle_request(int autofs_fd, const struct autofs_daemon_request *adr)
+exit_callback(void)
+{
+
+	done(EIO);
+}
+
+static void
+handle_request(const struct autofs_daemon_request *adr)
 {
 	const char *map;
 	struct node *root, *parent, *node;
@@ -145,6 +155,12 @@ handle_request(int autofs_fd, const struct autofs_daemon_request *adr)
 	log_debugx("got request: from %s, path %s, prefix \"%s\", key \"%s\", "
 	    "options \"%s\"", adr->adr_from, adr->adr_path, adr->adr_prefix,
 	    adr->adr_key, adr->adr_options);
+
+	/*
+	 * Try to notify the kernel about any problems.
+	 */
+	request_id = adr->adr_id;
+	atexit(exit_callback);
 
 	if (strncmp(adr->adr_from, "map ", 4) != 0) {
 		log_errx(1, "invalid mountfrom \"%s\"; failing request",
@@ -178,10 +194,13 @@ handle_request(int autofs_fd, const struct autofs_daemon_request *adr)
 		 * and complete the request.
 		 */
 		create_subtree(node);
-		done(autofs_fd, adr->adr_id);
+		done(0);
 
 		log_debugx("nothing to mount; exiting");
-		exit(0);
+		/*
+		 * Exit without calling exit_callback().
+		 */
+		quick_exit(0);
 	}
 
 	options = node_options(node);
@@ -217,8 +236,11 @@ handle_request(int autofs_fd, const struct autofs_daemon_request *adr)
 	if (error != 0)
 		log_errx(1, "failed to execute \"%s\"", mount_cmd);
 
-	done(autofs_fd, adr->adr_id);
+	done(0);
 	log_debugx("mount done; exiting");
+	/*
+	 * Exit without calling exit_callback().
+	 */
 	exit(0);
 }
 
@@ -269,7 +291,7 @@ main_automountd(int argc, char **argv)
 	pid_t pid, otherpid;
 	const char *pidfile_path = AUTOMOUNTD_PIDFILE;
 	struct autofs_daemon_request request;
-	int ch, debug = 0, error, autofs_fd, maxproc = 30, retval, saved_errno;
+	int ch, debug = 0, error, maxproc = 30, retval, saved_errno;
 	bool dont_daemonize = false;
 
 	defined_init();
@@ -379,7 +401,7 @@ main_automountd(int argc, char **argv)
 		}
 
 		pidfile_close(pidfh);
-		handle_request(autofs_fd, &request);
+		handle_request(&request);
 	}
 
 	pidfile_close(pidfh);
