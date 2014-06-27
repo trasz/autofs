@@ -203,7 +203,7 @@ autofs_callout(void *context)
 	ar->ar_error = ETIMEDOUT;
 	ar->ar_done = true;
 	ar->ar_in_progress = false;
-	cv_signal(&sc->sc_cv);
+	cv_broadcast(&sc->sc_cv);
 	sx_xunlock(&sc->sc_lock);
 }
 
@@ -274,7 +274,7 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 	free(key, M_AUTOFS);
 	free(path, M_AUTOFS);
 
-	cv_signal(&sc->sc_cv);
+	cv_broadcast(&sc->sc_cv);
 	while (ar->ar_done == false) {
 		error = cv_wait_sig(&sc->sc_cv, &sc->sc_lock);
 		if (error != 0)
@@ -374,7 +374,7 @@ autofs_ioctl_done(struct autofs_softc *sc, struct autofs_daemon_done *add)
 	ar->ar_error = add->add_error;
 	ar->ar_done = true;
 	ar->ar_in_progress = false;
-	cv_signal(&sc->sc_cv);
+	cv_broadcast(&sc->sc_cv);
 
 	sx_xunlock(&sc->sc_lock);
 
