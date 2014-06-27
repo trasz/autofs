@@ -78,6 +78,10 @@ int autofs_mount_on_stat = 1;
 TUNABLE_INT("vfs.autofs.mount_on_stat", &autofs_mount_on_stat);
 SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_mount_on_stat, CTLFLAG_RWTUN,
     &autofs_mount_on_stat, 1, "Enable debug messages");
+int autofs_timeout = 10;
+TUNABLE_INT("vfs.autofs.timeout", &autofs_timeout);
+SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_timeout, CTLFLAG_RWTUN,
+    &autofs_timeout, 10, "Number of seconds to wait for automountd(8)");
 
 int
 autofs_init(struct vfsconf *vfsp)
@@ -185,6 +189,24 @@ autofs_path(struct autofs_node *anp)
 	return (path);
 }
 
+static void
+autofs_callout(void *context)
+{
+	struct autofs_request *ar = context;
+	struct autofs_softc *sc = ar->ar_softc;
+
+	sx_xlock(&sc->sc_lock);
+	AUTOFS_DEBUG("timing out request %d", ar->ar_id);
+	/*
+	 * XXX: EIO perhaps?
+	 */
+	ar->ar_error = ETIMEDOUT;
+	ar->ar_done = true;
+	ar->ar_in_progress = false;
+	cv_signal(&sc->sc_cv);
+	sx_xunlock(&sc->sc_lock);
+}
+
 /*
  * Send request to automountd(8) and wait for completion.
  */
@@ -244,6 +266,8 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 		strlcpy(ar->ar_options, amp->am_options, sizeof(ar->ar_options));
 
 		AUTOFS_DEBUG("new request for %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
+		callout_init(&ar->ar_callout, 1);
+		callout_reset(&ar->ar_callout, autofs_timeout * hz, autofs_callout, ar);
 		refcount_init(&ar->ar_refcount, 1);
 		TAILQ_INSERT_TAIL(&sc->sc_requests, ar, ar_next);
 	}
@@ -263,6 +287,12 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 	last = refcount_release(&ar->ar_refcount);
 	if (last) {
 		TAILQ_REMOVE(&sc->sc_requests, ar, ar_next);
+		/*
+		 * XXX
+		 */
+		sx_xunlock(&sc->sc_lock);
+		callout_drain(&ar->ar_callout);
+		sx_xlock(&sc->sc_lock);
 		uma_zfree(autofs_request_zone, ar);
 	}
 
@@ -272,7 +302,6 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 		return (error);
 	return (request_error);
 }
-
 
 static int
 autofs_ioctl_request(struct autofs_softc *sc, struct autofs_daemon_request *adr)
