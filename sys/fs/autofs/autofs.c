@@ -219,7 +219,7 @@ autofs_ioctl_done(struct autofs_softc *sc, struct autofs_daemon_done *add)
 
 	if (ar == NULL) {
 		sx_xunlock(&sc->sc_lock);
-		AUTOFS_DEBUG("id %d not found", ar->ar_id);
+		AUTOFS_DEBUG("id %d not found", add->add_id);
 		return (ESRCH);
 	}
 
