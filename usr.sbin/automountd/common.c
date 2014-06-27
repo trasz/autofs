@@ -75,6 +75,8 @@ checked_strdup(const char *s)
 {
 	char *c;
 
+	assert(s != NULL);
+
 	c = strdup(s);
 	if (c == NULL)
 		log_err(1, "strdup");
@@ -423,6 +425,8 @@ void
 node_expand_wildcard(struct node *n, const char *key)
 {
 	struct node *child;
+
+	assert(key != NULL);
 
 	if (n->n_key != NULL) {
 		if (strcmp(n->n_key, "*") == 0)

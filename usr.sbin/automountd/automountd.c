@@ -161,7 +161,8 @@ handle_request(int autofs_fd, const struct autofs_daemon_request *adr)
 		    checked_strdup("[kernel request]"), lineno);
 	}
 	parse_map(parent, map, adr->adr_key[0] != '\0' ? adr->adr_key : NULL);
-	node_expand_wildcard(root, adr->adr_key[0] != '\0' ? adr->adr_key : NULL);
+	if (adr->adr_key[0] != '\0')
+		node_expand_wildcard(root, adr->adr_key);
 	node = node_find(root, adr->adr_path);
 	if (node == NULL) {
 		log_errx(1, "map %s does not contain key for \"%s\"; "
@@ -179,7 +180,7 @@ handle_request(int autofs_fd, const struct autofs_daemon_request *adr)
 		create_subtree(node);
 		done(autofs_fd, adr->adr_id);
 
-		log_debugx("nothing more to do; exiting");
+		log_debugx("nothing to mount; exiting");
 		exit(0);
 	}
 
