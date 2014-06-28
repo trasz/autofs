@@ -76,6 +76,9 @@ done(int request_error)
 	done.add_id = request_id;
 	done.add_error = request_error;
 
+	log_debugx("completing request %d with error %d",
+	    request_id, request_error);
+
 	error = ioctl(autofs_fd, AUTOFSDONE, &done);
 	if (error != 0)
 		log_err(1, "AUTOFSDONE");
@@ -152,8 +155,8 @@ handle_request(const struct autofs_daemon_request *adr)
 	char *mount_cmd, *options, *fstype;
 	int error, ret;
 
-	log_debugx("got request: from %s, path %s, prefix \"%s\", key \"%s\", "
-	    "options \"%s\"", adr->adr_from, adr->adr_path, adr->adr_prefix,
+	log_debugx("got request %d: from %s, path %s, prefix \"%s\", key \"%s\", "
+	    "options \"%s\"", adr->adr_id, adr->adr_from, adr->adr_path, adr->adr_prefix,
 	    adr->adr_key, adr->adr_options);
 
 	/*
@@ -241,7 +244,7 @@ handle_request(const struct autofs_daemon_request *adr)
 	/*
 	 * Exit without calling exit_callback().
 	 */
-	exit(0);
+	quick_exit(0);
 }
 
 static int
