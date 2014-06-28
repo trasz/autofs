@@ -59,7 +59,6 @@
 #include "autofs_ioctl.h"
 
 #include "common.h"
-#include "mntopts.h"
 
 extern FILE *yyin;
 extern char *yytext;

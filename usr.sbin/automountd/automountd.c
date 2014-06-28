@@ -58,7 +58,6 @@
 #include "autofs_ioctl.h"
 
 #include "common.h"
-#include "mntopts.h"
 
 #define AUTOMOUNTD_PIDFILE	"/var/run/automountd.pid"
 
