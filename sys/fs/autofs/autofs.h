@@ -68,7 +68,8 @@ struct autofs_node {
 	TAILQ_HEAD(, autofs_node)	an_children;
 	struct autofs_mount		*an_mount;
 	struct vnode			*an_vnode;
-	bool				an_trigger;
+	bool				an_cached;
+	struct callout			an_callout;
 	struct timespec			an_ctime;
 };
 
@@ -122,6 +123,7 @@ int	autofs_init(struct vfsconf *vfsp);
 int	autofs_uninit(struct vfsconf *vfsp);
 int	autofs_trigger(struct autofs_node *anp, const char *component,
 	    int componentlen);
+bool	autofs_cached(struct autofs_node *anp, bool empty_key);
 bool	autofs_ignore_thread(const struct thread *td);
 int	autofs_node_new(struct autofs_node *parent, struct autofs_mount *amp,
 	    const char *name, int namelen, struct autofs_node **anpp);

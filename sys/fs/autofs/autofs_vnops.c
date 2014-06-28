@@ -76,7 +76,7 @@ autofs_getattr(struct vop_getattr_args *ap)
 	 * between chdir("subdir") and chdir(".."), and fails with ENOENT
 	 * otherwise.
 	 */
-	if (autofs_mount_on_stat && anp->an_trigger == true &&
+	if (autofs_mount_on_stat && autofs_cached(anp, true) == false &&
 	    autofs_ignore_thread(curthread) == false) {
 		error = autofs_trigger_vn(vp, "", 0, &newvp);
 		if (error != 0)
@@ -217,7 +217,7 @@ autofs_lookup(struct vop_lookup_args *ap)
 		return (0);
 	} 
 
-	if (anp->an_trigger == true &&
+	if (autofs_cached(anp, cnp->cn_namelen == 0) == false &&
 	    autofs_ignore_thread(cnp->cn_thread) == false) {
 		error = autofs_trigger_vn(dvp, cnp->cn_nameptr, cnp->cn_namelen, &newvp);
 		if (error != 0) {
@@ -342,7 +342,7 @@ autofs_readdir(struct vop_readdir_args *ap)
 
 	KASSERT(vp->v_type == VDIR, ("!VDIR"));
 
-	if (anp->an_trigger == true &&
+	if (autofs_cached(anp, true) == false &&
 	    autofs_ignore_thread(curthread) == false) {
 		error = autofs_trigger_vn(vp, "", 0, &newvp);
 		if (error != 0)
@@ -491,7 +491,7 @@ autofs_node_new(struct autofs_node *parent, struct autofs_mount *amp,
 	else
 		anp->an_name = strdup(name, M_AUTOFS);
 	anp->an_fileno = atomic_fetchadd_int(&amp->am_last_fileno, 1);
-	anp->an_trigger = true;
+	callout_init(&anp->an_callout, 1);
 	getnanotime(&anp->an_ctime);
 	anp->an_parent = parent;
 	anp->an_mount = amp;
@@ -534,6 +534,8 @@ autofs_node_delete(struct autofs_node *anp)
 
 	AUTOFS_LOCK_ASSERT(anp->an_mount);
 	KASSERT(TAILQ_EMPTY(&anp->an_children), ("have children"));
+
+	callout_drain(&anp->an_callout);
 
 	parent = anp->an_parent;
 	if (parent != NULL)

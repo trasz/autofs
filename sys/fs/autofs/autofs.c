@@ -82,6 +82,11 @@ int autofs_timeout = 10;
 TUNABLE_INT("vfs.autofs.timeout", &autofs_timeout);
 SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_timeout, CTLFLAG_RWTUN,
     &autofs_timeout, 10, "Number of seconds to wait for automountd(8)");
+int autofs_cache = 10;
+TUNABLE_INT("vfs.autofs.cache", &autofs_cache);
+SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_cache, CTLFLAG_RWTUN,
+    &autofs_cache, 10, "Number of seconds to wait before reinvoking "
+    "automountd(8) for any given file or directory");
 
 int
 autofs_init(struct vfsconf *vfsp)
@@ -150,11 +155,11 @@ autofs_ignore_thread(const struct thread *td)
 
 	PROC_LOCK(p);
 	if (p->p_flag2 & P2_AUTOMOUNTD) {
-		AUTOFS_DEBUG("must pass pid %d (%s)", p->p_pid, p->p_comm);
+		//AUTOFS_DEBUG("must pass pid %d (%s)", p->p_pid, p->p_comm);
 		PROC_UNLOCK(p);
 		return (true);
 	}
-	AUTOFS_DEBUG("must hold pid %d (%s)", p->p_pid, p->p_comm);
+	//AUTOFS_DEBUG("must hold pid %d (%s)", p->p_pid, p->p_comm);
 	PROC_UNLOCK(p);
 
 	return (false);
@@ -207,6 +212,29 @@ autofs_callout(void *context)
 	sx_xunlock(&sc->sc_lock);
 }
 
+bool
+autofs_cached(struct autofs_node *anp, bool empty_key)
+{
+	/*
+	 * This check is to prevent caching a top-level node.  For example,
+	 * with /net/192.168.1.3/a/b, we do not want to cache the "/net"
+	 * node, as that would prevent subsequent lookups for other NFS
+	 * servers until the cache expired.
+	 */
+	if (anp->an_parent == NULL && empty_key == false)
+		return (false);
+
+	return (anp->an_cached);
+}
+
+static void
+autofs_cache_callout(void *context)
+{
+	struct autofs_node *anp = context;
+
+	anp->an_cached = false;
+}
+
 /*
  * Send request to automountd(8) and wait for completion.
  */
@@ -252,7 +280,7 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 	}
 
 	if (ar != NULL) {
-		AUTOFS_DEBUG("found existing request for %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
+		//AUTOFS_DEBUG("found existing request for %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
 		refcount_acquire(&ar->ar_refcount);
 	} else {
 		ar = uma_zalloc(autofs_request_zone, M_WAITOK | M_ZERO);
@@ -265,14 +293,12 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 		strlcpy(ar->ar_key, key, sizeof(ar->ar_key));
 		strlcpy(ar->ar_options, amp->am_options, sizeof(ar->ar_options));
 
-		AUTOFS_DEBUG("new request for %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
+		//AUTOFS_DEBUG("new request for %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
 		callout_init(&ar->ar_callout, 1);
 		callout_reset(&ar->ar_callout, autofs_timeout * hz, autofs_callout, ar);
 		refcount_init(&ar->ar_refcount, 1);
 		TAILQ_INSERT_TAIL(&sc->sc_requests, ar, ar_next);
 	}
-	free(key, M_AUTOFS);
-	free(path, M_AUTOFS);
 
 	cv_broadcast(&sc->sc_cv);
 	while (ar->ar_done == false) {
@@ -283,7 +309,7 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 
 	request_error = ar->ar_error;
 
-	AUTOFS_DEBUG("done with %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
+	//AUTOFS_DEBUG("done with %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
 	last = refcount_release(&ar->ar_refcount);
 	if (last) {
 		TAILQ_REMOVE(&sc->sc_requests, ar, ar_next);
@@ -296,7 +322,17 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 		uma_zfree(autofs_request_zone, ar);
 	}
 
-	//AUTOFS_DEBUG("done");
+	if (error == 0 && autofs_cache > 0) {
+		//AUTOFS_DEBUG("disabling trigger for %s", anp->an_name);
+		anp->an_cached = true;
+		callout_reset(&anp->an_callout, autofs_cache * hz,
+		    autofs_cache_callout, anp);
+	} else {
+		//AUTOFS_DEBUG("not disabling %s, key '%s', error %d", anp->an_name, key, error);
+	}
+
+	free(key, M_AUTOFS);
+	free(path, M_AUTOFS);
 
 	if (error != 0)
 		return (error);
@@ -309,7 +345,7 @@ autofs_ioctl_request(struct autofs_softc *sc, struct autofs_daemon_request *adr)
 	struct autofs_request *ar;
 	int error;
 
-	AUTOFS_DEBUG("go");
+	//AUTOFS_DEBUG("go");
 
 	sx_xlock(&sc->sc_lock);
 	for (;;) {
@@ -347,7 +383,7 @@ autofs_ioctl_request(struct autofs_softc *sc, struct autofs_daemon_request *adr)
 	curproc->p_flag2 |= P2_AUTOMOUNTD;
 	PROC_UNLOCK(curproc);
 
-	AUTOFS_DEBUG("done");
+	//AUTOFS_DEBUG("done");
 
 	return (0);
 }
@@ -357,7 +393,7 @@ autofs_ioctl_done(struct autofs_softc *sc, struct autofs_daemon_done *add)
 {
 	struct autofs_request *ar;
 
-	AUTOFS_DEBUG("request %d, error %d", add->add_id, add->add_error);
+	//AUTOFS_DEBUG("request %d, error %d", add->add_id, add->add_error);
 
 	sx_xlock(&sc->sc_lock);
 	TAILQ_FOREACH(ar, &sc->sc_requests, ar_next) {
@@ -378,7 +414,7 @@ autofs_ioctl_done(struct autofs_softc *sc, struct autofs_daemon_done *add)
 
 	sx_xunlock(&sc->sc_lock);
 
-	AUTOFS_DEBUG("done");
+	//AUTOFS_DEBUG("done");
 
 	return (0);
 }
