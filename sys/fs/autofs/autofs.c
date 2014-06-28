@@ -87,6 +87,14 @@ TUNABLE_INT("vfs.autofs.cache", &autofs_cache);
 SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_cache, CTLFLAG_RWTUN,
     &autofs_cache, 10, "Number of seconds to wait before reinvoking "
     "automountd(8) for any given file or directory");
+int autofs_retry_attempts = 3;
+TUNABLE_INT("vfs.autofs.retry_attempts", &autofs_retry_attempts);
+SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_retry_attempts, CTLFLAG_RWTUN,
+    &autofs_retry_attempts, 3, "Number of attempts before failing mount");
+int autofs_retry_delay = 1;
+TUNABLE_INT("vfs.autofs.retry_delay", &autofs_retry_delay);
+SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_retry_delay, CTLFLAG_RWTUN,
+    &autofs_retry_delay, 1, "Number of seconds before retrying");
 
 int
 autofs_init(struct vfsconf *vfsp)
@@ -235,11 +243,9 @@ autofs_cache_callout(void *context)
 	anp->an_cached = false;
 }
 
-/*
- * Send request to automountd(8) and wait for completion.
- */
-int
-autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
+static int
+autofs_trigger_one(struct autofs_node *anp,
+    const char *component, int componentlen)
 {
 	struct autofs_mount *amp = VFSTOAUTOFS(anp->an_vnode->v_mount);
 	struct autofs_softc *sc = amp->am_softc;
@@ -337,6 +343,38 @@ autofs_trigger(struct autofs_node *anp, const char *component, int componentlen)
 	if (error != 0)
 		return (error);
 	return (request_error);
+}
+
+/*
+ * Send request to automountd(8) and wait for completion.
+ */
+int
+autofs_trigger(struct autofs_node *anp,
+    const char *component, int componentlen)
+{
+	int error;
+
+	for (;;) {
+		error = autofs_trigger_one(anp, component, componentlen);
+		if (error == 0) {
+			anp->an_retries = 0;
+			return (0);
+		}
+		anp->an_retries++;
+		if (anp->an_retries >= autofs_retry_attempts) {
+			AUTOFS_DEBUG("trigger failed %d times; returning "
+			    "error %d", anp->an_retries, error);
+			anp->an_retries = 0;
+			return (error);
+
+		}
+		AUTOFS_DEBUG("trigger failed; will retry in %d seconds, "
+		    "%d attempts left", autofs_retry_delay,
+		    autofs_retry_attempts - anp->an_retries);
+		sx_xunlock(&sc->sc_lock);
+		pause("autofs_retry", autofs_retry_delay * hz);
+		sx_xlock(&sc->sc_lock);
+	}
 }
 
 static int

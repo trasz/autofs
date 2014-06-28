@@ -70,6 +70,7 @@ struct autofs_node {
 	struct vnode			*an_vnode;
 	bool				an_cached;
 	struct callout			an_callout;
+	int				an_retries;
 	struct timespec			an_ctime;
 };
 
