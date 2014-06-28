@@ -59,22 +59,22 @@
 #include "mntopts.h"
 
 static int
-unmount_by_statfs(const struct statfs *statfs)
+unmount_by_statfs(const struct statfs *sb)
 {
 	char *fsid_str;
 	int error, ret;
 
 	ret = asprintf(&fsid_str, "FSID:%d:%d",
-	    statfs->f_fsid.val[0], statfs->f_fsid.val[1]);
+	    sb->f_fsid.val[0], sb->f_fsid.val[1]);
 	if (ret < 0)
 		log_err(1, "asprintf");
 
-	log_debugx("unmounting %s using %s", statfs->f_mntonname, fsid_str);
+	log_debugx("unmounting %s using %s", sb->f_mntonname, fsid_str);
 
 	error = unmount(fsid_str, MNT_BYFSID);
 	free(fsid_str);
 	if (error != 0)
-		log_warn("cannot unmount %s", statfs->f_mntonname);
+		log_warn("cannot unmount %s", sb->f_mntonname);
 
 	return (error);
 }
@@ -132,7 +132,7 @@ static void
 mount_if_not_already(const struct node *n, const char *map,
     const struct statfs *mntbuf, int nitems)
 {
-	const struct statfs *mount;
+	const struct statfs *sb;
 	char *mountpoint;
 	char *from;
 	int ret;
@@ -142,9 +142,9 @@ mount_if_not_already(const struct node *n, const char *map,
 		log_err(1, "asprintf");
 
 	mountpoint = node_path(n);
-	mount = find_statfs(mntbuf, nitems, mountpoint);
-	if (mount != NULL) {
-		if (strcmp(mount->f_fstypename, "autofs") != 0) {
+	sb = find_statfs(mntbuf, nitems, mountpoint);
+	if (sb != NULL) {
+		if (strcmp(sb->f_fstypename, "autofs") != 0) {
 			log_debugx("unknown filesystem mounted "
 			    "on %s; mounting", mountpoint);
 			/*
@@ -259,7 +259,7 @@ main_automount(int argc, char **argv)
 {
 	struct node *root;
 	int ch, debug = 0, show_maps = 0;
-	bool unmount = false;
+	bool do_unmount = false;
 
 	/*
 	 * Note that in automount(8), the only purpose of variable
@@ -276,7 +276,7 @@ main_automount(int argc, char **argv)
 			show_maps++;
 			break;
 		case 'u':
-			unmount = true;
+			do_unmount = true;
 			break;
 		case 'v':
 			debug++;
@@ -292,7 +292,7 @@ main_automount(int argc, char **argv)
 
 	log_init(debug);
 
-	if (unmount) {
+	if (do_unmount) {
 		unmount_automounted();
 		return (0);
 	}
