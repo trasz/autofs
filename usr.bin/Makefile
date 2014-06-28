@@ -143,6 +143,7 @@ SUBDIR=	alias \
 	rwall \
 	script \
 	sed \
+	send-pr \
 	seq \
 	shar \
 	showmount \
@@ -263,10 +264,6 @@ SUBDIR+=	compile_et
 .if ${MK_LDNS_UTILS} != "no"
 SUBDIR+=	drill
 SUBDIR+=	host
-.endif
-
-.if ${MK_LIBTHR} != "no"
-SUBDIR+=	csup
 .endif
 
 .if ${MK_LOCATE} != "no"

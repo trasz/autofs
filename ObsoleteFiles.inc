@@ -38,6 +38,21 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 20140625: csup removal
+OLD_FILES+=usr/bin/csup
+OLD_FILES+=usr/bin/cpasswd
+OLD_FILES+=usr/share/man/man1/csup.1.gz
+OLD_FILES+=usr/share/man/man1/cpasswd.1.gz
+OLD_FILES+=usr/share/examples/cvsup/README
+OLD_FILES+=usr/share/examples/cvsup/cvs-supfile
+OLD_FILES+=usr/share/examples/cvsup/stable-supfile
+OLD_FILES+=usr/share/examples/cvsup/standard-supfile
+OLD_DIRS+=usr/share/examples/cvsup
+# 20140614: send-pr removal
+OLD_FILES+=usr/share/info/send-pr.info.gz
+OLD_FILES+=usr/share/man/man1/send-pr.1.gz
+OLD_FILES+=etc/gnats/freefall
+OLD_DIRS+=etc/gnats
 # 20140512: new clang import which bumps version from 3.4 to 3.4.1.
 OLD_FILES+=usr/include/clang/3.4/__wmmintrin_aes.h
 OLD_FILES+=usr/include/clang/3.4/__wmmintrin_pclmul.h
