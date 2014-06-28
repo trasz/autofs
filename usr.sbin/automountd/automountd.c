@@ -68,17 +68,17 @@ static int request_id;
 static void
 done(int request_error)
 {
-	struct autofs_daemon_done done;
+	struct autofs_daemon_done add;
 	int error;
 
-	memset(&done, 0, sizeof(done));
-	done.add_id = request_id;
-	done.add_error = request_error;
+	memset(&add, 0, sizeof(add));
+	add.add_id = request_id;
+	add.add_error = request_error;
 
 	log_debugx("completing request %d with error %d",
 	    request_id, request_error);
 
-	error = ioctl(autofs_fd, AUTOFSDONE, &done);
+	error = ioctl(autofs_fd, AUTOFSDONE, &add);
 	if (error != 0)
 		log_err(1, "AUTOFSDONE");
 }

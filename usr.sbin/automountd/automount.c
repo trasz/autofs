@@ -105,17 +105,17 @@ mount_autofs(const char *from, const char *fspath, const char *options, const ch
 	    from, fspath, prefix, options);
 	memset(errmsg, 0, sizeof(errmsg));
 
-	build_iovec(&iov, &iovlen, "fstype", (void *)"autofs", (size_t)-1);
-	build_iovec(&iov, &iovlen, "fspath", (void *)fspath, (size_t)-1);
-	build_iovec(&iov, &iovlen, "from", (void *)from, (size_t)-1);
+	build_iovec(&iov, &iovlen, "fstype", __DECONST(void *, "autofs"), (size_t)-1);
+	build_iovec(&iov, &iovlen, "fspath", __DECONST(void *, fspath), (size_t)-1);
+	build_iovec(&iov, &iovlen, "from", __DECONST(void *, from), (size_t)-1);
 	build_iovec(&iov, &iovlen, "errmsg", errmsg, sizeof(errmsg));
 
 	/*
 	 * Append the options and mountpoint defined in auto_master(5);
 	 * this way automountd(8) doesn't need to parse it.
 	 */
-	build_iovec(&iov, &iovlen, "master_options", (void *)options, (size_t)-1);
-	build_iovec(&iov, &iovlen, "master_prefix", (void *)prefix, (size_t)-1);
+	build_iovec(&iov, &iovlen, "master_options", __DECONST(void *, options), (size_t)-1);
+	build_iovec(&iov, &iovlen, "master_prefix", __DECONST(void *, prefix), (size_t)-1);
 
 	error = nmount(iov, iovlen, 0);
 	if (error != 0) {

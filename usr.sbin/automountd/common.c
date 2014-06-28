@@ -62,7 +62,6 @@
 
 extern FILE *yyin;
 extern char *yytext;
-extern int lineno;
 extern int yylex(void);
 
 static void	parse_master_yyin(struct node *root, const char *master);
@@ -538,7 +537,7 @@ node_path_x(const struct node *n, char *x)
 	 * Strip trailing slash.
 	 */
 	len = strlen(path);
-	assert(path > 0);
+	assert(len > 0);
 	if (path[len - 1] == '/')
 		path[len - 1] = '\0';
 
