@@ -90,7 +90,7 @@ struct autofs_mount {
 
 struct autofs_request {
 	TAILQ_ENTRY(autofs_request)	ar_next;
-	struct autofs_softc		*ar_softc;
+	struct autofs_mount		*ar_mount;
 	int				ar_id;
 	bool				ar_done;
 	int				ar_error;

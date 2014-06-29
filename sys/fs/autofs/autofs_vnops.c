@@ -226,7 +226,6 @@ autofs_lookup(struct vop_lookup_args *ap)
 		}
 
 		if (newvp != NULL) {
-			//AUTOFS_DEBUG("VOP_LOOKUP");
 			error = VOP_LOOKUP(newvp, ap->a_vpp, ap->a_cnp);
 
 			/*
@@ -243,8 +242,6 @@ autofs_lookup(struct vop_lookup_args *ap)
 			} else {
 				vput(newvp);
 			}
-			//if (error != 0)
-			//	AUTOFS_DEBUG("VOP_LOOKUP done with error %d", error);
 			return (error);
 		}
 	}

@@ -105,7 +105,9 @@ autofs_unmount(struct mount *mp, int mntflags)
 {
 	struct autofs_mount *amp = VFSTOAUTOFS(mp);
 	struct autofs_node *anp;
+	struct autofs_request *ar;
 	int error, flags;
+	bool found;
 
 	flags = 0;
 	if (mntflags & MNT_FORCE)
@@ -116,9 +118,32 @@ autofs_unmount(struct mount *mp, int mntflags)
 		return (error);
 	}
 
+	/*
+	 * All vnodes are gone, and new one won't appear - so,
+	 * no new triggerings.  We can iterate over outstanding
+	 * autofs_requests and terminate them.
+	 */
+	for (;;) {
+		found = false;
+		sx_xlock(&sc->sc_lock);
+		TAILQ_FOREACH(ar, &sc->sc_requests, ar_next) {
+			if (ar->ar_mount != amp)
+				continue;
+			ar->ar_error = ENXIO;
+			ar->ar_done = true;
+			ar->ar_in_progress = false;
+			found = true;
+		}
+		sx_xunlock(&sc->sc_lock);
+		if (found == false)
+			break;
+
+		cv_broadcast(&sc->sc_cv);
+		pause("autofs_umount", 1);
+	}
+
 	AUTOFS_LOCK(amp);
 
-#if 1 /* XXX */
 	/*
 	 * Not terribly efficient, but at least not recursive.
 	 */
@@ -129,7 +154,6 @@ autofs_unmount(struct mount *mp, int mntflags)
 		autofs_node_delete(anp);
 	}
 	autofs_node_delete(amp->am_root);
-#endif
 
 	mp->mnt_data = NULL;
 	AUTOFS_UNLOCK(amp);

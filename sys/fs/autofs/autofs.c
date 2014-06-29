@@ -198,7 +198,6 @@ autofs_path(struct autofs_node *anp)
 	path = tmp;
 	tmp = NULL;
 
-	//AUTOFS_DEBUG("returning \"%s\"", path);
 	return (path);
 }
 
@@ -206,7 +205,7 @@ static void
 autofs_callout(void *context)
 {
 	struct autofs_request *ar = context;
-	struct autofs_softc *sc = ar->ar_softc;
+	struct autofs_softc *sc = ar->ar_mount->am_softc;
 
 	sx_xlock(&sc->sc_lock);
 	AUTOFS_DEBUG("timing out request %d", ar->ar_id);
@@ -267,8 +266,6 @@ autofs_trigger_one(struct autofs_node *anp,
 
 	path = autofs_path(anp);
 
-	//AUTOFS_DEBUG("mountpoint '%s', key '%s', path '%s'", amp->am_mountpoint, key, path);
-
 	TAILQ_FOREACH(ar, &sc->sc_requests, ar_next) {
 		if (strcmp(ar->ar_path, path) != 0)
 			continue;
@@ -290,7 +287,7 @@ autofs_trigger_one(struct autofs_node *anp,
 		refcount_acquire(&ar->ar_refcount);
 	} else {
 		ar = uma_zalloc(autofs_request_zone, M_WAITOK | M_ZERO);
-		ar->ar_softc = amp->am_softc;
+		ar->ar_mount = amp;
 
 		ar->ar_id = ++amp->am_last_request_id;
 		strlcpy(ar->ar_from, amp->am_from, sizeof(ar->ar_from));
@@ -309,11 +306,19 @@ autofs_trigger_one(struct autofs_node *anp,
 	cv_broadcast(&sc->sc_cv);
 	while (ar->ar_done == false) {
 		error = cv_wait_sig(&sc->sc_cv, &sc->sc_lock);
-		if (error != 0)
+		if (error != 0) {
+			/*
+			 * XXX: For some reson this returns -1 instead of EINTR, wtf?!
+			 */
+			error = EINTR;
+			AUTOFS_DEBUG("cv_wait_sig failed with error %d", error);
 			break;
+		}
 	}
 
 	request_error = ar->ar_error;
+	if (request_error != 0)
+		AUTOFS_DEBUG("request completed with error %d", request_error);
 
 	//AUTOFS_DEBUG("done with %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
 	last = refcount_release(&ar->ar_refcount);
@@ -360,6 +365,12 @@ autofs_trigger(struct autofs_node *anp,
 			anp->an_retries = 0;
 			return (0);
 		}
+		if (error == EINTR) {
+			AUTOFS_DEBUG("trigger interrupted by signal, "
+			    "not retrying");
+			anp->an_retries = 0;
+			return (error);
+		}
 		anp->an_retries++;
 		if (anp->an_retries >= autofs_retry_attempts) {
 			AUTOFS_DEBUG("trigger failed %d times; returning "
@@ -368,8 +379,8 @@ autofs_trigger(struct autofs_node *anp,
 			return (error);
 
 		}
-		AUTOFS_DEBUG("trigger failed; will retry in %d seconds, "
-		    "%d attempts left", autofs_retry_delay,
+		AUTOFS_DEBUG("trigger failed with error %d; will retry in "
+		    "%d seconds, %d attempts left", error, autofs_retry_delay,
 		    autofs_retry_attempts - anp->an_retries);
 		sx_xunlock(&sc->sc_lock);
 		pause("autofs_retry", autofs_retry_delay * hz);
@@ -382,8 +393,6 @@ autofs_ioctl_request(struct autofs_softc *sc, struct autofs_daemon_request *adr)
 {
 	struct autofs_request *ar;
 	int error;
-
-	//AUTOFS_DEBUG("go");
 
 	sx_xlock(&sc->sc_lock);
 	for (;;) {
@@ -401,6 +410,10 @@ autofs_ioctl_request(struct autofs_softc *sc, struct autofs_daemon_request *adr)
 
 		error = cv_wait_sig(&sc->sc_cv, &sc->sc_lock);
 		if (error != 0) {
+			/*
+			 * XXX: For some reson this returns -1 instead of EINTR, wtf?!
+			 */
+			error = EINTR;
 			sx_xunlock(&sc->sc_lock);
 			AUTOFS_DEBUG("failed with error %d", error);
 			return (error);
@@ -421,8 +434,6 @@ autofs_ioctl_request(struct autofs_softc *sc, struct autofs_daemon_request *adr)
 	curproc->p_flag2 |= P2_AUTOMOUNTD;
 	PROC_UNLOCK(curproc);
 
-	//AUTOFS_DEBUG("done");
-
 	return (0);
 }
 
@@ -430,8 +441,6 @@ static int
 autofs_ioctl_done(struct autofs_softc *sc, struct autofs_daemon_done *add)
 {
 	struct autofs_request *ar;
-
-	//AUTOFS_DEBUG("request %d, error %d", add->add_id, add->add_error);
 
 	sx_xlock(&sc->sc_lock);
 	TAILQ_FOREACH(ar, &sc->sc_requests, ar_next) {
@@ -451,8 +460,6 @@ autofs_ioctl_done(struct autofs_softc *sc, struct autofs_daemon_done *add)
 	cv_broadcast(&sc->sc_cv);
 
 	sx_xunlock(&sc->sc_lock);
-
-	//AUTOFS_DEBUG("done");
 
 	return (0);
 }
@@ -489,7 +496,6 @@ static int
 autofs_ioctl(struct cdev *dev, u_long cmd, caddr_t arg, int mode,
     struct thread *td)
 {
-	//struct autofs_softc *sc = dev->si_drv1;
 
 	KASSERT(sc->sc_dev_opened, ("not opened?"));
 
