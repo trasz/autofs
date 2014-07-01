@@ -44,7 +44,7 @@ When called without options, the
 .Nm
 command parses the
 .Xr auto_master 5
-configuration file and any indirect maps it references, and mounts or unmounts
+configuration file and any direct maps it references, and mounts or unmounts
 .Xr autofs 4
 filesystems to match.
 The following options are available:
@@ -55,7 +55,7 @@ Note that in case of automount, it is only useful with -L.
 .It Fl L
 Do not mount or unmount anything; instead parse
 .Xr auto_master 5
-and indirect maps and output them.
+and direct maps and print them to standard output.
 When specified more than once, all the maps, including indirect ones,
 will be parsed and shown.
 This is useful when debugging configuration problems.

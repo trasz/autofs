@@ -70,7 +70,7 @@ The "options" is an optional field that starts with "-" and can contain generic
 filesystem mount options.
 .Pp
 The following example specifies that the /etc/auto_example indirect map
-map will be mounted on /example.
+will be mounted on /example.
 .Bd -literal -offset indent
 /example auto_example
 .Ed
@@ -91,11 +91,10 @@ The "key" specifies path component used by
 to find the right map entry to use.
 It is also used to form the final mountpoint.
 .Pp
-The "options" field, if present, must begin with "-" and specifies mount options
-to be used when mounting the filesystem.
-All the options - from
+The "options" field, if present, must begin with "-".
+When mounting the filesystem, all the options - from
 .Nm ,
-and from the map entry - are concatenated together.
+and from the map entry - get concatenated together.
 .Pp
 The optional "mountpoint" field is used to specify multiple mount points
 for a single key.
@@ -119,12 +118,13 @@ Supported special maps are:
 This map queries the remote NFS server and maps exported volumes.
 It's traditionally mounted on /net.
 It enables access to files on a remote NFS server by accessing
-/net/nfs-server-hostname/volume-name/ directory, without need for any
+/net/nfs-server-ip/share-name/ directory, without need for any
 further configuration.
 .It -null
 This map prevents the
 .Xr automountd 8
 daemon from mounting anything on the mountpoint.
+.El
 .Sh EXECUTABLE MAPS
 If the map file specified in auto_master has execute bit set, the
 .Xr automountd 8
