@@ -1,7 +1,7 @@
 # $FreeBSD$
 
-FILES=	special_hosts special_null
+FILES=	include_ldap special_hosts special_null
 NO_OBJ=
-FILESDIR= /etc/automountd
+FILESDIR= /etc/autofs
 
 .include <bsd.prog.mk>
