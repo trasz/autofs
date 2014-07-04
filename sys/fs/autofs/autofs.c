@@ -42,6 +42,7 @@
 #include <sys/sx.h>
 #include <sys/sysctl.h>
 #include <sys/vnode.h>
+#include <machine/atomic.h>
 #include <vm/uma.h>
 
 #include "autofs.h"
@@ -208,7 +209,7 @@ autofs_callout(void *context)
 	struct autofs_softc *sc = ar->ar_mount->am_softc;
 
 	sx_xlock(&sc->sc_lock);
-	AUTOFS_DEBUG("timing out request %d", ar->ar_id);
+	AUTOFS_WARN("timing out request %d for %s", ar->ar_id, ar->ar_path);
 	/*
 	 * XXX: EIO perhaps?
 	 */
@@ -311,14 +312,17 @@ autofs_trigger_one(struct autofs_node *anp,
 			 * XXX: For some reson this returns -1 instead of EINTR, wtf?!
 			 */
 			error = EINTR;
-			AUTOFS_DEBUG("cv_wait_sig failed with error %d", error);
+			AUTOFS_WARN("cv_wait_sig for %s failed with error %d",
+			    ar->ar_path, error);
 			break;
 		}
 	}
 
 	request_error = ar->ar_error;
-	if (request_error != 0)
-		AUTOFS_DEBUG("request completed with error %d", request_error);
+	if (request_error != 0) {
+		AUTOFS_WARN("request for %s completed with error %d",
+		    ar->ar_path, request_error);
+	}
 
 	//AUTOFS_DEBUG("done with %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
 	last = refcount_release(&ar->ar_refcount);

@@ -44,6 +44,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/signalvar.h>
 #include <sys/systm.h>
 #include <sys/vnode.h>
+#include <machine/atomic.h>
 #include <vm/uma.h>
 
 #include "autofs.h"
@@ -165,7 +166,7 @@ mounted:
 
 	error = vfs_busy(vp->v_mountedhere, 0);
 	if (error) {
-		AUTOFS_DEBUG("vfs_busy failed");
+		AUTOFS_WARN("vfs_busy failed");
 		*newvp = NULL;
 		return (0);
 	}
