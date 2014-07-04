@@ -79,14 +79,14 @@ int autofs_mount_on_stat = 1;
 TUNABLE_INT("vfs.autofs.mount_on_stat", &autofs_mount_on_stat);
 SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_mount_on_stat, CTLFLAG_RWTUN,
     &autofs_mount_on_stat, 1, "Enable debug messages");
-int autofs_timeout = 10;
+int autofs_timeout = 30;
 TUNABLE_INT("vfs.autofs.timeout", &autofs_timeout);
 SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_timeout, CTLFLAG_RWTUN,
-    &autofs_timeout, 10, "Number of seconds to wait for automountd(8)");
-int autofs_cache = 10;
+    &autofs_timeout, 30, "Number of seconds to wait for automountd(8)");
+int autofs_cache = 600;
 TUNABLE_INT("vfs.autofs.cache", &autofs_cache);
 SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_cache, CTLFLAG_RWTUN,
-    &autofs_cache, 10, "Number of seconds to wait before reinvoking "
+    &autofs_cache, 600, "Number of seconds to wait before reinvoking "
     "automountd(8) for any given file or directory");
 int autofs_retry_attempts = 3;
 TUNABLE_INT("vfs.autofs.retry_attempts", &autofs_retry_attempts);
