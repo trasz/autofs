@@ -325,8 +325,6 @@ node_expand_includes(struct node *root, bool is_master)
 		if (yyin == NULL)
 			log_err(1, "unable to execute \"%s\"", include);
 
-		lineno = 0;
-
 		tmproot = node_new_root();
 		if (is_master)
 			parse_master_yyin(tmproot, include);
@@ -669,6 +667,8 @@ parse_map_yyin(struct node *parent, const char *map, const char *executable_key)
 	int ret;
 	struct node *node;
 
+	lineno = 1;
+
 	if (executable_key != NULL)
 		key = checked_strdup(executable_key);
 
@@ -941,11 +941,6 @@ parse_map(struct node *parent, const char *map, const char *key)
 	free(path);
 	path = NULL;
 
-	/*
-	 * XXX: Here it's 1, below it's 0, and both work correctly; investigate.
-	 */
-	lineno = 1;
-
 	parse_map_yyin(parent, map, executable ? key : NULL);
 
 	if (executable) {
@@ -970,6 +965,11 @@ parse_master_yyin(struct node *root, const char *master)
 {
 	char *mountpoint = NULL, *map = NULL, *options = NULL;
 	int ret;
+
+	/*
+	 * XXX: 1 gives incorrect values; wtf?
+	 */
+	lineno = 0;
 
 	for (;;) {
 		ret = yylex();
@@ -1011,8 +1011,6 @@ parse_master(struct node *root, const char *master)
 	yyin = fopen(master, "r");
 	if (yyin == NULL)
 		err(1, "unable to open %s", master);
-
-	lineno = 0;
 
 	parse_master_yyin(root, master);
 
