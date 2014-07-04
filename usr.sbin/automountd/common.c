@@ -402,15 +402,29 @@ expand_ampersand(char *string, const char *key)
 }
 
 /*
- * Expand "&" in n_location.
+ * Expand "&" in n_location.  If the key is NULL, try to use
+ * key from map entries themselves.  Keep in mind that maps
+ * consist of tho levels of node structures, the key is one
+ * level up.
+ *
+ * Variant with NULL key is for "automount -LL".
  */
 void
 node_expand_ampersand(struct node *n, const char *key)
 {
 	struct node *child;
 
-	if (n->n_location != NULL)
-		n->n_location = expand_ampersand(n->n_location, key);
+	if (n->n_location != NULL) {
+		if (key == NULL) {
+			if (n->n_parent != NULL && n->n_parent->n_key != NULL &&
+			    strcmp(n->n_parent->n_key, "*") != 0) {
+				n->n_location = expand_ampersand(n->n_location,
+				    n->n_parent->n_key);
+			}
+		} else {
+			n->n_location = expand_ampersand(n->n_location, key);
+		}
+	}
 
 	TAILQ_FOREACH(child, &n->n_children, n_next)
 		node_expand_ampersand(child, key);
