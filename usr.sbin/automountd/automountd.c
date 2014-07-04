@@ -79,8 +79,14 @@ done(int request_error)
 	    request_id, request_error);
 
 	error = ioctl(autofs_fd, AUTOFSDONE, &add);
-	if (error != 0)
-		log_err(1, "AUTOFSDONE");
+	if (error != 0) {
+		/*
+		 * Do this instead of log_err() to avoid calling
+		 * done() again with error, from atexit handler.
+		 */
+		log_warn("AUTOFSDONE");
+	}
+	quick_exit(1);
 }
 
 /*
