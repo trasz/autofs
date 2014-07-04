@@ -556,6 +556,10 @@ node_path_x(const struct node *n, char *x)
 	return (node_path_x(n->n_parent, path));
 }
 
+/*
+ * Return full path for node, consisting of concatenated
+ * paths of node itself and all its parents, up to the root.
+ */
 char *
 node_path(const struct node *n)
 {
@@ -575,6 +579,11 @@ node_options_x(const struct node *n, char *x)
 	return (node_options_x(n->n_parent, options));
 }
 
+/*
+ * Return options for node, consisting of concatenated
+ * options from the node itself and all its parents,
+ * up to the root.
+ */
 char *
 node_options(const struct node *n)
 {
@@ -586,9 +595,10 @@ static void
 node_print_indent(const struct node *n, int indent)
 {
 	const struct node *n2, *first_child;
-	char *n_path;
+	char *path, *options;
 
-	n_path = node_path(n);
+	path = node_path(n);
+	options = node_options(n);
 	first_child = TAILQ_FIRST(&n->n_children);
 
 	/*
@@ -599,11 +609,16 @@ node_print_indent(const struct node *n, int indent)
 	 * take multiple lines.
 	 */
 	if (first_child == NULL || TAILQ_NEXT(first_child, n_next) != NULL ||
-	    strcmp(n_path, node_path(first_child)) != 0) {
+	    strcmp(path, node_path(first_child)) != 0) {
 		assert(n->n_location == NULL || n->n_map == NULL);
-		printf("%*.s%s    %s    %s\t# %s map %s at %s:%d\n", indent, "",
-		    n_path,
-		    n->n_options != NULL ? n->n_options : "",
+		printf("%*.s%-*s %s%-*s %-*s # %s map %s at %s:%d\n",
+		    indent, "",
+		    20 - indent,
+		    path,
+		    options[0] != '\0' ? "-" : " ",
+		    20,
+		    options[0] != '\0' ? options : "",
+		    20,
 		    n->n_location != NULL ? n->n_location : n->n_map != NULL ? n->n_map : "",
 		    node_is_direct_map(n) ? "direct" : "indirect",
 		    indent == 0 ? "referenced" : "defined",
@@ -612,6 +627,9 @@ node_print_indent(const struct node *n, int indent)
 
 	TAILQ_FOREACH(n2, &n->n_children, n_next)
 		node_print_indent(n2, indent + 2);
+
+	free(path);
+	free(options);
 }
 
 void
