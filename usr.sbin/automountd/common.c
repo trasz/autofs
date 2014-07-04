@@ -305,6 +305,12 @@ node_expand_includes(struct node *root, bool is_master)
 		if (node_is_include(n) == false)
 			continue;
 
+		error = access(AUTO_INCLUDE_PATH, F_OK);
+		if (error != 0) {
+			log_errx(1, "directory services not configured; "
+			    "%s does not exist", AUTO_INCLUDE_PATH);
+		}
+
 		/*
 		 * "+1" to skip leading "+".
 		 */
@@ -314,12 +320,6 @@ node_expand_includes(struct node *root, bool is_master)
 			log_err(1, "asprintf");
 		log_debugx("include \"%s\" maps to executable \"%s\"",
 		    n->n_key, include);
-
-		error = access(AUTO_INCLUDE_PATH, F_OK);
-		if (error != 0) {
-			log_errx(1, "directory services not configured; "
-			    "%s does not exist", AUTO_INCLUDE_PATH);
-		}
 
 		yyin = popen(include, "r");
 		if (yyin == NULL)
@@ -773,27 +773,117 @@ file_is_executable(const char *path)
 	return (false);
 }
 
+/*
+ * Parse a special map, eg. "-hosts".
+ */
+static void
+parse_special_map(struct node *parent, const char *map, const char *key)
+{
+	char *path = NULL;
+	int error, ret;
+
+	assert(map[0] == '-');
+
+	if (key == NULL) {
+		log_debugx("skipping map %s due to forced -nobrowse", map);
+		return;
+	}
+
+	/*
+	 * +1 to skip leading "-" in map name.
+	 */
+	ret = asprintf(&path, "%s/special_%s %s", AUTO_SPECIAL_PREFIX,
+	    map + 1, key);
+	if (ret < 0)
+		log_err(1, "asprintf");
+
+	log_debugx("special map \"%s\", key \"%s\"; will execute \"%s\"",
+	    map, key, path);
+	yyin = popen(path, "r");
+	if (yyin == NULL) {
+		log_err(1, "failed to handle special map \"%s\"; "
+		    "execution of \"%s\" failed", map, path);
+	}
+
+	parse_map_yyin(parent, map, key);
+
+	error = pclose(yyin);
+	if (error != 0) {
+		log_errx(1, "failed to handle special map \"%s\"; "
+		    "execution of \"%s\" failed", map, path);
+	}
+
+	node_expand_includes(parent, false);
+	node_expand_direct_maps(parent);
+
+	free(path);
+}
+
+/*
+ * Retrieve and parse map from directory services, eg. LDAP.
+ * Note that it's different from executable maps, in that
+ * the include script outputs the whole map to standard output
+ * (as opposed to executable maps that only output a single
+ * entry, without the key), and it takes the map name as an
+ * argument, instead of key.
+ */
+static void
+parse_included_map(struct node *parent, const char *map)
+{
+	char *path = NULL;
+	int error, ret;
+
+	assert(map[0] != '-');
+	assert(map[0] != '/');
+
+	error = access(AUTO_INCLUDE_PATH, F_OK);
+	if (error != 0) {
+		log_errx(1, "directory services not configured;"
+		    " %s does not exist", AUTO_INCLUDE_PATH);
+	}
+
+	ret = asprintf(&path, "%s %s", AUTO_INCLUDE_PATH, map);
+	if (ret < 0)
+		log_err(1, "asprintf");
+
+	log_debugx("remote map \"%s\"; will execute \"%s\"",
+	    map, path);
+	yyin = popen(path, "r");
+	if (yyin == NULL) {
+		log_err(1, "failed to handle remote map \"%s\"; "
+		    "execution of \"%s\" failed", map, path);
+	}
+
+	parse_map_yyin(parent, map, NULL);
+
+	error = pclose(yyin);
+	if (error != 0) {
+		log_errx(1, "failed to handle remote map \"%s\"; "
+		    "execution of \"%s\" failed", map, path);
+	}
+
+	node_expand_includes(parent, false);
+	node_expand_direct_maps(parent);
+
+	free(path);
+}
+
 void
 parse_map(struct node *parent, const char *map, const char *key)
 {
 	char *path = NULL;
 	int error, ret;
-	bool executable = false;
+	bool executable;
 
 	assert(map != NULL);
 	assert(map[0] != '\0');
 
 	log_debugx("parsing map \"%s\"", map);
 
-	if (map[0] == '-') {
-		ret = asprintf(&path, "%s/special_%s",
-		    AUTO_SPECIAL_PREFIX, map + 1);
-		if (ret < 0)
-			log_err(1, "asprintf");
-		log_debugx("special map \"%s\" maps to executable \"%s\"",
-		    map, path);
-		executable = true;
-	} else if (map[0] == '/') {
+	if (map[0] == '-')
+		return (parse_special_map(parent, map, key));
+
+	if (map[0] == '/') {
 		path = checked_strdup(map);
 	} else {
 		ret = asprintf(&path, "%s/%s", AUTO_MAP_PREFIX, map);
@@ -809,31 +899,15 @@ parse_map(struct node *parent, const char *map, const char *key)
 		if (error != 0) {
 			log_debugx("map file \"%s\" does not exist; falling "
 			    "back to directory services", path);
-
-			error = access(AUTO_INCLUDE_PATH, F_OK);
-			if (error != 0) {
-				log_errx(1, "directory services not configured;"
-				    " %s does not exist", AUTO_INCLUDE_PATH);
-			}
-
-			ret = asprintf(&path, "%s %s", AUTO_INCLUDE_PATH, map);
-			if (ret < 0)
-				log_err(1, "asprintf");
-			log_debugx("map \"%s\" maps to executable \"%s\"",
-			    map, path);
-			executable = true;
+			return (parse_included_map(parent, map));
 		}
 	}
 
-	if (!executable) {
-		executable = file_is_executable(path);
-		if (executable)
-			log_debugx("map \"%s\" is executable", map);
-	}
+	executable = file_is_executable(path);
 
-	if (executable && key == NULL) {
-		log_debugx("ignoring map due to forced -nobrowse");
-	} else if (executable) {
+	if (executable) {
+		log_debugx("map \"%s\" is executable", map);
+
 		if (key != NULL) {
 			ret = asprintf(&path, "%s %s", path, key);
 			if (ret < 0)
@@ -858,19 +932,9 @@ parse_map(struct node *parent, const char *map, const char *key)
 	 */
 	lineno = 1;
 
-	if (executable && key == NULL) {
-		/*
-		 * XXX
-		 */
-	} else {
-		parse_map_yyin(parent, map, executable ? key : NULL);
-	}
+	parse_map_yyin(parent, map, executable ? key : NULL);
 
-	if (executable && key == NULL) {
-		/*
-		 * XXX
-		 */
-	} else if (executable) {
+	if (executable) {
 		error = pclose(yyin);
 		if (error != 0) {
 			log_errx(1, "execution of dynamic map \"%s\" failed",
