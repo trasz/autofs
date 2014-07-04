@@ -85,7 +85,6 @@ struct autofs_mount {
 	char				am_options[MAXPATHLEN];
 	char				am_prefix[MAXPATHLEN];
 	int				am_last_fileno;
-	int				am_last_request_id;
 };
 
 struct autofs_request {
@@ -111,6 +110,7 @@ struct autofs_softc {
 	struct sx			sc_lock;
 	TAILQ_HEAD(, autofs_request)	sc_requests;
 	bool				sc_dev_opened;
+	int				sc_last_request_id;
 };
 
 /*

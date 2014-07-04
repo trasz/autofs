@@ -289,7 +289,7 @@ autofs_trigger_one(struct autofs_node *anp,
 		ar = uma_zalloc(autofs_request_zone, M_WAITOK | M_ZERO);
 		ar->ar_mount = amp;
 
-		ar->ar_id = ++amp->am_last_request_id;
+		ar->ar_id = atomic_fetchadd_int(&sc->sc_last_request_id, 1);
 		strlcpy(ar->ar_from, amp->am_from, sizeof(ar->ar_from));
 		strlcpy(ar->ar_path, path, sizeof(ar->ar_path));
 		strlcpy(ar->ar_prefix, amp->am_prefix, sizeof(ar->ar_prefix));
