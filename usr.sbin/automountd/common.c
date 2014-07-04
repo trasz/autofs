@@ -613,7 +613,7 @@ node_print_indent(const struct node *n, int indent)
 		assert(n->n_location == NULL || n->n_map == NULL);
 		printf("%*.s%-*s %s%-*s %-*s # %s map %s at %s:%d\n",
 		    indent, "",
-		    20 - indent,
+		    25 - indent,
 		    path,
 		    options[0] != '\0' ? "-" : " ",
 		    20,
