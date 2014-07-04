@@ -59,10 +59,10 @@
 #include "mntopts.h"
 
 static int
-unmount_by_statfs(const struct statfs *sb)
+unmount_by_statfs(const struct statfs *sb, bool force)
 {
 	char *fsid_str;
-	int error, ret;
+	int error, ret, flags;
 
 	ret = asprintf(&fsid_str, "FSID:%d:%d",
 	    sb->f_fsid.val[0], sb->f_fsid.val[1]);
@@ -71,7 +71,10 @@ unmount_by_statfs(const struct statfs *sb)
 
 	log_debugx("unmounting %s using %s", sb->f_mntonname, fsid_str);
 
-	error = unmount(fsid_str, MNT_BYFSID);
+	flags = MNT_BYFSID;
+	if (force)
+		flags |= MNT_FORCE;
+	error = unmount(fsid_str, flags);
 	free(fsid_str);
 	if (error != 0)
 		log_warn("cannot unmount %s", sb->f_mntonname);
@@ -197,7 +200,7 @@ mount_unmount(struct node *root)
 
 		log_debugx("autofs mounted on %s not found "
 		    "in new configuration; unmounting", mntbuf[i].f_mntonname);
-		unmount_by_statfs(&(mntbuf[i]));
+		unmount_by_statfs(&(mntbuf[i]), false);
 	}
 
 	log_debugx("mounting new autofs mounts");
@@ -218,7 +221,7 @@ mount_unmount(struct node *root)
 }
 
 static void
-unmount_automounted(void)
+unmount_automounted(bool force)
 {
 	struct statfs *mntbuf;
 	int i, nitems;
@@ -242,7 +245,7 @@ unmount_automounted(void)
 			continue;
 		}
 
-		unmount_by_statfs(&(mntbuf[i]));
+		unmount_by_statfs(&(mntbuf[i]), force);
 	}
 }
 
@@ -250,7 +253,7 @@ static void
 usage_automount(void)
 {
 
-	fprintf(stderr, "usage: automount [-D name=value][-Lvu]\n");
+	fprintf(stderr, "usage: automount [-D name=value][-Lvu [-f] v]\n");
 	exit(1);
 }
 
@@ -259,7 +262,7 @@ main_automount(int argc, char **argv)
 {
 	struct node *root;
 	int ch, debug = 0, show_maps = 0;
-	bool do_unmount = false;
+	bool do_unmount = false, force_unmount = false;
 
 	/*
 	 * Note that in automount(8), the only purpose of variable
@@ -267,13 +270,16 @@ main_automount(int argc, char **argv)
 	 */
 	defined_init();
 
-	while ((ch = getopt(argc, argv, "D:Luv")) != -1) {
+	while ((ch = getopt(argc, argv, "D:Lfuv")) != -1) {
 		switch (ch) {
 		case 'D':
 			defined_parse_and_add(optarg);
 			break;
 		case 'L':
 			show_maps++;
+			break;
+		case 'f':
+			force_unmount = true;
 			break;
 		case 'u':
 			do_unmount = true;
@@ -290,10 +296,13 @@ main_automount(int argc, char **argv)
 	if (argc != 0)
 		usage_automount();
 
+	if (force_unmount && !do_unmount)
+		usage_automount();
+
 	log_init(debug);
 
 	if (do_unmount) {
-		unmount_automounted();
+		unmount_automounted(force_unmount);
 		return (0);
 	}
 

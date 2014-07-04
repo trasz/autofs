@@ -37,6 +37,7 @@
 .Nm
 .Op Fl D name=value
 .Op Fl L
+.Op Fl f
 .Op Fl v
 .Op Fl u
 .Sh DESCRIPTION
@@ -59,6 +60,8 @@ and direct maps and print them to standard output.
 When specified more than once, all the maps, including indirect ones,
 will be parsed and shown.
 This is useful when debugging configuration problems.
+.It Fl f
+Force unmount, to be used with -u.
 .It Fl u
 Try to unmount filesystems mounted by
 .Xr automountd 8
