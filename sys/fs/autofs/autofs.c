@@ -330,7 +330,7 @@ autofs_trigger_one(struct autofs_node *anp,
 	if (last) {
 		TAILQ_REMOVE(&sc->sc_requests, ar, ar_next);
 		/*
-		 * XXX
+		 * XXX: Is it safe?
 		 */
 		sx_xunlock(&sc->sc_lock);
 		callout_drain(&ar->ar_callout);
@@ -338,13 +338,12 @@ autofs_trigger_one(struct autofs_node *anp,
 		uma_zfree(autofs_request_zone, ar);
 	}
 
+	/*
+	 * Note that we don't do negative caching on purpose.  This
+	 * way the user can retry access at any time, eg. after fixing
+	 * the failure reason, without waiting for cache timer to expire.
+	 */
 	if (error == 0 && autofs_cache > 0) {
-		/*
-		 * XXX: Do not set it if the operation that succeeded
-		 * 	was mount, ie. if v_mountedhere is not NULL.
-		 * 	Otherwise, if someone unmounts the filesystem
-		 * 	before the cache times out, we'll fail to trigger.
-		 */
 		//AUTOFS_DEBUG("disabling trigger for %s", anp->an_name);
 		anp->an_cached = true;
 		callout_reset(&anp->an_callout, autofs_cache * hz,

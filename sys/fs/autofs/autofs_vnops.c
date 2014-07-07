@@ -162,6 +162,16 @@ mounted:
 	if (vp->v_mountedhere == NULL) {
 		*newvp = NULL;
 		return (0);
+	} else {
+		/*
+		 * If the operation that succeeded was mount, then mark
+		 * the node as non-cached.  Otherwise, if someone unmounts
+		 * the filesystem before the cache times out, we'll fail
+		 * to trigger.
+		 */
+		anp->an_cached = false;
+		//AUTOFS_DEBUG("node %s covered by mount; uncaching",
+		//    anp->an_name);
 	}
 
 	error = vfs_busy(vp->v_mountedhere, 0);
