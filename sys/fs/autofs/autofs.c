@@ -73,28 +73,28 @@ struct autofs_softc	*sc;
 SYSCTL_NODE(_vfs, OID_AUTO, autofs, CTLFLAG_RD, 0, "Automounter filesystem");
 int autofs_debug = 2;
 TUNABLE_INT("vfs.autofs.debug", &autofs_debug);
-SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_debug, CTLFLAG_RWTUN,
+SYSCTL_INT(_vfs_autofs, OID_AUTO, debug, CTLFLAG_RWTUN,
     &autofs_debug, 2, "Enable debug messages");
-int autofs_mount_on_stat = 1;
+int autofs_mount_on_stat = 0;
 TUNABLE_INT("vfs.autofs.mount_on_stat", &autofs_mount_on_stat);
-SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_mount_on_stat, CTLFLAG_RWTUN,
-    &autofs_mount_on_stat, 1, "Enable debug messages");
+SYSCTL_INT(_vfs_autofs, OID_AUTO, mount_on_stat, CTLFLAG_RWTUN,
+    &autofs_mount_on_stat, 0, "Trigger mount on stat(2) on mountpoint");
 int autofs_timeout = 30;
 TUNABLE_INT("vfs.autofs.timeout", &autofs_timeout);
-SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_timeout, CTLFLAG_RWTUN,
+SYSCTL_INT(_vfs_autofs, OID_AUTO, timeout, CTLFLAG_RWTUN,
     &autofs_timeout, 30, "Number of seconds to wait for automountd(8)");
 int autofs_cache = 600;
 TUNABLE_INT("vfs.autofs.cache", &autofs_cache);
-SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_cache, CTLFLAG_RWTUN,
+SYSCTL_INT(_vfs_autofs, OID_AUTO, cache, CTLFLAG_RWTUN,
     &autofs_cache, 600, "Number of seconds to wait before reinvoking "
     "automountd(8) for any given file or directory");
 int autofs_retry_attempts = 3;
 TUNABLE_INT("vfs.autofs.retry_attempts", &autofs_retry_attempts);
-SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_retry_attempts, CTLFLAG_RWTUN,
+SYSCTL_INT(_vfs_autofs, OID_AUTO, retry_attempts, CTLFLAG_RWTUN,
     &autofs_retry_attempts, 3, "Number of attempts before failing mount");
 int autofs_retry_delay = 1;
 TUNABLE_INT("vfs.autofs.retry_delay", &autofs_retry_delay);
-SYSCTL_INT(_vfs_autofs, OID_AUTO, autofs_retry_delay, CTLFLAG_RWTUN,
+SYSCTL_INT(_vfs_autofs, OID_AUTO, retry_delay, CTLFLAG_RWTUN,
     &autofs_retry_delay, 1, "Number of seconds before retrying");
 
 int
@@ -210,7 +210,8 @@ autofs_callout(void *context)
 	struct autofs_softc *sc = ar->ar_mount->am_softc;
 
 	sx_xlock(&sc->sc_lock);
-	AUTOFS_WARN("timing out request %d for %s", ar->ar_id, ar->ar_path);
+	AUTOFS_WARN("request %d for %s timed out after %d seconds",
+	    ar->ar_id, ar->ar_path, autofs_timeout);
 	/*
 	 * XXX: EIO perhaps?
 	 */
