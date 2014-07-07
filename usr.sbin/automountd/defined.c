@@ -183,7 +183,7 @@ defined_expand(const char *string)
 		if (ret < 0)
 			log_err(1, "asprintf");
 
-		log_debugx("\"%s\" expanded to \"%s\"", string, expanded);
+		//log_debugx("\"%s\" expanded to \"%s\"", string, expanded);
 		free(name);
 
 		/*

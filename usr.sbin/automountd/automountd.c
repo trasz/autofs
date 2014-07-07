@@ -93,10 +93,10 @@ done(int request_error)
  * Remove "fstype=whatever" from optionsp and return the "whatever" part.
  */
 static char *
-pick_fstype(char **optionsp)
+pick_option(const char *option, char **optionsp)
 {
 	char *tofree, *pair, *newoptions;
-	char *fstype = NULL;
+	char *picked = NULL;
 	bool first = true;
 
 	tofree = *optionsp;
@@ -106,8 +106,11 @@ pick_fstype(char **optionsp)
 		log_err(1, "calloc");
 
 	while ((pair = strsep(optionsp, ",")) != NULL) {
-		if (strncmp(pair, "fstype=", strlen("fstype=")) == 0) {
-			fstype = checked_strdup(pair + strlen("fstype="));
+		/*
+		 * XXX: strncasecmp(3) perhaps?
+		 */
+		if (strncmp(pair, option, strlen(option)) == 0) {
+			picked = checked_strdup(pair + strlen(option));
 		} else {
 			if (first == false)
 				strcat(newoptions, ",");
@@ -120,7 +123,7 @@ pick_fstype(char **optionsp)
 	free(tofree);
 	*optionsp = newoptions;
 
-	return (fstype);
+	return (picked);
 }
 
 static void
@@ -157,7 +160,7 @@ handle_request(const struct autofs_daemon_request *adr)
 	const char *map;
 	struct node *root, *parent, *node;
 	FILE *f;
-	char *mount_cmd, *options, *fstype;
+	char *mount_cmd, *options, *fstype, *retrycnt;
 	int error, ret;
 
 	log_debugx("got request %d: from %s, path %s, prefix \"%s\", key \"%s\", "
@@ -221,10 +224,25 @@ handle_request(const struct autofs_daemon_request *adr)
 	/*
 	 * Figure out fstype.
 	 */
-	fstype = pick_fstype(&options);
+	fstype = pick_option("fstype=", &options);
 	if (fstype == NULL) {
 		log_debugx("fstype not specified in options; defaulting to \"nfs\"");
 		fstype = checked_strdup("nfs");
+	}
+
+	if (strcmp(fstype, "nfs") == 0) {
+		/*
+		 * The mount_nfs(8) command defaults to retry undefinitely.
+		 * We don't want that behaviour; disable retries unless the option
+		 * was passed explicitly.
+		 */
+		retrycnt = pick_option("retrycnt=", &options);
+		if (retrycnt == NULL) {
+			log_debugx("\"retrycnt\" option not specified, defaulting to 1");
+			options = separated_concat(options, separated_concat("retrycnt", "1", '='), ',');
+		} else {
+			options = separated_concat(options, separated_concat("retrycnt", retrycnt, '='), ',');
+		}
 	}
 
 	ret = asprintf(&mount_cmd, "mount -t %s -o %s %s %s", fstype, options,
