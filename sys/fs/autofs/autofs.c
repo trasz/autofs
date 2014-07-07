@@ -163,12 +163,13 @@ autofs_ignore_thread(const struct thread *td)
 		return (false);
 
 	PROC_LOCK(p);
-	if (p->p_flag2 & P2_AUTOMOUNTD) {
+	if (p->p_session->s_sid == sc->sc_dev_sid) {
 		//AUTOFS_DEBUG("must pass pid %d (%s)", p->p_pid, p->p_comm);
 		PROC_UNLOCK(p);
 		return (true);
 	}
-	//AUTOFS_DEBUG("must hold pid %d (%s)", p->p_pid, p->p_comm);
+	//AUTOFS_DEBUG("must hold pid %d (%s), sid %d not %d",
+	//    p->p_pid, p->p_comm, p->p_session->s_sid, sc->sc_dev_sid);
 	PROC_UNLOCK(p);
 
 	return (false);
@@ -338,6 +339,12 @@ autofs_trigger_one(struct autofs_node *anp,
 	}
 
 	if (error == 0 && autofs_cache > 0) {
+		/*
+		 * XXX: Do not set it if the operation that succeeded
+		 * 	was mount, ie. if v_mountedhere is not NULL.
+		 * 	Otherwise, if someone unmounts the filesystem
+		 * 	before the cache times out, we'll fail to trigger.
+		 */
 		//AUTOFS_DEBUG("disabling trigger for %s", anp->an_name);
 		anp->an_cached = true;
 		callout_reset(&anp->an_callout, autofs_cache * hz,
@@ -435,7 +442,7 @@ autofs_ioctl_request(struct autofs_softc *sc, struct autofs_daemon_request *adr)
 	strlcpy(adr->adr_options, ar->ar_options, sizeof(adr->adr_options));
 
 	PROC_LOCK(curproc);
-	curproc->p_flag2 |= P2_AUTOMOUNTD;
+	sc->sc_dev_sid = curproc->p_session->s_sid;
 	PROC_UNLOCK(curproc);
 
 	return (0);

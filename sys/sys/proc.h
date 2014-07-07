@@ -646,7 +646,6 @@ struct proc {
 
 /* These flags are kept in p_flag2. */
 #define	P2_INHERIT_PROTECTED 0x00000001 /* New children get P_PROTECTED. */
-#define	P2_AUTOMOUNTD	 0x00000002 /* Descendant of automountd(8). */
 
 /*
  * These were process status values (p_stat), now they are only used in

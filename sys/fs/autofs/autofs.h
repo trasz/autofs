@@ -110,6 +110,7 @@ struct autofs_softc {
 	struct sx			sc_lock;
 	TAILQ_HEAD(, autofs_request)	sc_requests;
 	bool				sc_dev_opened;
+	pid_t				sc_dev_sid;
 	int				sc_last_request_id;
 };
 
