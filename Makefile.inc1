@@ -140,7 +140,7 @@ SRCRELDATE!=	awk '/^\#define[[:space:]]*__FreeBSD_version/ { print $$3 }' \
 VERSION=	FreeBSD ${REVISION}-${BRANCH:C/-p[0-9]+$//} ${TARGET_ARCH} ${SRCRELDATE}
 .endif
 
-KNOWN_ARCHES?=	amd64 arm armeb/arm armv6/arm armv6hf/arm i386 i386/pc98 ia64 mips mipsel/mips mips64el/mips mips64/mips mipsn32el/mips mipsn32/mips powerpc powerpc64/powerpc sparc64
+KNOWN_ARCHES?=	amd64 arm armeb/arm armv6/arm armv6hf/arm i386 i386/pc98 mips mipsel/mips mips64el/mips mips64/mips mipsn32el/mips mipsn32/mips powerpc powerpc64/powerpc sparc64
 .if ${TARGET} == ${TARGET_ARCH}
 _t=		${TARGET}
 .else
@@ -782,6 +782,11 @@ EXTRA_DISTRIBUTIONS+=	lib32
 EXTRA_DISTRIBUTIONS+=	tests
 .endif
 
+DEBUG_DISTRIBUTIONS=
+.if ${MK_DEBUG_FILES} != "no"
+DEBUG_DISTRIBUTIONS+=	base ${EXTRA_DISTRIBUTIONS:S,doc,,}
+.endif
+
 MTREE_MAGIC?=	mtree 2.0
 
 distributeworld installworld: _installcheck_world
@@ -858,8 +863,7 @@ distributeworld installworld: _installcheck_world
 	awk 'BEGIN { print "#${MTREE_MAGIC}" } !/ type=/ { file = $$1 } / type=/ { if ($$1 == file) { sub(/^\.\/${dist}\//, "./"); print } }' > \
 	${DESTDIR}/${DISTDIR}/${dist}.meta
 .endfor
-.if ${MK_DEBUG_FILES} != "no"
-. for dist in base ${EXTRA_DISTRIBUTIONS}
+.for dist in ${DEBUG_DISTRIBUTIONS}
 	@# For each file that exists in this dist, print the corresponding
 	@# line from the METALOG.  This relies on the fact that
 	@# a line containing only the filename will sort immediatly before
@@ -868,8 +872,7 @@ distributeworld installworld: _installcheck_world
 	find ./${dist}/usr/lib/debug | sort -u ${METALOG} - | \
 	awk 'BEGIN { print "#${MTREE_MAGIC}" } !/ type=/ { file = $$1 } / type=/ { if ($$1 == file) { sub(/^\.\/${dist}\//, "./"); print } }' > \
 	${DESTDIR}/${DISTDIR}/${dist}.debug.meta
-. endfor
-.endif
+.endfor
 .endif
 .endif
 
@@ -887,19 +890,17 @@ packageworld:
 .endif
 .endfor
 
-.if ${MK_DEBUG_FILES} != "no"
-. for dist in base ${EXTRA_DISTRIBUTIONS}
-.  if defined(NO_ROOT)
+.for dist in ${DEBUG_DISTRIBUTIONS}
+. if defined(NO_ROOT)
 	${_+_}cd ${DESTDIR}/${DISTDIR}/${dist}; \
-	    tar cvJf ${DESTDIR}/${DISTDIR}/${dist}.debug.txz \
+	    tar cvJf ${DESTDIR}/${DISTDIR}/${dist}-dbg.txz \
 	    @${DESTDIR}/${DISTDIR}/${dist}.debug.meta
-.  else
+. else
 	${_+_}cd ${DESTDIR}/${DISTDIR}/${dist}; \
-	    tar cvJfL ${DESTDIR}/${DISTDIR}/${dist}.debug.txz \
+	    tar cvJfL ${DESTDIR}/${DISTDIR}/${dist}-dbg.txz \
 	    usr/lib/debug
-.  endif
-. endfor
-.endif
+. endif
+.endfor
 
 #
 # reinstall
@@ -1198,7 +1199,7 @@ _gperf=		gnu/usr.bin/gperf
 _groff=		gnu/usr.bin/groff
 .endif
 
-.if ${MK_VT_SUPPORT} != "no"
+.if ${MK_VT} != "no"
 _vtfontcvt=	usr.bin/vtfontcvt
 .endif
 
@@ -1493,7 +1494,7 @@ _prebuild_libs=	${_kerberos5_lib_libasn1} \
 		lib/libutil lib/libpjdlog ${_lib_libypclnt} lib/libz lib/msun \
 		${_secure_lib_libcrypto} ${_lib_libldns} \
 		${_secure_lib_libssh} ${_secure_lib_libssl}
-.if ${MK_GNUCXX} != "no" && ${MK_CXX} != "no"
+.if ${MK_GNUCXX} != "no"
 _prebuild_libs+= gnu/lib/libstdc++ gnu/lib/libsupc++
 gnu/lib/libstdc++__L: lib/msun__L
 .endif
@@ -1892,7 +1893,7 @@ XDDESTDIR=${DESTDIR}/${XDTP}
 OSREL!= uname -r | sed -e 's/[-(].*//'
 .endif
 
-.ORDER: xdev-build xdev-install
+.ORDER: xdev-build xdev-install xdev-links
 xdev: xdev-build xdev-install
 
 .ORDER: _xb-worldtmp _xb-bootstrap-tools _xb-build-tools _xb-cross-tools
@@ -1942,8 +1943,8 @@ _xi-mtree:
 	mtree -deU -f ${.CURDIR}/etc/mtree/BSD.include.dist \
 	    -p ${XDDESTDIR}/usr/include >/dev/null
 
-.ORDER: xdev-build _xi-mtree _xi-cross-tools _xi-includes _xi-libraries _xi-links
-xdev-install: xdev-build _xi-mtree _xi-cross-tools _xi-includes _xi-libraries _xi-links
+.ORDER: xdev-build _xi-mtree _xi-cross-tools _xi-includes _xi-libraries
+xdev-install: xdev-build _xi-mtree _xi-cross-tools _xi-includes _xi-libraries
 
 _xi-cross-tools:
 	@echo "_xi-cross-tools"
@@ -1966,9 +1967,9 @@ _xi-libraries:
 	${_+_}cd ${.CURDIR}; ${CD2MAKE} -f Makefile.inc1 libraries \
 		DESTDIR=${XDDESTDIR}
 
-_xi-links:
+xdev-links:
 	${_+_}cd ${XDDESTDIR}/usr/bin; \
-       mkdir -p ../../../../usr/bin; \
+	mkdir -p ../../../../usr/bin; \
 		for i in *; do \
 			ln -sf ../../${XDTP}/usr/bin/$$i \
 			    ../../../../usr/bin/${XDDIR}-$$i; \
@@ -1976,6 +1977,6 @@ _xi-links:
 			    ../../../../usr/bin/${XDDIR}${OSREL}-$$i; \
 		done
 .else
-xdev xdev-build xdev-install:
+xdev xdev-build xdev-install xdev-links:
 	@echo "*** Error: Both XDEV and XDEV_ARCH must be defined for \"${.TARGET}\" target"
 .endif

@@ -1955,6 +1955,14 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
 	clock_init();
 
 	/*
+	 * Use vt(4) by default for UEFI boot (during the sc(4)/vt(4)
+	 * transition).
+	 */
+	if (preload_search_info(kmdp, MODINFO_METADATA | MODINFOMD_EFI_MAP) !=
+	    NULL)
+		vty_set_preferred(VTY_VT);
+
+	/*
 	 * Initialize the console before we print anything out.
 	 */
 	cninit();
@@ -2136,7 +2144,9 @@ makectx(struct trapframe *tf, struct pcb *pcb)
 int
 ptrace_set_pc(struct thread *td, unsigned long addr)
 {
+
 	td->td_frame->tf_rip = addr;
+	set_pcb_flags(td->td_pcb, PCB_FULL_IRET);
 	return (0);
 }
 
@@ -2236,8 +2246,8 @@ set_regs(struct thread *td, struct reg *regs)
 		tp->tf_fs = regs->r_fs;
 		tp->tf_gs = regs->r_gs;
 		tp->tf_flags = TF_HASSEGS;
-		set_pcb_flags(td->td_pcb, PCB_FULL_IRET);
 	}
+	set_pcb_flags(td->td_pcb, PCB_FULL_IRET);
 	return (0);
 }
 
