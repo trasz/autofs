@@ -238,7 +238,7 @@ handle_request(const struct autofs_daemon_request *adr)
 		 */
 		retrycnt = pick_option("retrycnt=", &options);
 		if (retrycnt == NULL) {
-			log_debugx("\"retrycnt\" option not specified, defaulting to 1");
+			log_debugx("retrycnt not specified in options, defaulting to 1");
 			options = separated_concat(options, separated_concat("retrycnt", "1", '='), ',');
 		} else {
 			options = separated_concat(options, separated_concat("retrycnt", retrycnt, '='), ',');
@@ -383,6 +383,8 @@ main_automountd(int argc, char **argv)
 			pidfile_remove(pidfh);
 			exit(1);
 		}
+	} else {
+		lesser_daemon();
 	}
 
 	pidfile_write(pidfh);

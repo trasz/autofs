@@ -46,6 +46,7 @@
 #include <fcntl.h>
 #include <libgen.h>
 #include <netdb.h>
+#include <paths.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -1039,6 +1040,37 @@ parse_master(struct node *root, const char *master)
 
 	node_expand_includes(root, true);
 	node_expand_direct_maps(root);
+}
+
+/*
+ * Two things daemon(3) does, that we actually also want to do
+ * when running in foreground, is closing the stdin and chdiring
+ * to "/".  This is what we do here.
+ */
+void
+lesser_daemon(void)
+{
+	int error, fd;
+
+	error = chdir("/");
+	if (error != 0)
+		log_warn("chdir");
+
+	fd = open(_PATH_DEVNULL, O_RDWR, 0);
+	if (fd < 0) {
+		log_warn("cannot open %s", _PATH_DEVNULL);
+		return;
+	}
+
+	error = dup2(fd, STDIN_FILENO);
+	if (error != 0)
+		log_warn("dup2");
+
+	error = close(fd);
+	if (error != 0) {
+		/* Bloody hell. */
+		log_warn("close");
+	}
 }
 
 int

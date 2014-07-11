@@ -90,6 +90,7 @@ void	parse_map(struct node *parent, const char *map, const char *args);
 char	*defined_expand(const char *string);
 void	defined_init(void);
 void	defined_parse_and_add(char *def);
+void	lesser_daemon(void);
 
 int	main_automount(int argc, char **argv);
 int	main_automountd(int argc, char **argv);
