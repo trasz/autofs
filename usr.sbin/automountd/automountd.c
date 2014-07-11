@@ -365,12 +365,12 @@ main_automountd(int argc, char **argv)
 		    pidfile_path);
 	}
 
-	autofs_fd = open(AUTOFS_PATH, O_RDWR);
+	autofs_fd = open(AUTOFS_PATH, O_RDWR | O_CLOEXEC);
 	if (autofs_fd < 0 && errno == ENOENT) {
 		saved_errno = errno;
 		retval = kldload("autofs");
 		if (retval != -1)
-			autofs_fd = open(AUTOFS_PATH, O_RDWR);
+			autofs_fd = open(AUTOFS_PATH, O_RDWR | O_CLOEXEC);
 		else
 			errno = saved_errno;
 	}
