@@ -193,7 +193,7 @@ defined_expand(const char *string)
 		i = before_len + strlen(value);
 		backslashed = bracketed = false;
 		before_len = name_off = name_len = after_off = 0;
-		assert(i < (int)strlen(string));
+		assert(i <= (int)strlen(string));
 	}
 
 	if (before_len != 0 || name_off != 0 || name_len != 0 || after_off != 0)
