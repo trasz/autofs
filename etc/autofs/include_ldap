@@ -13,7 +13,9 @@ $1 == "'$ENTRY_ATTRIBUTE':" {
 }
 
 $1 == "'$VALUE_ATTRIBUTE':" {
-	t["location"] = $2 $3
+	for (i=2; i<=NF; i++) {
+		t["location"] = t["location"] $(i) OFS
+	}
 }
 
 $1 == "" && t["key"] {
