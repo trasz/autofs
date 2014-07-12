@@ -155,7 +155,7 @@ exit_callback(void)
 }
 
 static void
-handle_request(const struct autofs_daemon_request *adr)
+handle_request(const struct autofs_daemon_request *adr, char *cmdline_options)
 {
 	const char *map;
 	struct node *root, *parent, *node;
@@ -163,9 +163,9 @@ handle_request(const struct autofs_daemon_request *adr)
 	char *mount_cmd, *options, *fstype, *retrycnt;
 	int error, ret;
 
-	log_debugx("got request %d: from %s, path %s, prefix \"%s\", key \"%s\", "
-	    "options \"%s\"", adr->adr_id, adr->adr_from, adr->adr_path, adr->adr_prefix,
-	    adr->adr_key, adr->adr_options);
+	log_debugx("got request %d: from %s, path %s, prefix \"%s\", "
+	    "key \"%s\", options \"%s\"", adr->adr_id, adr->adr_from,
+	    adr->adr_path, adr->adr_prefix, adr->adr_key, adr->adr_options);
 
 	/*
 	 * Try to notify the kernel about any problems.
@@ -208,6 +208,7 @@ handle_request(const struct autofs_daemon_request *adr)
 		done(0);
 
 		log_debugx("nothing to mount; exiting");
+
 		/*
 		 * Exit without calling exit_callback().
 		 */
@@ -215,6 +216,12 @@ handle_request(const struct autofs_daemon_request *adr)
 	}
 
 	options = node_options(node);
+
+	/*
+	 * Prepend options passed via automountd(8) command line.
+	 */
+	if (cmdline_options != NULL)
+		options = separated_concat(cmdline_options, options, ',');
 
 	/*
 	 * Append "automounted".
@@ -226,22 +233,27 @@ handle_request(const struct autofs_daemon_request *adr)
 	 */
 	fstype = pick_option("fstype=", &options);
 	if (fstype == NULL) {
-		log_debugx("fstype not specified in options; defaulting to \"nfs\"");
+		log_debugx("fstype not specified in options; "
+		    "defaulting to \"nfs\"");
 		fstype = checked_strdup("nfs");
 	}
 
 	if (strcmp(fstype, "nfs") == 0) {
 		/*
 		 * The mount_nfs(8) command defaults to retry undefinitely.
-		 * We don't want that behaviour; disable retries unless the option
-		 * was passed explicitly.
+		 * We don't want that behaviour, because it leaves mount_nfs(8)
+		 * instances and automountd(8) children hanging forever.
+		 * Disable retries unless the option was passed explicitly.
 		 */
 		retrycnt = pick_option("retrycnt=", &options);
 		if (retrycnt == NULL) {
-			log_debugx("retrycnt not specified in options, defaulting to 1");
-			options = separated_concat(options, separated_concat("retrycnt", "1", '='), ',');
+			log_debugx("retrycnt not specified in options; "
+			    "defaulting to 1");
+			options = separated_concat(options,
+			    separated_concat("retrycnt", "1", '='), ',');
 		} else {
-			options = separated_concat(options, separated_concat("retrycnt", retrycnt, '='), ',');
+			options = separated_concat(options,
+			    separated_concat("retrycnt", retrycnt, '='), ',');
 		}
 	}
 
@@ -264,6 +276,7 @@ handle_request(const struct autofs_daemon_request *adr)
 
 	done(0);
 	log_debugx("mount done; exiting");
+
 	/*
 	 * Exit without calling exit_callback().
 	 */
@@ -306,7 +319,8 @@ static void
 usage_automountd(void)
 {
 
-	fprintf(stderr, "usage: automountd [-D name=value][-m maxproc][-Tdv]\n");
+	fprintf(stderr, "usage: automountd [-D name=value][-m maxproc]"
+	    "[-o opts][-Tdv]\n");
 	exit(1);
 }
 
@@ -316,13 +330,14 @@ main_automountd(int argc, char **argv)
 	struct pidfh *pidfh;
 	pid_t pid, otherpid;
 	const char *pidfile_path = AUTOMOUNTD_PIDFILE;
+	char *options = NULL;
 	struct autofs_daemon_request request;
 	int ch, debug = 0, error, maxproc = 30, retval, saved_errno;
 	bool dont_daemonize = false;
 
 	defined_init();
 
-	while ((ch = getopt(argc, argv, "D:Tdm:v")) != -1) {
+	while ((ch = getopt(argc, argv, "D:Tdm:o:v")) != -1) {
 		switch (ch) {
 		case 'D':
 			defined_parse_and_add(optarg);
@@ -340,6 +355,14 @@ main_automountd(int argc, char **argv)
 			break;
 		case 'm':
 			maxproc = atoi(optarg);
+			break;
+		case 'o':
+			if (options == NULL) {
+				options = checked_strdup(optarg);
+			} else {
+				options =
+				    separated_concat(options, optarg, ',');
+			}
 			break;
 		case 'v':
 			debug++;
@@ -429,7 +452,7 @@ main_automountd(int argc, char **argv)
 		}
 
 		pidfile_close(pidfh);
-		handle_request(&request);
+		handle_request(&request, options);
 	}
 
 	pidfile_close(pidfh);

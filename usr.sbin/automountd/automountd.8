@@ -35,8 +35,9 @@
 .Nd daemon handling autofs mount requests
 .Sh SYNOPSIS
 .Nm
-.Op Fl D name=value
+.Op Fl D Ar name=value
 .Op Fl m maxproc
+.Op Fl o Ar options
 .Op Fl d
 .Op Fl v
 .Sh DESCRIPTION
@@ -61,6 +62,12 @@ of mount requests being handled in parallel.
 The default is 30.
 .It Fl d
 Debug mode - increase verbosity and do not daemonize.
+.It Fl o
+Specify mount options.
+Options passed here are prepended to the rest, which means the ones
+specified in maps or
+.Xr auto_master 5
+file can override them.
 .It Fl v
 Increase verbosity.
 .El

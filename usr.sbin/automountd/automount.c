@@ -253,7 +253,7 @@ static void
 usage_automount(void)
 {
 
-	fprintf(stderr, "usage: automount [-D name=value][-Lvu [-f] v]\n");
+	fprintf(stderr, "usage: automount [-D name=value][-o opts][-Lfuv]\n");
 	exit(1);
 }
 
@@ -262,6 +262,7 @@ main_automount(int argc, char **argv)
 {
 	struct node *root;
 	int ch, debug = 0, show_maps = 0;
+	char *options = NULL;
 	bool do_unmount = false, force_unmount = false;
 
 	/*
@@ -270,7 +271,7 @@ main_automount(int argc, char **argv)
 	 */
 	defined_init();
 
-	while ((ch = getopt(argc, argv, "D:Lfuv")) != -1) {
+	while ((ch = getopt(argc, argv, "D:Lfo:uv")) != -1) {
 		switch (ch) {
 		case 'D':
 			defined_parse_and_add(optarg);
@@ -280,6 +281,14 @@ main_automount(int argc, char **argv)
 			break;
 		case 'f':
 			force_unmount = true;
+			break;
+		case 'o':
+			if (options == NULL) {
+				options = checked_strdup(optarg);
+			} else {
+				options =
+				    separated_concat(options, optarg, ',');
+			}
 			break;
 		case 'u':
 			do_unmount = true;
@@ -310,6 +319,10 @@ main_automount(int argc, char **argv)
 	parse_master(root, AUTO_MASTER_PATH);
 
 	if (show_maps) {
+		if (options != NULL) {
+			root->n_options = separated_concat(options,
+			    root->n_options, ',');
+		}
 		if (show_maps > 1) {
 			node_expand_indirect_maps(root);
 			node_expand_ampersand(root, NULL);

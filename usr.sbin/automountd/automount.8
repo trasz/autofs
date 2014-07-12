@@ -35,9 +35,10 @@
 .Nd update autofs mounts
 .Sh SYNOPSIS
 .Nm
-.Op Fl D name=value
+.Op Fl D Ar name=value
 .Op Fl L
 .Op Fl f
+.Op Fl o Ar options
 .Op Fl v
 .Op Fl u
 .Sh DESCRIPTION
@@ -52,7 +53,9 @@ The following options are available:
 .Bl -tag -width ".Fl v"
 .It Fl D
 Define a variable.
-Note that in case of automount, it is only useful with -L.
+Note that in case of
+.Nm ,
+it is only useful with -L.
 .It Fl L
 Do not mount or unmount anything; instead parse
 .Xr auto_master 5
@@ -62,6 +65,11 @@ will be parsed and shown.
 This is useful when debugging configuration problems.
 .It Fl f
 Force unmount, to be used with -u.
+.It Fl o
+Specify mount options to be used along with ones specified in maps.
+Note that in case of
+.Nm ,
+it is only useful with -L.
 .It Fl u
 Try to unmount filesystems mounted by
 .Xr automountd 8
