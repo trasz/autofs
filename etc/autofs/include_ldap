@@ -9,15 +9,27 @@ VALUE_ATTRIBUTE="automountInformation"
 
 ldapsearch -LLL -x -o ldif-wrap=no -b "$SEARCHBASE" "$ENTRY_ATTRIBUTE" "$VALUE_ATTRIBUTE" | awk '
 $1 == "'$ENTRY_ATTRIBUTE':" {
-	t["key"] = $2
+	key = $2
 }
 
-$1 == "'$VALUE_ATTRIBUTE':" {
-	for (i=2; i<=NF; i++) {
-		t["location"] = t["location"] $(i) OFS
+$1 == "'$VALUE_ATTRIBUTE':" && key {
+	printf "%s%s", key, OFS
+	key = ""
+	for (i=2; i<NF; i++) {
+		printf "%s%s", $(i), OFS
 	}
+	printf "%s%s", $NF, ORS
 }
 
-$1 == "" && t["key"] {
-	print t["key"], t["location"]; t["key"] = ""; t["location"] = ""
-}'
+# Double colon after attribute name means the value is in Base64.
+$1 == "'$VALUE_ATTRIBUTE'::" && key {
+	printf "%s%s", key, OFS
+	key = ""
+	for (i=2; i<NF; i++) {
+		printf "%s%s", $(i), OFS
+	}
+	printf "%s", $NF | "b64decode -rp"
+	close("b64decode -rp")
+	printf "%s", ORS
+}
+'
