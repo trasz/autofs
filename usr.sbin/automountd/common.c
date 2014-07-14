@@ -740,6 +740,30 @@ parse_map_yyin(struct node *parent, const char *map, const char *executable_key)
 			continue;
 		}
 
+		/*
+		 * We can't properly handle a situation where the map key
+		 * is "/".  Ignore such entries.
+		 *
+		 * XXX: According to Piete Brooks, Linux automounter uses
+		 * 	"/" as a wildcard character in LDAP maps.  Perhaps
+		 * 	we should work around this braindamage by substituting
+		 * 	"*" for "/"?
+		 */
+		if (strcmp(key, "/") == 0) {
+			log_warnx("nonsensical map key \"/\" in %s, line %d; "
+			    "ignoring map entry ", map, lineno);
+
+			/*
+			 * Skip the rest of the entry.
+			 */
+			do {
+				ret = yylex();
+			} while (ret != 0 && ret != NEWLINE);
+
+			key = options = NULL;
+			continue;
+		}
+
 		//log_debugx("adding map node, %s", key);
 		node = node_new(parent, key, options, NULL, map, lineno);
 		key = options = NULL;
