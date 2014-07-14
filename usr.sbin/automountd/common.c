@@ -386,7 +386,7 @@ expand_ampersand(char *string, const char *key)
 		if (ret < 0)
 			log_err(1, "asprintf");
 
-		log_debugx("\"%s\" expanded with key \"%s\" to \"%s\"", string, key, expanded);
+		//log_debugx("\"%s\" expanded with key \"%s\" to \"%s\"", string, key, expanded);
 
 		/*
 		 * Figure out where to start searching for next variable.
@@ -707,7 +707,7 @@ parse_map_yyin(struct node *parent, const char *map, const char *executable_key)
 		ret = yylex();
 		if (ret == 0 || ret == NEWLINE) {
 			if (key != NULL || options != NULL) {
-				log_errx(1, "truncated entry in %s, line %d",
+				log_errx(1, "truncated entry at %s, line %d",
 				    map, lineno);
 			}
 			if (ret == 0 || executable_key != NULL) {
@@ -730,7 +730,7 @@ parse_map_yyin(struct node *parent, const char *map, const char *executable_key)
 			continue;
 		} else if (yytext[0] == '-') {
 			if (options != NULL) {
-				log_errx(1, "duplicated options in %s, line %d",
+				log_errx(1, "duplicated options at %s, line %d",
 				    map, lineno);
 			}
 			/*
@@ -750,7 +750,7 @@ parse_map_yyin(struct node *parent, const char *map, const char *executable_key)
 		 * 	"*" for "/"?
 		 */
 		if (strcmp(key, "/") == 0) {
-			log_warnx("nonsensical map key \"/\" in %s, line %d; "
+			log_warnx("nonsensical map key \"/\" at %s, line %d; "
 			    "ignoring map entry ", map, lineno);
 
 			/*
@@ -1051,7 +1051,7 @@ parse_master_yyin(struct node *root, const char *master)
 			 */
 			options = checked_strdup(yytext + 1);
 		} else {
-			log_errx(1, "too many arguments in %s, line %d",
+			log_errx(1, "too many arguments at %s, line %d",
 			    master, lineno);
 		}
 	}
