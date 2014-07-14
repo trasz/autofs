@@ -110,16 +110,22 @@ defined_expand(const char *string)
 		if (string[i + 1] == '{')
 			bracketed = true;
 
-		if (string[i + 1] == '\0')
-			log_errx(1, "truncated variable");
+		if (string[i + 1] == '\0') {
+			log_warnx("truncated variable");
+			return (NULL);
+		}
+
 		/*
 		 * Skip '$'.
 		 */
 		i++;
 
 		if (bracketed) {
-			if (string[i + 1] == '\0')
-				log_errx(1, "truncated variable");
+			if (string[i + 1] == '\0') {
+				log_warnx("truncated variable");
+				return (NULL);
+			}
+
 			/*
 			 * Skip '{'.
 			 */
@@ -172,8 +178,10 @@ defined_expand(const char *string)
 		if (name == NULL)
 			log_err(1, "strndup");
 		value = defined_find(name);
-		if (value == NULL)
-			log_errx(1, "undefined variable ${%s}", name);
+		if (value == NULL) {
+			log_warnx("undefined variable ${%s}", name);
+			return (NULL);
+		}
 
 		/*
 		 * Concatenate it back.
@@ -196,8 +204,10 @@ defined_expand(const char *string)
 		assert(i <= (int)strlen(string));
 	}
 
-	if (before_len != 0 || name_off != 0 || name_len != 0 || after_off != 0)
+	if (before_len != 0 || name_off != 0 || name_len != 0 || after_off != 0) {
 		log_warnx("truncated variable");
+		return (NULL);
+	}
 
 	return (expanded);
 }

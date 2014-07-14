@@ -180,7 +180,7 @@ handle_request(const struct autofs_daemon_request *adr, char *cmdline_options)
 
 	map = adr->adr_from + 4; /* 4 for strlen("map "); */
 	root = node_new_root();
-	if (adr->adr_prefix[0] == 0 || strcmp(adr->adr_prefix, "/") == 0) {
+	if (adr->adr_prefix[0] == '\0' || strcmp(adr->adr_prefix, "/") == 0) {
 		parent = root;
 	} else {
 		parent = node_new_map(root, checked_strdup(adr->adr_prefix),
@@ -195,9 +195,8 @@ handle_request(const struct autofs_daemon_request *adr, char *cmdline_options)
 		log_errx(1, "map %s does not contain key for \"%s\"; "
 		    "failing mount", map, adr->adr_path);
 	}
-
-	node_expand_defined(node);
-	node_expand_ampersand(node, adr->adr_key);
+	log_debugx("found node defined at %s:%d",
+	    node->n_config_file, node->n_config_line);
 
 	if (node->n_location == NULL) {
 		/*
@@ -213,6 +212,13 @@ handle_request(const struct autofs_daemon_request *adr, char *cmdline_options)
 		 * Exit without calling exit_callback().
 		 */
 		quick_exit(0);
+	}
+
+	node_expand_ampersand(node, adr->adr_key);
+	error = node_expand_defined(node);
+	if (error != 0) {
+		log_errx(1, "variable expansion failed for %s; "
+		    "failing mount", adr->adr_path);
 	}
 
 	options = node_options(node);

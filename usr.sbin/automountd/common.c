@@ -448,16 +448,28 @@ node_expand_wildcard(struct node *n, const char *key)
 		node_expand_wildcard(child, key);
 }
 
-void
+int
 node_expand_defined(struct node *n)
 {
 	struct node *child;
+	int error, cumulated_error = 0;
 
-	if (n->n_location != NULL)
+	if (n->n_location != NULL) {
 		n->n_location = defined_expand(n->n_location);
+		if (n->n_location == NULL) {
+			log_warnx("failed to expand location for %s",
+			    node_path(n));
+			return (EINVAL);
+		}
+	}
 
-	TAILQ_FOREACH(child, &n->n_children, n_next)
-		node_expand_defined(child);
+	TAILQ_FOREACH(child, &n->n_children, n_next) {
+		error = node_expand_defined(child);
+		if (error != 0 && cumulated_error == 0)
+			cumulated_error = error;
+	}
+
+	return (cumulated_error);
 }
 
 bool
@@ -595,12 +607,11 @@ node_options(const struct node *n)
 static void
 node_print_indent(const struct node *n, int indent)
 {
-	const struct node *n2, *first_child;
+	const struct node *child, *first_child;
 	char *path, *options;
 
 	path = node_path(n);
 	options = node_options(n);
-	first_child = TAILQ_FIRST(&n->n_children);
 
 	/*
 	 * Do not show both parent and child node if they have the same
@@ -609,6 +620,7 @@ node_print_indent(const struct node *n, int indent)
 	 * the "key mountpoint1 location2 mountpoint2 location2" entries
 	 * take multiple lines.
 	 */
+	first_child = TAILQ_FIRST(&n->n_children);
 	if (first_child == NULL || TAILQ_NEXT(first_child, n_next) != NULL ||
 	    strcmp(path, node_path(first_child)) != 0) {
 		assert(n->n_location == NULL || n->n_map == NULL);
@@ -626,11 +638,11 @@ node_print_indent(const struct node *n, int indent)
 		    n->n_config_file, n->n_config_line);
 	}
 
-	TAILQ_FOREACH(n2, &n->n_children, n_next)
-		node_print_indent(n2, indent + 2);
-
 	free(path);
 	free(options);
+
+	TAILQ_FOREACH(child, &n->n_children, n_next)
+		node_print_indent(child, indent + 2);
 }
 
 void
