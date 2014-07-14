@@ -175,7 +175,7 @@ mounted:
 	}
 
 	error = vfs_busy(vp->v_mountedhere, 0);
-	if (error) {
+	if (error != 0) {
 		AUTOFS_WARN("vfs_busy failed");
 		*newvp = NULL;
 		return (0);
@@ -305,7 +305,7 @@ autofs_mkdir(struct vop_mkdir_args *ap)
 	AUTOFS_LOCK(amp);
 	error = autofs_node_new(anp, amp, ap->a_cnp->cn_nameptr,
 	    ap->a_cnp->cn_namelen, &child);
-	if (error) {
+	if (error != 0) {
 		AUTOFS_UNLOCK(amp);
 		return (error);
 	}
@@ -560,7 +560,7 @@ autofs_node_vn(struct autofs_node *anp, struct mount *mp, struct vnode **vpp)
 
 	AUTOFS_LOCK_ASSERT(anp->an_mount);
 
-	if (anp->an_vnode) {
+	if (anp->an_vnode != NULL) {
 		vp = anp->an_vnode;
 		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 		vref(vp);
@@ -570,7 +570,7 @@ autofs_node_vn(struct autofs_node *anp, struct mount *mp, struct vnode **vpp)
 	}
 
 	error = getnewvnode("autofs", mp, &autofs_vnodeops, &vp);
-	if (error)
+	if (error != 0)
 		return (error);
 
 	vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
