@@ -259,27 +259,17 @@ node_new_map(struct node *parent, char *key, char *options, char *map,
 static void
 node_delete(struct node *n)
 {
-	struct node *n2, *tmp;
+	struct node *child, *tmp;
 
 	assert (n != NULL);
 
-	TAILQ_FOREACH_SAFE(n2, &n->n_children, n_next, tmp)
-		node_delete(n2);
+	TAILQ_FOREACH_SAFE(child, &n->n_children, n_next, tmp)
+		node_delete(child);
 
 	if (n->n_parent != NULL)
 		TAILQ_REMOVE(&n->n_parent->n_children, n, n_next);
 
 	free(n);
-}
-
-static bool
-node_is_include(const struct node *n)
-{
-	if (n->n_key == NULL)
-		return (false);
-	if (n->n_key[0] != '+')
-		return (false);
-	return (true);
 }
 
 /*
@@ -303,7 +293,7 @@ node_expand_includes(struct node *root, bool is_master)
 	int error, ret;
 
 	TAILQ_FOREACH_SAFE(n, &root->n_children, n_next, tmp) {
-		if (node_is_include(n) == false)
+		if (n->n_key[0] != '+')
 			continue;
 
 		error = access(AUTO_INCLUDE_PATH, F_OK);
@@ -357,6 +347,8 @@ expand_ampersand(char *string, const char *key)
 	char c, *expanded;
 	int i, ret, before_len = 0;
 	bool backslashed = false;
+
+	assert(key[0] != '\0');
 
 	expanded = checked_strdup(string);
 
@@ -415,7 +407,7 @@ node_expand_ampersand(struct node *n, const char *key)
 
 	if (n->n_location != NULL) {
 		if (key == NULL) {
-			if (n->n_parent != NULL && n->n_parent->n_key != NULL &&
+			if (n->n_parent != NULL &&
 			    strcmp(n->n_parent->n_key, "*") != 0) {
 				n->n_location = expand_ampersand(n->n_location,
 				    n->n_parent->n_key);
@@ -439,10 +431,8 @@ node_expand_wildcard(struct node *n, const char *key)
 
 	assert(key != NULL);
 
-	if (n->n_key != NULL) {
-		if (strcmp(n->n_key, "*") == 0)
-			n->n_key = checked_strdup(key);
-	}
+	if (strcmp(n->n_key, "*") == 0)
+		n->n_key = checked_strdup(key);
 
 	TAILQ_FOREACH(child, &n->n_children, n_next)
 		node_expand_wildcard(child, key);
@@ -493,10 +483,10 @@ node_is_direct_map(const struct node *n)
 static void
 node_expand_maps(struct node *n, bool indirect)
 {
-	struct node *n2, *tmp;
+	struct node *child, *tmp;
 
-	TAILQ_FOREACH_SAFE(n2, &n->n_children, n_next, tmp) {
-		if (node_is_direct_map(n2)) {
+	TAILQ_FOREACH_SAFE(child, &n->n_children, n_next, tmp) {
+		if (node_is_direct_map(child)) {
 			if (indirect)
 				continue;
 		} else {
@@ -508,17 +498,17 @@ node_expand_maps(struct node *n, bool indirect)
 		 * This is the first-level map node; the one that contains
 		 * the key and subnodes with mountpoints and actual map names.
 		 */
-		if (n2->n_map == NULL)
+		if (child->n_map == NULL)
 			continue;
 
 		if (indirect) {
 			log_debugx("map \"%s\" is an indirect map, parsing",
-			    n2->n_map);
+			    child->n_map);
 		} else {
 			log_debugx("map \"%s\" is a direct map, parsing",
-			    n2->n_map);
+			    child->n_map);
 		}
-		parse_map(n2, n2->n_map, NULL);
+		parse_map(child, child->n_map, NULL);
 	}
 }
 
@@ -648,10 +638,10 @@ node_print_indent(const struct node *n, int indent)
 void
 node_print(const struct node *n)
 {
-	const struct node *n2;
+	const struct node *child;
 
-	TAILQ_FOREACH(n2, &n->n_children, n_next)
-		node_print_indent(n2, 0);
+	TAILQ_FOREACH(child, &n->n_children, n_next)
+		node_print_indent(child, 0);
 }
 
 struct node *
