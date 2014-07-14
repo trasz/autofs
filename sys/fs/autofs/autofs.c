@@ -344,7 +344,7 @@ autofs_trigger_one(struct autofs_node *anp,
 	 * way the user can retry access at any time, eg. after fixing
 	 * the failure reason, without waiting for cache timer to expire.
 	 */
-	if (error == 0 && autofs_cache > 0) {
+	if (error == 0 && request_error == 0 && autofs_cache > 0) {
 		//AUTOFS_DEBUG("disabling trigger for %s", anp->an_name);
 		anp->an_cached = true;
 		callout_reset(&anp->an_callout, autofs_cache * hz,

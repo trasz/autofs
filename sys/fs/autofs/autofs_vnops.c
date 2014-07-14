@@ -226,7 +226,7 @@ autofs_lookup(struct vop_lookup_args *ap)
 		*vpp = dvp;
 
 		return (0);
-	} 
+	}
 
 	if (autofs_cached(anp, cnp->cn_namelen == 0) == false &&
 	    autofs_ignore_thread(cnp->cn_thread) == false) {
