@@ -4,9 +4,8 @@
 #
 
 # PROVIDE: automount
-# REQUIRE: root
-# BEFORE: FILESYSTEMS
-# KEYWORD: nojail
+# REQUIRE: nfsclient
+# KEYWORD: nojail shutdown
 
 . /etc/rc.subr
 

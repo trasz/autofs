@@ -4,8 +4,7 @@
 #
 
 # PROVIDE: automountd
-# REQUIRE: root
-# BEFORE:  FILESYSTEMS
+# REQUIRE: automount
 # KEYWORD: nojail
 
 . /etc/rc.subr

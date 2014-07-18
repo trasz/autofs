@@ -4,8 +4,7 @@
 #
 
 # PROVIDE: autounmountd
-# REQUIRE: root
-# BEFORE:  FILESYSTEMS
+# REQUIRE: nfsclient
 # KEYWORD: nojail
 
 . /etc/rc.subr
