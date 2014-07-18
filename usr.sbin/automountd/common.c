@@ -120,6 +120,9 @@ concat(char **p1, char **p2)
 
 /*
  * Concatenate two strings, inserting separator between them, unless not needed.
+ *
+ * This function is very convenient to use when you don't care about freeing
+ * memory, which we generally don't - because we're a short running process.
  */
 char *
 separated_concat(const char *s1, const char *s2, char separator)
@@ -252,6 +255,24 @@ node_new_map(struct node *parent, char *key, char *options, char *map,
 	assert(parent != NULL);
 	n->n_parent = parent;
 	TAILQ_INSERT_TAIL(&parent->n_children, n, n_next);
+
+	return (n);
+}
+
+static struct node *
+node_duplicate(const struct node *o, struct node *parent)
+{
+	const struct node *child;
+	struct node *n;
+
+	if (parent == NULL)
+		parent = o->n_parent;
+
+	n = node_new(parent, o->n_key, o->n_options, o->n_location,
+	    o->n_config_file, o->n_config_line);
+
+	TAILQ_FOREACH(child, &o->n_children, n_next)
+		node_duplicate(child, n);
 
 	return (n);
 }
@@ -427,12 +448,15 @@ node_expand_ampersand(struct node *n, const char *key)
 void
 node_expand_wildcard(struct node *n, const char *key)
 {
-	struct node *child;
+	struct node *child, *expanded;
 
 	assert(key != NULL);
 
-	if (strcmp(n->n_key, "*") == 0)
-		n->n_key = checked_strdup(key);
+	if (strcmp(n->n_key, "*") == 0) {
+		expanded = node_duplicate(n, NULL);
+		expanded->n_key = checked_strdup(key);
+		node_move_after(expanded, n);
+	}
 
 	TAILQ_FOREACH(child, &n->n_children, n_next)
 		node_expand_wildcard(child, key);

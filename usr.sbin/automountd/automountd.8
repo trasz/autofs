@@ -36,6 +36,7 @@
 .Sh SYNOPSIS
 .Nm
 .Op Fl D Ar name=value
+.Op Fl i
 .Op Fl m maxproc
 .Op Fl o Ar options
 .Op Fl d
@@ -56,6 +57,14 @@ waiting for mount.
 .Bl -tag -width ".Fl v"
 .It Fl D
 Define a variable.
+.It Fl i
+For indirect mounts, only create subdirectories if there are no wildcard
+entries.
+Without this option,
+.Nm
+will create all the subdirectories it can, and it might not be
+immediately obvious to the user that, because of the wildcard map entry,
+she can also access a directory that has not yet been created.
 .It Fl m
 Set limit for the number of forked automountd processes, and thus the number
 of mount requests being handled in parallel.

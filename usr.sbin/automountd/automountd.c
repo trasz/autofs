@@ -127,10 +127,11 @@ pick_option(const char *option, char **optionsp)
 }
 
 static void
-create_subtree(struct node *node)
+create_subtree(const struct node *node, bool incomplete)
 {
-	struct node *child;
+	const struct node *child;
 	char *path;
+	bool wildcard_found = false;
 
 	/*
 	 * Skip wildcard nodes.
@@ -139,12 +140,30 @@ create_subtree(struct node *node)
 		return;
 
 	path = node_path(node);
-	//log_debugx("creating directory %s", path);
+	log_debugx("creating subtree at %s", path);
 	create_directory(path);
+
+	if (incomplete) {
+		TAILQ_FOREACH(child, &node->n_children, n_next) {
+			if (strcmp(child->n_key, "*") == 0) {
+				wildcard_found = true;
+				break;
+			}
+		}
+
+		if (wildcard_found) {
+			log_debugx("node %s contains wildcard entry; "
+			    "not creating its subdirectories due to -d flag",
+			    path);
+			free(path);
+			return;
+		}
+	}
+
 	free(path);
 
 	TAILQ_FOREACH(child, &node->n_children, n_next)
-		create_subtree(child);
+		create_subtree(child, incomplete);
 }
 
 static void
@@ -155,12 +174,13 @@ exit_callback(void)
 }
 
 static void
-handle_request(const struct autofs_daemon_request *adr, char *cmdline_options)
+handle_request(const struct autofs_daemon_request *adr, char *cmdline_options,
+    bool incomplete_hierarchy)
 {
 	const char *map;
 	struct node *root, *parent, *node;
 	FILE *f;
-	char *mount_cmd, *options, *fstype, *retrycnt;
+	char *mount_cmd, *options, *fstype, *retrycnt, *tmp;
 	int error, ret;
 
 	log_debugx("got request %d: from %s, path %s, prefix \"%s\", "
@@ -195,15 +215,28 @@ handle_request(const struct autofs_daemon_request *adr, char *cmdline_options)
 		log_errx(1, "map %s does not contain key for \"%s\"; "
 		    "failing mount", map, adr->adr_path);
 	}
-	log_debugx("found node defined at %s:%d",
-	    node->n_config_file, node->n_config_line);
 
 	if (node->n_location == NULL) {
+		log_debugx("found node defined at %s:%d; not a mountpoint",
+		    node->n_config_file, node->n_config_line);
+
 		/*
 		 * Not a mountpoint; create directories in the autofs mount
 		 * and complete the request.
 		 */
-		create_subtree(node);
+		create_subtree(node, incomplete_hierarchy);
+
+		if (incomplete_hierarchy && adr->adr_key[0] != '\0') {
+			/*
+			 * We still need to create the single subdirectory
+			 * user is trying to access.
+			 */
+			tmp = separated_concat(adr->adr_path,
+			    adr->adr_key, '/');
+			node = node_find(root, tmp);
+			if (node != NULL)
+				create_subtree(node, false);
+		}
 		done(0);
 
 		log_debugx("nothing to mount; exiting");
@@ -213,6 +246,9 @@ handle_request(const struct autofs_daemon_request *adr, char *cmdline_options)
 		 */
 		quick_exit(0);
 	}
+
+	log_debugx("found node defined at %s:%d; it is a mountpoint",
+	    node->n_config_file, node->n_config_line);
 
 	node_expand_ampersand(node, adr->adr_key);
 	error = node_expand_defined(node);
@@ -326,7 +362,7 @@ usage_automountd(void)
 {
 
 	fprintf(stderr, "usage: automountd [-D name=value][-m maxproc]"
-	    "[-o opts][-Tdv]\n");
+	    "[-o opts][-Tidv]\n");
 	exit(1);
 }
 
@@ -339,11 +375,11 @@ main_automountd(int argc, char **argv)
 	char *options = NULL;
 	struct autofs_daemon_request request;
 	int ch, debug = 0, error, maxproc = 30, retval, saved_errno;
-	bool dont_daemonize = false;
+	bool dont_daemonize = false, incomplete_hierarchy = false;
 
 	defined_init();
 
-	while ((ch = getopt(argc, argv, "D:Tdm:o:v")) != -1) {
+	while ((ch = getopt(argc, argv, "D:Tdim:o:v")) != -1) {
 		switch (ch) {
 		case 'D':
 			defined_parse_and_add(optarg);
@@ -358,6 +394,9 @@ main_automountd(int argc, char **argv)
 		case 'd':
 			dont_daemonize = true;
 			debug++;
+			break;
+		case 'i':
+			incomplete_hierarchy = true;
 			break;
 		case 'm':
 			maxproc = atoi(optarg);
@@ -458,7 +497,7 @@ main_automountd(int argc, char **argv)
 		}
 
 		pidfile_close(pidfh);
-		handle_request(&request, options);
+		handle_request(&request, options, incomplete_hierarchy);
 	}
 
 	pidfile_close(pidfh);
