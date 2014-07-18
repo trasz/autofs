@@ -22,7 +22,7 @@ automount_start()
 	/usr/sbin/automount
 }
 
-rctl_stop()
+automount_stop()
 {
 
 	/sbin/umount -At autofs

@@ -7,7 +7,7 @@ SEARCHBASE="ou=$1,dc=example,dc=com"
 ENTRY_ATTRIBUTE="cn"
 VALUE_ATTRIBUTE="automountInformation"
 
-ldapsearch -LLL -x -o ldif-wrap=no -b "$SEARCHBASE" "$ENTRY_ATTRIBUTE" "$VALUE_ATTRIBUTE" | awk '
+/usr/local/bin/ldapsearch -LLL -x -o ldif-wrap=no -b "$SEARCHBASE" "$ENTRY_ATTRIBUTE" "$VALUE_ATTRIBUTE" | awk '
 $1 == "'$ENTRY_ATTRIBUTE':" {
 	key = $2
 }
