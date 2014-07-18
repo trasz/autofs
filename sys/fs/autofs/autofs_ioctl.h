@@ -43,7 +43,7 @@ struct autofs_daemon_request {
 	/*
 	 * The "from" field, containing map name.  For example,
 	 * when accessing '/net/192.168.1.3/tank/vm/', that would
-	 * be '/net'.
+	 * be '-hosts'.
 	 */
 	char		adr_from[MAXPATHLEN];
 
@@ -60,8 +60,8 @@ struct autofs_daemon_request {
 	char		adr_prefix[MAXPATHLEN];
 
 	/*
-	 * Key used as argument for dynamic maps; in example above that would
-	 * be '192.168.1.3'.
+	 * Map key, also used as command argument for dynamic maps; in example
+	 * above that would be '192.168.1.3'.
 	 */
 	char		adr_key[MAXPATHLEN];
 
