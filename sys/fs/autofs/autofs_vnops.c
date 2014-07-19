@@ -276,20 +276,22 @@ autofs_lookup(struct vop_lookup_args *ap)
 		return (ENOENT);
 	}
 
+	/*
+	 * XXX: Dropping the node here is ok, because we never remove nodes.
+	 */
+	AUTOFS_UNLOCK(amp);
+
 	error = autofs_node_vn(child, mp, vpp);
 	if (error != 0) {
 		if ((cnp->cn_flags & ISLASTCN) && cnp->cn_nameiop == CREATE) {
 			//AUTOFS_DEBUG("JUSTRETURN");
-			AUTOFS_UNLOCK(amp);
 			return (EJUSTRETURN);
 		}
 
 		//AUTOFS_DEBUG("autofs_node_vn failed with error %d", error);
-		AUTOFS_UNLOCK(amp);
 		return (error);
 	}
 
-	AUTOFS_UNLOCK(amp);
 	return (0);
 }
 
@@ -309,9 +311,9 @@ autofs_mkdir(struct vop_mkdir_args *ap)
 		AUTOFS_UNLOCK(amp);
 		return (error);
 	}
+	AUTOFS_UNLOCK(amp);
 
 	error = autofs_node_vn(child, vp->v_mount, ap->a_vpp);
-	AUTOFS_UNLOCK(amp);
 
 	return (error);
 }
@@ -555,38 +557,67 @@ autofs_node_delete(struct autofs_node *anp)
 int
 autofs_node_vn(struct autofs_node *anp, struct mount *mp, struct vnode **vpp)
 {
-	struct vnode *vp;
+	struct vnode *vp, *oldvp;
 	int error;
 
-	AUTOFS_LOCK_ASSERT(anp->an_mount);
+	/*
+	 * Lock order is so that autofs lock always follows vnode lock.
+	 */
+	AUTOFS_LOCK_ASSERT_NOT(anp->an_mount);
 
-	if (anp->an_vnode != NULL) {
-		vp = anp->an_vnode;
-		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
-		vref(vp);
+again:
+	oldvp = anp->an_vnode;
+	if (oldvp != NULL) {
+		error = vn_lock(oldvp, LK_EXCLUSIVE | LK_RETRY);
+		if (error != 0) {
+			AUTOFS_WARN("vn_lock failed with error %d", error);
+			return (error);
+		}
+		if (oldvp->v_iflag & VI_DOOMED) {
+			AUTOFS_DEBUG("doomed vnode");
+			VOP_UNLOCK(oldvp, 0);
 
-		*vpp = vp;
+			/*
+			 * XXX
+			 */
+
+			goto new_vnode;
+		}
+
+		vref(oldvp);
+
+		*vpp = oldvp;
 		return (0);
 	}
 
+new_vnode:
 	error = getnewvnode("autofs", mp, &autofs_vnodeops, &vp);
 	if (error != 0)
 		return (error);
 
-	vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
+	error = vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
+	if (error != 0) {
+		vdrop(vp);
+		return (error);
+	}
+
 	vhold(vp);
 
 	vp->v_type = VDIR;
 	if (anp->an_parent == NULL)
 		vp->v_vflag |= VV_ROOT;
 	vp->v_data = anp;
-	anp->an_vnode = vp;
 
 	error = insmntque(vp, mp);
 	if (error != 0) {
-		anp->an_vnode = NULL;
 		vdrop(vp);
 		return (error);
+	}
+
+	if (atomic_cmpset_ptr((uintptr_t *)&anp->an_vnode, (uintptr_t)oldvp, (uintptr_t)vp) == 0) {
+		AUTOFS_DEBUG("lost race");
+		vdrop(vp);
+		goto again;
 	}
 
 	*vpp = vp;

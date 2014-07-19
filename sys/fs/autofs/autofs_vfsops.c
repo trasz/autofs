@@ -169,9 +169,7 @@ autofs_root(struct mount *mp, int flags, struct vnode **vpp)
 	struct autofs_mount *amp = VFSTOAUTOFS(mp);
 	int error;
 
-	AUTOFS_LOCK(amp);
 	error = autofs_node_vn(amp->am_root, mp, vpp);
-	AUTOFS_UNLOCK(amp);
 
 	return (error);
 }
