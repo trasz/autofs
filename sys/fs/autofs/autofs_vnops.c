@@ -557,7 +557,7 @@ autofs_node_delete(struct autofs_node *anp)
 int
 autofs_node_vn(struct autofs_node *anp, struct mount *mp, struct vnode **vpp)
 {
-	struct vnode *vp, *oldvp;
+	struct vnode *vp;
 	int error;
 
 	/*
@@ -566,31 +566,29 @@ autofs_node_vn(struct autofs_node *anp, struct mount *mp, struct vnode **vpp)
 	AUTOFS_LOCK_ASSERT_NOT(anp->an_mount);
 
 again:
-	oldvp = anp->an_vnode;
-	if (oldvp != NULL) {
-		error = vn_lock(oldvp, LK_EXCLUSIVE | LK_RETRY);
+	vp = anp->an_vnode;
+	if (vp != NULL) {
+		error = vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 		if (error != 0) {
 			AUTOFS_WARN("vn_lock failed with error %d", error);
 			return (error);
 		}
-		if (oldvp->v_iflag & VI_DOOMED) {
-			AUTOFS_DEBUG("doomed vnode");
-			VOP_UNLOCK(oldvp, 0);
-
+		if (vp->v_iflag & VI_DOOMED) {
 			/*
-			 * XXX
+			 * We got forcibly unmounted.
 			 */
+			AUTOFS_DEBUG("doomed vnode");
+			VOP_UNLOCK(vp, 0);
 
-			goto new_vnode;
+			return (ENOENT);
 		}
 
-		vref(oldvp);
+		vref(vp);
 
-		*vpp = oldvp;
+		*vpp = vp;
 		return (0);
 	}
 
-new_vnode:
 	error = getnewvnode("autofs", mp, &autofs_vnodeops, &vp);
 	if (error != 0)
 		return (error);
@@ -614,7 +612,8 @@ new_vnode:
 		return (error);
 	}
 
-	if (atomic_cmpset_ptr((uintptr_t *)&anp->an_vnode, (uintptr_t)oldvp, (uintptr_t)vp) == 0) {
+	if (atomic_cmpset_ptr((uintptr_t *)&anp->an_vnode,
+	    (uintptr_t)NULL, (uintptr_t)vp) == 0) {
 		AUTOFS_DEBUG("lost race");
 		vdrop(vp);
 		goto again;
