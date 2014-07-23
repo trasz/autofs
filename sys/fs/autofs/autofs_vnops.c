@@ -429,19 +429,6 @@ autofs_readdir(struct vop_readdir_args *ap)
 	return (0);
 }
 
-#if 0 /* Since automountd(8) doesn't actually use it. */
-static int
-autofs_rmdir(struct vop_rmdir_args *ap)
-{
-	struct autofs_node *anp = ap->a_vp->v_data;
-	int error;
-
-	autofs_node_delete(anp);
-
-	return (0);
-}
-#endif
-
 static int
 autofs_reclaim(struct vop_reclaim_args *ap)
 {
@@ -475,11 +462,7 @@ struct vop_vector autofs_vnodeops = {
 	.vop_readdir =		autofs_readdir,
 	.vop_remove =		VOP_EOPNOTSUPP,
 	.vop_rename =		VOP_EOPNOTSUPP,
-#if 0
-	.vop_rmdir =		autofs_rmdir,
-#else
 	.vop_rmdir =		VOP_EOPNOTSUPP,
-#endif
 	.vop_setattr =		VOP_EOPNOTSUPP,
 	.vop_symlink =		VOP_EOPNOTSUPP,
 	.vop_write =		VOP_EOPNOTSUPP,
