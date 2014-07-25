@@ -96,6 +96,10 @@ int autofs_retry_delay = 1;
 TUNABLE_INT("vfs.autofs.retry_delay", &autofs_retry_delay);
 SYSCTL_INT(_vfs_autofs, OID_AUTO, retry_delay, CTLFLAG_RWTUN,
     &autofs_retry_delay, 1, "Number of seconds before retrying");
+int autofs_interruptible = 1;
+TUNABLE_INT("vfs.autofs.interruptible", &autofs_interruptible);
+SYSCTL_INT(_vfs_autofs, OID_AUTO, interruptible, CTLFLAG_RWTUN,
+    &autofs_interruptible, 1, "Allow requests to be interrupted by signal");
 
 int
 autofs_init(struct vfsconf *vfsp)
@@ -308,15 +312,20 @@ autofs_trigger_one(struct autofs_node *anp,
 
 	cv_broadcast(&sc->sc_cv);
 	while (ar->ar_done == false) {
-		error = cv_wait_sig(&sc->sc_cv, &sc->sc_lock);
-		if (error != 0) {
-			/*
-			 * XXX: For some reson this returns -1 instead of EINTR, wtf?!
-			 */
-			error = EINTR;
-			AUTOFS_WARN("cv_wait_sig for %s failed with error %d",
-			    ar->ar_path, error);
-			break;
+		if (autofs_interruptible != 0) {
+			error = cv_wait_sig(&sc->sc_cv, &sc->sc_lock);
+			if (error != 0) {
+				/*
+				 * XXX: For some reson this returns -1
+				 * 	instead of EINTR, wtf?!
+				 */
+				error = EINTR;
+				AUTOFS_WARN("cv_wait_sig for %s failed "
+				    "with error %d", ar->ar_path, error);
+				break;
+			}
+		} else {
+			cv_wait(&sc->sc_cv, &sc->sc_lock);
 		}
 	}
 
