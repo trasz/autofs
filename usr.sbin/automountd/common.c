@@ -311,7 +311,7 @@ node_expand_includes(struct node *root, bool is_master)
 {
 	struct node *n, *n2, *tmp, *tmp2, *tmproot;
 	char *include = NULL;
-	int error, ret;
+	int error;
 
 	TAILQ_FOREACH_SAFE(n, &root->n_children, n_next, tmp) {
 		if (n->n_key[0] != '+')
@@ -326,16 +326,8 @@ node_expand_includes(struct node *root, bool is_master)
 		/*
 		 * "+1" to skip leading "+".
 		 */
-		ret = asprintf(&include, "%s %s",
-		    AUTO_INCLUDE_PATH, n->n_key + 1);
-		if (ret < 0)
-			log_err(1, "asprintf");
-		log_debugx("include \"%s\" maps to executable \"%s\"",
-		    n->n_key, include);
-
-		yyin = popen(include, "r");
-		if (yyin == NULL)
-			log_err(1, "unable to execute \"%s\"", include);
+		yyin = auto_popen(AUTO_INCLUDE_PATH, n->n_key + 1, NULL);
+		assert(yyin != NULL);
 
 		tmproot = node_new_root();
 		if (is_master)
@@ -343,10 +335,12 @@ node_expand_includes(struct node *root, bool is_master)
 		else
 			parse_map_yyin(tmproot, include, NULL);
 
-		error = pclose(yyin);
+		error = auto_pclose(yyin);
 		yyin = NULL;
-		if (error != 0)
-			log_errx(1, "execution of \"%s\" failed", include);
+		if (error != 0) {
+			log_errx(1, "failed to handle include \"%s\"",
+			    n->n_key);
+		}
 
 		/*
 		 * Entries to be included are now in tmproot.  We need to merge
@@ -862,7 +856,7 @@ file_is_executable(const char *path)
 static void
 parse_special_map(struct node *parent, const char *map, const char *key)
 {
-	char *path = NULL;
+	char *path;
 	int error, ret;
 
 	assert(map[0] == '-');
@@ -875,26 +869,19 @@ parse_special_map(struct node *parent, const char *map, const char *key)
 	/*
 	 * +1 to skip leading "-" in map name.
 	 */
-	ret = asprintf(&path, "%s/special_%s %s", AUTO_SPECIAL_PREFIX,
-	    map + 1, key);
+	ret = asprintf(&path, "%s/special_%s", AUTO_SPECIAL_PREFIX, map + 1);
 	if (ret < 0)
 		log_err(1, "asprintf");
 
-	log_debugx("special map \"%s\", key \"%s\"; will execute \"%s\"",
-	    map, key, path);
-	yyin = popen(path, "r");
-	if (yyin == NULL) {
-		log_err(1, "failed to handle special map \"%s\"; "
-		    "execution of \"%s\" failed", map, path);
-	}
+	yyin = auto_popen(path, key, NULL);
+	assert(yyin != NULL);
 
 	parse_map_yyin(parent, map, key);
 
-	error = pclose(yyin);
-	if (error != 0) {
-		log_errx(1, "failed to handle special map \"%s\"; "
-		    "execution of \"%s\" failed", map, path);
-	}
+	error = auto_pclose(yyin);
+	yyin = NULL;
+	if (error != 0)
+		log_errx(1, "failed to handle special map \"%s\"", map);
 
 	node_expand_includes(parent, false);
 	node_expand_direct_maps(parent);
@@ -913,8 +900,7 @@ parse_special_map(struct node *parent, const char *map, const char *key)
 static void
 parse_included_map(struct node *parent, const char *map)
 {
-	char *path = NULL;
-	int error, ret;
+	int error;
 
 	assert(map[0] != '-');
 	assert(map[0] != '/');
@@ -925,30 +911,18 @@ parse_included_map(struct node *parent, const char *map)
 		    " %s does not exist", AUTO_INCLUDE_PATH);
 	}
 
-	ret = asprintf(&path, "%s %s", AUTO_INCLUDE_PATH, map);
-	if (ret < 0)
-		log_err(1, "asprintf");
-
-	log_debugx("remote map \"%s\"; will execute \"%s\"",
-	    map, path);
-	yyin = popen(path, "r");
-	if (yyin == NULL) {
-		log_err(1, "failed to handle remote map \"%s\"; "
-		    "execution of \"%s\" failed", map, path);
-	}
+	yyin = auto_popen(AUTO_INCLUDE_PATH, map, NULL);
+	assert(yyin != NULL);
 
 	parse_map_yyin(parent, map, NULL);
 
-	error = pclose(yyin);
-	if (error != 0) {
-		log_errx(1, "failed to handle remote map \"%s\"; "
-		    "execution of \"%s\" failed", map, path);
-	}
+	error = auto_pclose(yyin);
+	yyin = NULL;
+	if (error != 0)
+		log_errx(1, "failed to handle remote map \"%s\"", map);
 
 	node_expand_includes(parent, false);
 	node_expand_direct_maps(parent);
-
-	free(path);
 }
 
 void
@@ -992,15 +966,11 @@ parse_map(struct node *parent, const char *map, const char *key)
 		log_debugx("map \"%s\" is executable", map);
 
 		if (key != NULL) {
-			ret = asprintf(&path, "%s %s", path, key);
-			if (ret < 0)
-				log_err(1, "asprintf");
-			log_debugx("will execute \"%s\"", path);
-
+			yyin = auto_popen(path, key, NULL);
+		} else {
+			yyin = auto_popen(path, NULL);
 		}
-		yyin = popen(path, "r");
-		if (yyin == NULL)
-			log_err(1, "unable to execute \"%s\"", path);
+		assert(yyin != NULL);
 	} else {
 		yyin = fopen(path, "r");
 		if (yyin == NULL)
@@ -1013,9 +983,10 @@ parse_map(struct node *parent, const char *map, const char *key)
 	parse_map_yyin(parent, map, executable ? key : NULL);
 
 	if (executable) {
-		error = pclose(yyin);
+		error = auto_pclose(yyin);
+		yyin = NULL;
 		if (error != 0) {
-			log_errx(1, "execution of dynamic map \"%s\" failed",
+			log_errx(1, "failed to handle executable map \"%s\"",
 			    map);
 		}
 	} else {

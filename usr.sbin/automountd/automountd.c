@@ -180,8 +180,8 @@ handle_request(const struct autofs_daemon_request *adr, char *cmdline_options,
 	const char *map;
 	struct node *root, *parent, *node;
 	FILE *f;
-	char *mount_cmd, *options, *fstype, *retrycnt, *tmp;
-	int error, ret;
+	char *options, *fstype, *retrycnt, *tmp;
+	int error;
 
 	log_debugx("got request %d: from %s, path %s, prefix \"%s\", "
 	    "key \"%s\", options \"%s\"", adr->adr_id, adr->adr_from,
@@ -299,22 +299,12 @@ handle_request(const struct autofs_daemon_request *adr, char *cmdline_options,
 		}
 	}
 
-	ret = asprintf(&mount_cmd, "mount -t %s -o %s %s %s", fstype, options,
-	    node->n_location, adr->adr_path);
-	if (ret < 0)
-		log_err(1, "asprintf");
-
-	log_debugx("will execute \"%s\"", mount_cmd);
-
-	/*
-	 * XXX: Passing mount command error messages to syslog.
-	 */
-	f = popen(mount_cmd, "r");
-	if (f == NULL)
-		log_err(1, "cannot execute \"%s\"", mount_cmd);
-	error = pclose(f);
+	f = auto_popen("mount", "-t", fstype, "-o", options,
+	    node->n_location, adr->adr_path, NULL);
+	assert(f != NULL);
+	error = auto_pclose(f);
 	if (error != 0)
-		log_errx(1, "failed to execute \"%s\"", mount_cmd);
+		log_errx(1, "mount failed");
 
 	done(0);
 	log_debugx("mount done; exiting");

@@ -96,6 +96,9 @@ int	main_automount(int argc, char **argv);
 int	main_automountd(int argc, char **argv);
 int	main_autounmountd(int argc, char **argv);
 
+FILE	*auto_popen(const char *argv0, ...);
+int	auto_pclose(FILE *iop);
+
 /*
  * lex(1) stuff.
  */

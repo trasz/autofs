@@ -8,6 +8,7 @@ SRCS+=	common.c
 SRCS+=	defined.c
 SRCS+=	getmntopts.c
 SRCS+=	log.c
+SRCS+=	popen.c
 SRCS+=	token.l
 
 CFLAGS+=-I${.CURDIR}
