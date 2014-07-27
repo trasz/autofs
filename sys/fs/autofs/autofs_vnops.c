@@ -130,7 +130,8 @@ autofs_trigger_vn(struct vnode *vp, const char *path, int pathlen, struct vnode 
 
 	/*
 	 * Release the vnode lock, so that other operations, in partcular
-	 * mounting a filesystem on top of it, can proceed.
+	 * mounting a filesystem on top of it, can proceed.  Increase hold
+	 * count, to prevent the vnode from being deallocated.
 	 */
 	lock_flags = VOP_ISLOCKED(vp);
 	vhold(vp);
@@ -207,17 +208,18 @@ autofs_lookup(struct vop_lookup_args *ap)
 	if (cnp->cn_flags & ISDOTDOT) {
 		//AUTOFS_DEBUG("..");
 		KASSERT(anp->an_parent != NULL, ("NULL parent"));
-		KASSERT(anp->an_parent->an_vnode != NULL, ("NULL parent vnode"));
 		lock_flags = VOP_ISLOCKED(dvp);
 		vhold(dvp);
 		VOP_UNLOCK(dvp, 0);
-		vn_lock(anp->an_parent->an_vnode, LK_EXCLUSIVE | LK_RETRY);
-		vref(anp->an_parent->an_vnode);
-		*vpp = anp->an_parent->an_vnode;
+		error = autofs_node_vn(anp->an_parent, mp, vpp);
+		if (error != 0) {
+			AUTOFS_WARN("autofs_node_vn() failed with error %d",
+			    error);
+		}
 		vn_lock(dvp, lock_flags | LK_RETRY);
 		vdrop(dvp);
 
-		return (0);
+		return (error);
 	}
 
 	if (cnp->cn_namelen == 1 && cnp->cn_nameptr[0] == '.') {
@@ -582,6 +584,9 @@ again:
 		return (error);
 	}
 
+	/*
+	 * Not doing this results in 'v_lock 0x...: zero hold count'.
+	 */
 	vhold(vp);
 
 	vp->v_type = VDIR;
