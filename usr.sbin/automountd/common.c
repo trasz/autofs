@@ -310,7 +310,6 @@ static void
 node_expand_includes(struct node *root, bool is_master)
 {
 	struct node *n, *n2, *tmp, *tmp2, *tmproot;
-	char *include = NULL;
 	int error;
 
 	TAILQ_FOREACH_SAFE(n, &root->n_children, n_next, tmp) {
@@ -331,9 +330,9 @@ node_expand_includes(struct node *root, bool is_master)
 
 		tmproot = node_new_root();
 		if (is_master)
-			parse_master_yyin(tmproot, include);
+			parse_master_yyin(tmproot, n->n_key);
 		else
-			parse_map_yyin(tmproot, include, NULL);
+			parse_map_yyin(tmproot, n->n_key, NULL);
 
 		error = auto_pclose(yyin);
 		yyin = NULL;
