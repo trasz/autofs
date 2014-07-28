@@ -82,7 +82,7 @@ autofs_getattr(struct vop_getattr_args *ap)
 	 * between chdir("subdir") and chdir(".."), and fails with ENOENT
 	 * otherwise.
 	 */
-	if (autofs_mount_on_stat && autofs_cached(anp, true) == false &&
+	if (autofs_mount_on_stat && autofs_cached(anp, NULL, 0) == false &&
 	    autofs_ignore_thread(curthread) == false) {
 		error = autofs_trigger_vn(vp, "", 0, &newvp);
 		if (error != 0)
@@ -243,7 +243,7 @@ autofs_lookup(struct vop_lookup_args *ap)
 		return (0);
 	}
 
-	if (autofs_cached(anp, cnp->cn_namelen == 0) == false &&
+	if (autofs_cached(anp, cnp->cn_nameptr, cnp->cn_namelen) == false &&
 	    autofs_ignore_thread(cnp->cn_thread) == false) {
 		error = autofs_trigger_vn(dvp, cnp->cn_nameptr, cnp->cn_namelen, &newvp);
 		if (error != 0) {
@@ -374,7 +374,7 @@ autofs_readdir(struct vop_readdir_args *ap)
 
 	KASSERT(vp->v_type == VDIR, ("!VDIR"));
 
-	if (autofs_cached(anp, true) == false &&
+	if (autofs_cached(anp, NULL, 0) == false &&
 	    autofs_ignore_thread(curthread) == false) {
 		error = autofs_trigger_vn(vp, "", 0, &newvp);
 		if (error != 0)
@@ -544,7 +544,8 @@ autofs_node_find(struct autofs_node *parent, const char *name,
 				continue;
 		}
 
-		*anpp = anp;
+		if (anpp != NULL)
+			*anpp = anp;
 		return (0);
 	}
 

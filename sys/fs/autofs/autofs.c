@@ -227,16 +227,26 @@ autofs_callout(void *context)
 }
 
 bool
-autofs_cached(struct autofs_node *anp, bool empty_key)
+autofs_cached(struct autofs_node *anp, const char *component, int componentlen)
 {
+	int error;
+	struct autofs_mount *amp = anp->an_mount;
+
+	AUTOFS_LOCK_ASSERT_NOT(amp);
+
 	/*
-	 * This check is to prevent caching a top-level node.  For example,
-	 * with /net/192.168.1.3/a/b, we do not want to cache the "/net"
-	 * node, as that would prevent subsequent lookups for other NFS
-	 * servers until the cache expired.
+	 * For top-level nodes we need to request automountd(8)
+	 * assistance even if the node is marked as cached,
+	 * but the requested subdirectory doesn't exist.  This
+	 * is neccessary for wildcard indirect map keys to work.
 	 */
-	if (anp->an_parent == NULL && empty_key == false)
-		return (false);
+	if (anp->an_parent == NULL && componentlen != 0) {
+		AUTOFS_LOCK(amp);
+		error = autofs_node_find(anp, component, componentlen, NULL);
+		AUTOFS_UNLOCK(amp);
+		if (error != 0)
+			return (false);
+	}
 
 	return (anp->an_cached);
 }
