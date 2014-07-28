@@ -250,7 +250,8 @@ handle_request(const struct autofs_daemon_request *adr, char *cmdline_options,
 	log_debugx("found node defined at %s:%d; it is a mountpoint",
 	    node->n_config_file, node->n_config_line);
 
-	node_expand_ampersand(node, adr->adr_key);
+	node_expand_ampersand(node,
+	    adr->adr_key[0] != '\0' ? adr->adr_key : NULL);
 	error = node_expand_defined(node);
 	if (error != 0) {
 		log_errx(1, "variable expansion failed for %s; "
