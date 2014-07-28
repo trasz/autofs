@@ -69,6 +69,7 @@ struct autofs_node {
 	TAILQ_HEAD(, autofs_node)	an_children;
 	struct autofs_mount		*an_mount;
 	struct vnode			*an_vnode;
+	struct sx			an_vnode_lock;
 	bool				an_cached;
 	struct callout			an_callout;
 	int				an_retries;

@@ -208,6 +208,14 @@ autofs_lookup(struct vop_lookup_args *ap)
 	if (cnp->cn_flags & ISDOTDOT) {
 		//AUTOFS_DEBUG("..");
 		KASSERT(anp->an_parent != NULL, ("NULL parent"));
+		/*
+		 * Note that in this case, dvp is the child vnode, and we're
+		 * looking up the parent vnode - exactly reverse from normal
+		 * operation.  To preserve lock order, we unlock the child
+		 * (dvp), obtain the lock on parent (*vpp) in autofs_node_vn(),
+		 * then relock the child.  We use vhold()/vdrop() to prevent
+		 * dvp from being freed in the meantime.
+		 */
 		lock_flags = VOP_ISLOCKED(dvp);
 		vhold(dvp);
 		VOP_UNLOCK(dvp, 0);
@@ -436,16 +444,15 @@ autofs_reclaim(struct vop_reclaim_args *ap)
 {
 	struct vnode *vp = ap->a_vp;
 	struct autofs_node *anp = vp->v_data;
-	struct autofs_mount *amp = anp->an_mount;
 
 	/*
 	 * We don't free autofs_node here; instead we're
 	 * destroying them in autofs_node_delete().
 	 */
-	AUTOFS_LOCK(amp);
+	sx_xlock(&anp->an_vnode_lock);
 	anp->an_vnode = NULL;
 	vp->v_data = NULL;
-	AUTOFS_UNLOCK(amp);
+	sx_xunlock(&anp->an_vnode_lock);
 
 	return (0);
 }
@@ -487,6 +494,7 @@ autofs_node_new(struct autofs_node *parent, struct autofs_mount *amp,
 		anp->an_name = strdup(name, M_AUTOFS);
 	anp->an_fileno = atomic_fetchadd_int(&amp->am_last_fileno, 1);
 	callout_init(&anp->an_callout, 1);
+	sx_init(&anp->an_vnode_lock, "autofsvlk");
 	getnanotime(&anp->an_ctime);
 	anp->an_parent = parent;
 	anp->an_mount = amp;
@@ -535,6 +543,7 @@ autofs_node_delete(struct autofs_node *anp)
 	parent = anp->an_parent;
 	if (parent != NULL)
 		TAILQ_REMOVE(&parent->an_children, anp, an_next);
+	sx_destroy(&anp->an_vnode_lock);
 	free(anp->an_name, M_AUTOFS);
 	uma_zfree(autofs_node_zone, anp);
 }
@@ -545,17 +554,16 @@ autofs_node_vn(struct autofs_node *anp, struct mount *mp, struct vnode **vpp)
 	struct vnode *vp;
 	int error;
 
-	/*
-	 * Lock order is so that autofs lock always follows vnode lock.
-	 */
 	AUTOFS_LOCK_ASSERT_NOT(anp->an_mount);
 
-again:
+	sx_xlock(&anp->an_vnode_lock);
+
 	vp = anp->an_vnode;
 	if (vp != NULL) {
-		error = vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
+		error = vget(vp, LK_EXCLUSIVE | LK_RETRY, curthread);
 		if (error != 0) {
-			AUTOFS_WARN("vn_lock failed with error %d", error);
+			AUTOFS_WARN("vget failed with error %d", error);
+			sx_xunlock(&anp->an_vnode_lock);
 			return (error);
 		}
 		if (vp->v_iflag & VI_DOOMED) {
@@ -563,31 +571,29 @@ again:
 			 * We got forcibly unmounted.
 			 */
 			AUTOFS_DEBUG("doomed vnode");
-			VOP_UNLOCK(vp, 0);
+			sx_xunlock(&anp->an_vnode_lock);
+			vput(vp);
 
 			return (ENOENT);
 		}
 
-		vref(vp);
-
 		*vpp = vp;
+		sx_xunlock(&anp->an_vnode_lock);
 		return (0);
 	}
 
 	error = getnewvnode("autofs", mp, &autofs_vnodeops, &vp);
-	if (error != 0)
-		return (error);
-
-	error = vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 	if (error != 0) {
-		vdrop(vp);
+		sx_xunlock(&anp->an_vnode_lock);
 		return (error);
 	}
 
-	/*
-	 * Not doing this results in 'v_lock 0x...: zero hold count'.
-	 */
-	vhold(vp);
+	error = vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
+	if (error != 0) {
+		sx_xunlock(&anp->an_vnode_lock);
+		vdrop(vp);
+		return (error);
+	}
 
 	vp->v_type = VDIR;
 	if (anp->an_parent == NULL)
@@ -596,16 +602,15 @@ again:
 
 	error = insmntque(vp, mp);
 	if (error != 0) {
-		vdrop(vp);
+		AUTOFS_WARN("insmntque() failed with error %d", error);
+		sx_xunlock(&anp->an_vnode_lock);
 		return (error);
 	}
 
-	if (atomic_cmpset_ptr((uintptr_t *)&anp->an_vnode,
-	    (uintptr_t)NULL, (uintptr_t)vp) == 0) {
-		AUTOFS_DEBUG("lost race");
-		vdrop(vp);
-		goto again;
-	}
+	KASSERT(anp->an_vnode == NULL, ("lost race"));
+	anp->an_vnode = vp;
+
+	sx_xunlock(&anp->an_vnode_lock);
 
 	*vpp = vp;
 	return (0);

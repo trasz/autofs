@@ -158,6 +158,8 @@ autofs_unmount(struct mount *mp, int mntflags)
 	mp->mnt_data = NULL;
 	AUTOFS_UNLOCK(amp);
 
+	sx_destroy(&amp->am_lock);
+
 	free(amp, M_AUTOFS);
 
 	return (0);
