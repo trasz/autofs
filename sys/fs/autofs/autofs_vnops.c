@@ -506,7 +506,16 @@ autofs_node_new(struct autofs_node *parent, struct autofs_mount *amp,
 		anp->an_name = strdup(name, M_AUTOFS);
 	anp->an_fileno = atomic_fetchadd_int(&amp->am_last_fileno, 1);
 	callout_init(&anp->an_callout, 1);
-	sx_init(&anp->an_vnode_lock, "autofsvlk");
+	/*
+	 * The reason for SX_NOWITNESS here is that witness(4)
+	 * can't tell vnodes apart, so the following perfectly
+	 * valid lock order...
+	 *
+	 * vnode lock A -> autofsvlk B -> vnode lock B
+	 *
+	 * ... gets reported as a LOR.
+	 */
+	sx_init_flags(&anp->an_vnode_lock, "autofsvlk", SX_NOWITNESS);
 	getnanotime(&anp->an_ctime);
 	anp->an_parent = parent;
 	anp->an_mount = amp;
