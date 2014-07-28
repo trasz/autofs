@@ -56,6 +56,11 @@ static int
 autofs_access(struct vop_access_args *ap)
 {
 
+	/*
+	 * Nothing to do here; the only kind of access control
+	 * needed is in autofs_mkdir().
+	 */
+
 	return (0);
 }
 
@@ -313,6 +318,13 @@ autofs_mkdir(struct vop_mkdir_args *ap)
 	struct autofs_mount *amp = VFSTOAUTOFS(vp->v_mount);
 	struct autofs_node *child;
 	int error;
+
+	/*
+	 * Don't allow mkdir() if the calling thread is not
+	 * automountd(8) descendant.
+	 */
+	if (autofs_ignore_thread(curthread) == false)
+		return (EPERM);
 
 	AUTOFS_LOCK(amp);
 	error = autofs_node_new(anp, amp, ap->a_cnp->cn_nameptr,
