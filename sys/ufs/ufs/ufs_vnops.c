@@ -382,8 +382,7 @@ relock:
 
 	/*
 	 * If immutable bit set, nobody gets to write it.  "& ~VADMIN_PERMS"
-	 * is here, because without it, * it would be impossible for the owner
-	 * to remove the IMMUTABLE flag.
+	 * permits the owner of the file to remove the IMMUTABLE flag.
 	 */
 	if ((accmode & (VMODIFY_PERMS & ~VADMIN_PERMS)) &&
 	    (ip->i_flags & (IMMUTABLE | SF_SNAPSHOT)))
@@ -968,10 +967,6 @@ ufs_link(ap)
 	if ((cnp->cn_flags & HASBUF) == 0)
 		panic("ufs_link: no name");
 #endif
-	if (tdvp->v_mount != vp->v_mount) {
-		error = EXDEV;
-		goto out;
-	}
 	if (VTOI(tdvp)->i_effnlink < 2)
 		panic("ufs_link: Bad link count %d on parent",
 		    VTOI(tdvp)->i_effnlink);

@@ -52,7 +52,7 @@ CRUNCH_SRCDIRS+= bin
 CRUNCH_PROGS_bin= cat chflags chio chmod cp date dd df echo 	\
 	 ed expr getfacl hostname kenv kill ln ls mkdir mv	\
 	 pkill ps pwd realpath rm rmdir setfacl sh stty sync test
-CRUNCH_LIBS+= -lcrypt -ledit -ljail -lkvm -ll -ltermcap -lutil
+CRUNCH_LIBS+= -lcrypt -ledit -ljail -lkvm -ll -ltermcapw -lutil
 CRUNCH_BUILDTOOLS+= bin/sh
 
 # Additional options for specific programs
@@ -118,11 +118,15 @@ CRUNCH_PROGS_sbin+= zpool
 # crunchgen does not like C++ programs; this should be fixed someday
 # CRUNCH_PROGS+= devd
 
-CRUNCH_LIBS+= -lalias -lcam -lcurses -ldevstat -lipsec
+CRUNCH_LIBS+= -lalias -lcam -lncursesw -ldevstat -lipsec
 .if ${MK_ZFS} != "no"
 CRUNCH_LIBS+= -lavl -lzfs_core -lzfs -lnvpair -lpthread -luutil -lumem
 .endif
-CRUNCH_LIBS+= -lgeom -lbsdxml -lkiconv -lmd -lsbuf -lufs -lz
+CRUNCH_LIBS+= -lgeom -lbsdxml -lkiconv
+.if ${MK_OPENSSL} == "no"
+CRUNCH_LIBS+= -lmd
+.endif
+CRUNCH_LIBS+= -lsbuf -lufs -lz
 
 .if ${MACHINE_CPUARCH} == "i386"
 CRUNCH_PROGS_sbin+= bsdlabel sconfig fdisk
@@ -187,10 +191,11 @@ CRUNCH_ALIAS_xz= unxz lzma unlzma xzcat lzcat
 CRUNCH_LIBS+= -llzma
 
 CRUNCH_PROGS_usr.bin+= tar
-CRUNCH_LIBS+= -larchive -lmd
+CRUNCH_LIBS+= -larchive
 .if ${MK_OPENSSL} != "no"
 CRUNCH_LIBS+= -lcrypto
 .endif
+CRUNCH_LIBS+= -lmd
 
 CRUNCH_PROGS_usr.bin+= vi
 CRUNCH_ALIAS_vi= ex

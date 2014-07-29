@@ -38,6 +38,17 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 20140723: renamed to PCBGROUP.9
+OLD_FILES+=usr/share/man/man9/PCBGROUPS.9.gz
+# 20140718: Remove obsolete man pages
+OLD_FILES+=usr/share/man/man9/zero_copy.9.gz
+OLD_FILES+=usr/share/man/man9/zero_copy_sockets.9.gz
+# 20140718: Remove an obsolete man page
+OLD_FILES+=usr/share/man/man9/pmap_page_protect.9.gz
+# 20140717: Remove an obsolete man page
+OLD_FILES+=usr/share/man/man9/pmap_clear_reference.9.gz
+# 20140716: Remove an incorrectly named man page
+OLD_FILES+=usr/share/man/man9/pmap_ts_modified.9.gz
 # 20140712: Removal of bsd.dtrace.mk
 OLD_FILES+=usr/share/mk/bsd.dtrace.mk
 # 20140705: turn libreadline into an internal lib
@@ -70,8 +81,10 @@ OLD_FILES+=usr/share/examples/cvsup/stable-supfile
 OLD_FILES+=usr/share/examples/cvsup/standard-supfile
 OLD_DIRS+=usr/share/examples/cvsup
 # 20140614: send-pr removal
+OLD_FILES+=usr/bin/sendbug
 OLD_FILES+=usr/share/info/send-pr.info.gz
 OLD_FILES+=usr/share/man/man1/send-pr.1.gz
+OLD_FILES+=usr/share/man/man1/sendbug.1.gz
 OLD_FILES+=etc/gnats/freefall
 OLD_DIRS+=etc/gnats
 # 20140512: new clang import which bumps version from 3.4 to 3.4.1.
