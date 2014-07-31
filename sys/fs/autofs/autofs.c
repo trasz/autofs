@@ -71,10 +71,10 @@ static struct cdevsw autofs_cdevsw = {
 struct autofs_softc	*sc;
 
 SYSCTL_NODE(_vfs, OID_AUTO, autofs, CTLFLAG_RD, 0, "Automounter filesystem");
-int autofs_debug = 2;
+int autofs_debug = 1;
 TUNABLE_INT("vfs.autofs.debug", &autofs_debug);
 SYSCTL_INT(_vfs_autofs, OID_AUTO, debug, CTLFLAG_RWTUN,
-    &autofs_debug, 2, "Enable debug messages");
+    &autofs_debug, 1, "Enable debug messages");
 int autofs_mount_on_stat = 0;
 TUNABLE_INT("vfs.autofs.mount_on_stat", &autofs_mount_on_stat);
 SYSCTL_INT(_vfs_autofs, OID_AUTO, mount_on_stat, CTLFLAG_RWTUN,
