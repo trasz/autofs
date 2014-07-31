@@ -806,7 +806,20 @@ parse_map_yyin(struct node *parent, const char *map, const char *executable_key)
 				log_errx(1, "too many arguments "
 				    "in %s, line %d", map, lineno);
 			}
-			location = checked_strdup(yytext);
+
+			/*
+			 * If location field starts with colon, eg. ":/dev/cd0",
+			 * then strip it.
+			 */
+			if (yytext[0] == ':') {
+				location = checked_strdup(yytext + 1);
+				if (location[0] == '\0') {
+					log_errx(1, "empty location in %s, "
+					    "line %d", map, lineno);
+				}
+			} else {
+				location = checked_strdup(yytext);
+			}
 
 			if (mountpoint == NULL)
 				mountpoint = checked_strdup("/");
