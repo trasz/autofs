@@ -27,7 +27,7 @@
 .\"
 .\" $FreeBSD$
 .\"
-.Dd April 20, 2014
+.Dd July 31, 2014
 .Dt AUTO_MASTER 5
 .Os
 .Sh NAME
@@ -95,11 +95,16 @@ The "options" field, if present, must begin with "-".
 When mounting the filesystem, all the options - from
 .Nm ,
 and from the map entry - get concatenated together.
+The special option "fstype" is used to specify filesystem type.
+It is not passed to the mount program as mount option; instead,
+it's passed as argument to "mount -t".
 .Pp
 The optional "mountpoint" field is used to specify multiple mount points
 for a single key.
 .Pp
 The location field specifies the filesystem to be mounted.
+To pass location that begins with "/", prefix it with colon,
+eg. ":/dev/cd0".
 .Pp
 The following example, when used with
 .Nm
@@ -108,6 +113,11 @@ will get mounted on /example/x/ when any process attempts to access that
 mountpoint, with "intr" and "nfsv4" mount options:
 .Bd -literal -offset indent
 x -intr,nfsv4 192.168.1.1:/share/example/x
+.Ed
+.Pp
+The following specifies map entry to automatically mount CD drive:
+.Bd -literal -offset indent
+cd -intr,nfsv4,fstype=cd9660 :/dev/cd0
 .Ed
 .Sh SPECIAL MAPS
 Special maps have names beginning with "-".
@@ -154,6 +164,7 @@ in
 and the following in /etc/auto_example map file:
 .Bd -literal -offset indent
 /example/x -intr,nfsv4 192.168.1.1:/share/example/x
+/example/cd -intr,fstype=cd9660 :/dev/cd0
 .Ed
 .Sh DIRECTORY SERVICES
 Both
