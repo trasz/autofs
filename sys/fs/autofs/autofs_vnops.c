@@ -183,13 +183,14 @@ mounted:
 
 	error = vfs_busy(vp->v_mountedhere, 0);
 	if (error != 0) {
-		AUTOFS_WARN("vfs_busy failed");
+		AUTOFS_WARN("vfs_busy failed with error %d", error);
 		*newvp = NULL;
 		return (0);
 	}
 
 	error = VFS_ROOT(vp->v_mountedhere, lock_flags, newvp);
 	if (error != 0) {
+		AUTOFS_WARN("VFS_ROOT() failed with error %d", error);
 		vfs_unbusy(vp->v_mountedhere);
 		return (error);
 	}

@@ -28,6 +28,38 @@
  *
  * $FreeBSD$
  */
+/*-
+ * Copyright (c) 1989, 1991, 1993, 1995
+ *	The Regents of the University of California.  All rights reserved.
+ *
+ * This code is derived from software contributed to Berkeley by
+ * Rick Macklem at The University of Guelph.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 4. Neither the name of the University nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ *
+ */
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -41,6 +73,7 @@
 #include <sys/refcount.h>
 #include <sys/sx.h>
 #include <sys/sysctl.h>
+#include <sys/syscallsubr.h>
 #include <sys/vnode.h>
 #include <machine/atomic.h>
 #include <vm/uma.h>
@@ -66,6 +99,18 @@ static struct cdevsw autofs_cdevsw = {
      .d_close   = autofs_close,
      .d_ioctl   = autofs_ioctl,
      .d_name    = "autofs",
+};
+
+/*
+ * List of signals that can interrupt an autofs trigger.  Might be a good
+ * idea to keep it synchronised with list in sys/fs/nfs/nfs_commonkrpc.c.
+ */
+int autofs_sig_set[] = {
+	SIGINT,
+	SIGTERM,
+	SIGHUP,
+	SIGKILL,
+	SIGQUIT
 };
 
 struct autofs_softc	*sc;
@@ -259,10 +304,49 @@ autofs_cache_callout(void *context)
 	anp->an_cached = false;
 }
 
+/*
+ * The set/restore sigmask functions are used to (temporarily) overwrite
+ * the thread td_sigmask during triggering.
+ */
+static void
+autofs_set_sigmask(sigset_t *oldset)
+{
+	sigset_t newset;
+	int i;
+
+	SIGFILLSET(newset);
+	/* Remove the autofs set of signals from newset */
+	PROC_LOCK(curproc);
+	mtx_lock(&curproc->p_sigacts->ps_mtx);
+	for (i = 0 ; i < sizeof(autofs_sig_set)/sizeof(int) ; i++) {
+		/*
+		 * But make sure we leave the ones already masked
+		 * by the process, ie. remove the signal from the
+		 * temporary signalmask only if it wasn't already
+		 * in p_sigmask.
+		 */
+		if (!SIGISMEMBER(curthread->td_sigmask, autofs_sig_set[i]) &&
+		    !SIGISMEMBER(curproc->p_sigacts->ps_sigignore, autofs_sig_set[i]))
+			SIGDELSET(newset, autofs_sig_set[i]);
+	}
+	mtx_unlock(&curproc->p_sigacts->ps_mtx);
+	kern_sigprocmask(curthread, SIG_SETMASK, &newset, oldset,
+	    SIGPROCMASK_PROC_LOCKED);
+	PROC_UNLOCK(curproc);
+}
+
+static void
+autofs_restore_sigmask(sigset_t *set)
+{
+
+	kern_sigprocmask(curthread, SIG_SETMASK, set, NULL, 0);
+}
+
 static int
 autofs_trigger_one(struct autofs_node *anp,
     const char *component, int componentlen)
 {
+	sigset_t oldset;
 	struct autofs_mount *amp = VFSTOAUTOFS(anp->an_vnode->v_mount);
 	struct autofs_softc *sc = amp->am_softc;
 	struct autofs_node *firstanp;
@@ -323,7 +407,9 @@ autofs_trigger_one(struct autofs_node *anp,
 	cv_broadcast(&sc->sc_cv);
 	while (ar->ar_done == false) {
 		if (autofs_interruptible != 0) {
+			autofs_set_sigmask(&oldset);
 			error = cv_wait_sig(&sc->sc_cv, &sc->sc_lock);
+			autofs_restore_sigmask(&oldset);
 			if (error != 0) {
 				/*
 				 * XXX: For some reson this returns -1
