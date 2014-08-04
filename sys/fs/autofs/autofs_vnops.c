@@ -135,11 +135,12 @@ autofs_trigger_vn(struct vnode *vp, const char *path, int pathlen, struct vnode 
 
 	/*
 	 * Release the vnode lock, so that other operations, in partcular
-	 * mounting a filesystem on top of it, can proceed.  Increase hold
-	 * count, to prevent the vnode from being deallocated.
+	 * mounting a filesystem on top of it, can proceed.  Increase use
+	 * count, to prevent the vnode from being deallocated and to prevent
+	 * filesystem from being unmounted.
 	 */
 	lock_flags = VOP_ISLOCKED(vp);
-	vhold(vp);
+	vref(vp);
 	VOP_UNLOCK(vp, 0);
 
 	sx_xlock(&sc->sc_lock);
@@ -156,7 +157,7 @@ autofs_trigger_vn(struct vnode *vp, const char *path, int pathlen, struct vnode 
 mounted:
 	sx_xunlock(&sc->sc_lock);
 	vn_lock(vp, lock_flags | LK_RETRY);
-	vdrop(vp);
+	vunref(vp);
 	if ((vp->v_iflag & VI_DOOMED) != 0) {
 		AUTOFS_DEBUG("VI_DOOMED");
 		return (ENOENT);
