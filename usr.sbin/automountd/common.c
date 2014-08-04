@@ -121,8 +121,8 @@ concat(char **p1, char **p2)
 /*
  * Concatenate two strings, inserting separator between them, unless not needed.
  *
- * This function is very convenient to use when you don't care about freeing
- * memory, which we generally don't - because we're a short running process.
+ * This function is very convenient to use when you do not care about freeing
+ * memory - which is okay here, because we are a short running process.
  */
 char *
 separated_concat(const char *s1, const char *s2, char separator)
@@ -748,13 +748,13 @@ parse_map_yyin(struct node *parent, const char *map, const char *executable_key)
 		}
 
 		/*
-		 * We can't properly handle a situation where the map key
+		 * We cannot properly handle a situation where the map key
 		 * is "/".  Ignore such entries.
 		 *
 		 * XXX: According to Piete Brooks, Linux automounter uses
-		 * 	"/" as a wildcard character in LDAP maps.  Perhaps
-		 * 	we should work around this braindamage by substituting
-		 * 	"*" for "/"?
+		 *	"/" as a wildcard character in LDAP maps.  Perhaps
+		 *	we should work around this braindamage by substituting
+		 *	"*" for "/"?
 		 */
 		if (strcmp(key, "/") == 0) {
 			log_warnx("nonsensical map key \"/\" at %s, line %d; "
@@ -808,7 +808,7 @@ parse_map_yyin(struct node *parent, const char *map, const char *executable_key)
 			}
 
 			/*
-			 * If location field starts with colon, eg. ":/dev/cd0",
+			 * If location field starts with colon, e.g. ":/dev/cd0",
 			 * then strip it.
 			 */
 			if (yytext[0] == ':') {
@@ -863,7 +863,7 @@ file_is_executable(const char *path)
 }
 
 /*
- * Parse a special map, eg. "-hosts".
+ * Parse a special map, e.g. "-hosts".
  */
 static void
 parse_special_map(struct node *parent, const char *map, const char *key)
@@ -902,8 +902,8 @@ parse_special_map(struct node *parent, const char *map, const char *key)
 }
 
 /*
- * Retrieve and parse map from directory services, eg. LDAP.
- * Note that it's different from executable maps, in that
+ * Retrieve and parse map from directory services, e.g. LDAP.
+ * Note that it is different from executable maps, in that
  * the include script outputs the whole map to standard output
  * (as opposed to executable maps that only output a single
  * entry, without the key), and it takes the map name as an

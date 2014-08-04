@@ -143,7 +143,7 @@ defined_expand(const char *string)
 			c = string[i];
 			/*
 			 * XXX: Decide on the set of characters that can be
-			 * 	used in a variable name.
+			 *	used in a variable name.
 			 */
 			if (isalnum(c) || c == '_')
 				continue;

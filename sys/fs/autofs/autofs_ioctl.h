@@ -49,13 +49,13 @@ struct autofs_daemon_request {
 
 	/*
 	 * Full path to the node being looked up; for requests that result
-	 * in actual mount it's the full mount path.
+	 * in actual mount it is the full mount path.
 	 */
 	char		adr_path[MAXPATHLEN];
 
 	/*
 	 * Prefix, which is basically the mountpoint from auto_master(5).
-	 * In example above that would be "/net"; for direct maps it's "/".
+	 * In example above that would be "/net"; for direct maps it is "/".
 	 */
 	char		adr_prefix[MAXPATHLEN];
 

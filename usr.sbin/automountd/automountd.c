@@ -284,7 +284,7 @@ handle_request(const struct autofs_daemon_request *adr, char *cmdline_options,
 	if (strcmp(fstype, "nfs") == 0) {
 		/*
 		 * The mount_nfs(8) command defaults to retry undefinitely.
-		 * We don't want that behaviour, because it leaves mount_nfs(8)
+		 * We do not want that behaviour, because it leaves mount_nfs(8)
 		 * instances and automountd(8) children hanging forever.
 		 * Disable retries unless the option was passed explicitly.
 		 */

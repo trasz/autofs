@@ -115,7 +115,7 @@ mount_autofs(const char *from, const char *fspath, const char *options, const ch
 
 	/*
 	 * Append the options and mountpoint defined in auto_master(5);
-	 * this way automountd(8) doesn't need to parse it.
+	 * this way automountd(8) does not need to parse it.
 	 */
 	build_iovec(&iov, &iovlen, "master_options", __DECONST(void *, options), (size_t)-1);
 	build_iovec(&iov, &iovlen, "master_prefix", __DECONST(void *, prefix), (size_t)-1);
@@ -152,7 +152,7 @@ mount_if_not_already(const struct node *n, const char *map,
 			    "on %s; mounting", mountpoint);
 			/*
 			 * XXX: Compare options and 'from',
-			 * and update the mount if neccessary.
+			 *	and update the mount if necessary.
 			 */
 		} else {
 			log_debugx("autofs already mounted "

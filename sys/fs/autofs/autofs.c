@@ -282,8 +282,8 @@ autofs_cached(struct autofs_node *anp, const char *component, int componentlen)
 	/*
 	 * For top-level nodes we need to request automountd(8)
 	 * assistance even if the node is marked as cached,
-	 * but the requested subdirectory doesn't exist.  This
-	 * is neccessary for wildcard indirect map keys to work.
+	 * but the requested subdirectory does not exist.  This
+	 * is necessary for wildcard indirect map keys to work.
 	 */
 	if (anp->an_parent == NULL && componentlen != 0) {
 		AUTOFS_LOCK(amp);
@@ -321,7 +321,7 @@ autofs_set_sigmask(sigset_t *oldset)
 	for (i = 0 ; i < sizeof(autofs_sig_set)/sizeof(int) ; i++) {
 		/*
 		 * But make sure we leave the ones already masked
-		 * by the process, ie. remove the signal from the
+		 * by the process, i.e. remove the signal from the
 		 * temporary signalmask only if it wasn't already
 		 * in p_sigmask.
 		 */
@@ -413,7 +413,7 @@ autofs_trigger_one(struct autofs_node *anp,
 			if (error != 0) {
 				/*
 				 * XXX: For some reson this returns -1
-				 * 	instead of EINTR, wtf?!
+				 *	instead of EINTR, wtf?!
 				 */
 				error = EINTR;
 				AUTOFS_WARN("cv_wait_sig for %s failed "
@@ -445,8 +445,8 @@ autofs_trigger_one(struct autofs_node *anp,
 	}
 
 	/*
-	 * Note that we don't do negative caching on purpose.  This
-	 * way the user can retry access at any time, eg. after fixing
+	 * Note that we do not do negative caching on purpose.  This
+	 * way the user can retry access at any time, e.g. after fixing
 	 * the failure reason, without waiting for cache timer to expire.
 	 */
 	if (error == 0 && request_error == 0 && autofs_cache > 0) {

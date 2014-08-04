@@ -48,7 +48,7 @@ mount option set.
 The list gets refreshed every time a filesystem gets mounted or unmounted.
 After specified time passes,
 .Nm
-attempts to unmount a filesystem, retrying after some time if neccessary.
+attempts to unmount a filesystem, retrying after some time if necessary.
 .Pp
 The following options are available:
 .Bl -tag -width ".Fl v"
@@ -56,7 +56,7 @@ The following options are available:
 Debug mode - increase verbosity and do not daemonize.
 .It Fl r
 Number of seconds to wait before reattempting to unmount expired
-filesystem, after the previous attempt failed due to eg. filesystem
+filesystem, after the previous attempt failed due to e.g. filesystem
 being busy.
 Default is 600, which amounts to 10 minutes.
 .It Fl t

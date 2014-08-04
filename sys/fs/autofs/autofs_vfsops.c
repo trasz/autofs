@@ -119,7 +119,7 @@ autofs_unmount(struct mount *mp, int mntflags)
 	}
 
 	/*
-	 * All vnodes are gone, and new one won't appear - so,
+	 * All vnodes are gone, and new one will not appear - so,
 	 * no new triggerings.  We can iterate over outstanding
 	 * autofs_requests and terminate them.
 	 */

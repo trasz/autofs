@@ -144,7 +144,7 @@ refresh_automounted(void)
 		if (af->af_mark)
 			continue;
 		log_debugx("lost filesystem mounted on %s (FSID:%d:%d)",
-	    	    af->af_mountpoint, af->af_fsid.val[0], af->af_fsid.val[1]);
+		    af->af_mountpoint, af->af_fsid.val[0], af->af_fsid.val[1]);
 		automounted_remove(af);
 	}
 }

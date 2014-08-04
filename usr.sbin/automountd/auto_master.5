@@ -57,16 +57,16 @@ it must reference a direct map.
 .Pp
 The "map_name" specifies map to use.
 If the map name begins with "-", it specifies a special map, see below.
-Otherwise, if it is not a fully specified path (ie. it doesn't start with "/"),
+Otherwise, if it is not a fully specified path (i.e. it does not start with "/"),
 .Xr automountd 8
 will search for it in the /etc directory; otherwise it will use the path
 specified.
 If the file is executable,
 .Xr automountd 8
-will assume it's an executable map, see below.
+will assume it is an executable map, see below.
 Otherwise it will open the file and parse its contents.
 .Pp
-The "options" is an optional field that starts with "-" and can contain generic 
+The "options" is an optional field that starts with "-" and can contain generic
 filesystem mount options.
 .Pp
 The following example specifies that the /etc/auto_example indirect map
@@ -81,7 +81,7 @@ terminated by newline, as follows:
 key [-options] [mountpoint [-options]] location [...]
 .Ed
 .Pp
-In most cases it's simplified to:
+In most cases it is simplified to:
 .Bd -literal -offset indent
 key [-options] location
 .Ed
@@ -97,14 +97,14 @@ When mounting the filesystem, all the options - from
 and from the map entry - get concatenated together.
 The special option "fstype" is used to specify filesystem type.
 It is not passed to the mount program as mount option; instead,
-it's passed as argument to "mount -t".
+it is passed as argument to "mount -t".
 .Pp
 The optional "mountpoint" field is used to specify multiple mount points
 for a single key.
 .Pp
 The location field specifies the filesystem to be mounted.
 To pass location that begins with "/", prefix it with colon,
-eg. ":/dev/cd0".
+e.g. ":/dev/cd0".
 .Pp
 The following example, when used with
 .Nm
@@ -126,7 +126,7 @@ Supported special maps are:
 .Bl -tag -width "-hosts" -compact
 .It -hosts
 This map queries the remote NFS server and maps exported volumes.
-It's traditionally mounted on /net.
+It is traditionally mounted on /net.
 It enables access to files on a remote NFS server by accessing
 /net/nfs-server-ip/share-name/ directory, without need for any
 further configuration.
@@ -140,7 +140,7 @@ If the map file specified in auto_master has execute bit set, the
 .Xr automountd 8
 daemon will execute it and parse its standard output instead of parsing
 its contents.
-.Sh INDIRECT VS DIRECT MAPS
+.Sh INDIRECT VERSUS DIRECT MAPS
 Indirect maps are referred to in
 .Nm
 by entries with a fully qualified path as a mountpoint, and must contain only
@@ -176,7 +176,7 @@ and maps may contain entries consisting of plus sign and map name:
 .Pp
 Those entries cause
 .Xr automountd 8
-daemon to retrieve named map from directory services (eg. LDAP)
+daemon to retrieve named map from directory services (e.g. LDAP)
 and include it where the entry was.
 .Pp
 If the file containing map referenced in

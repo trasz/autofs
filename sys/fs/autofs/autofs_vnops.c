@@ -78,7 +78,7 @@ autofs_getattr(struct vop_getattr_args *ap)
 
 	/*
 	 * The reason we must do this is that some tree-walking software,
-	 * namely fts(3), assumes that stat(".") results won't change
+	 * namely fts(3), assumes that stat(".") results will not change
 	 * between chdir("subdir") and chdir(".."), and fails with ENOENT
 	 * otherwise.
 	 */
@@ -173,7 +173,7 @@ mounted:
 		/*
 		 * If the operation that succeeded was mount, then mark
 		 * the node as non-cached.  Otherwise, if someone unmounts
-		 * the filesystem before the cache times out, we'll fail
+		 * the filesystem before the cache times out, we will fail
 		 * to trigger.
 		 */
 		anp->an_cached = false;
@@ -216,7 +216,7 @@ autofs_lookup(struct vop_lookup_args *ap)
 		//AUTOFS_DEBUG("..");
 		KASSERT(anp->an_parent != NULL, ("NULL parent"));
 		/*
-		 * Note that in this case, dvp is the child vnode, and we're
+		 * Note that in this case, dvp is the child vnode, and we are
 		 * looking up the parent vnode - exactly reverse from normal
 		 * operation.  To preserve lock order, we unlock the child
 		 * (dvp), obtain the lock on parent (*vpp) in autofs_node_vn(),
@@ -322,7 +322,7 @@ autofs_mkdir(struct vop_mkdir_args *ap)
 	int error;
 
 	/*
-	 * Don't allow mkdir() if the calling thread is not
+	 * Do not allow mkdir() if the calling thread is not
 	 * automountd(8) descendant.
 	 */
 	if (autofs_ignore_thread(curthread) == false)
@@ -460,7 +460,7 @@ autofs_reclaim(struct vop_reclaim_args *ap)
 	struct autofs_node *anp = vp->v_data;
 
 	/*
-	 * We don't free autofs_node here; instead we're
+	 * We do not free autofs_node here; instead we are
 	 * destroying them in autofs_node_delete().
 	 */
 	sx_xlock(&anp->an_vnode_lock);
@@ -510,7 +510,7 @@ autofs_node_new(struct autofs_node *parent, struct autofs_mount *amp,
 	callout_init(&anp->an_callout, 1);
 	/*
 	 * The reason for SX_NOWITNESS here is that witness(4)
-	 * can't tell vnodes apart, so the following perfectly
+	 * cannot tell vnodes apart, so the following perfectly
 	 * valid lock order...
 	 *
 	 * vnode lock A -> autofsvlk B -> vnode lock B

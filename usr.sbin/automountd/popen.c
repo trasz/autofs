@@ -63,7 +63,7 @@ static SLIST_HEAD(, pid) pidlist = SLIST_HEAD_INITIALIZER(pidlist);
 #define	ARGV_LEN	42
 
 /*
- * Replacement for popen(3), without stdin (which we don't use), but with
+ * Replacement for popen(3), without stdin (which we do not use), but with
  * stderr, proper logging, and improved command line arguments passing.
  * Error handling is built in - if it returns, then it succeeded.
  */
@@ -85,7 +85,7 @@ auto_popen(const char *argv0, ...)
 		log_err(1, "pipe");
 
 	cur = malloc(sizeof(struct pid));
-	if (cur == NULL) 
+	if (cur == NULL)
 		log_err(1, "malloc");
 
 	argv[0] = checked_strdup(argv0);
@@ -127,7 +127,7 @@ auto_popen(const char *argv0, ...)
 
 	log_debugx("executing \"%s\" as pid %d", command, pid);
 
-	/* Parent; assume fdopen can't fail. */
+	/* Parent; assume fdopen cannot fail. */
 	cur->outfp = fdopen(outfds[0], "r");
 	close(nullfd);
 	close(outfds[1]);
