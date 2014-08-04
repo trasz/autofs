@@ -46,35 +46,34 @@ When called without options, the
 .Nm
 command parses the
 .Xr auto_master 5
-configuration file and any direct maps it references, and mounts or unmounts
+configuration file and any direct maps that it references, and mounts or unmounts
 .Xr autofs 4
 filesystems to match.
 The following options are available:
 .Bl -tag -width ".Fl v"
 .It Fl D
 Define a variable.
-Note that in case of
+Note that in the case of
 .Nm ,
 it is only useful with -L.
 .It Fl L
 Do not mount or unmount anything; instead parse
 .Xr auto_master 5
-and direct maps and print them to standard output.
+and any direct maps, then print them to standard output.
 When specified more than once, all the maps, including indirect ones,
 will be parsed and shown.
 This is useful when debugging configuration problems.
 .It Fl f
 Force unmount, to be used with -u.
 .It Fl o
-Specify mount options to be used along with ones specified in maps.
-Note that in case of
+Specify mount options to be used along with ones specified in the maps.
+Note that in the case of
 .Nm ,
 it is only useful with -L.
 .It Fl u
 Try to unmount filesystems mounted by
-.Xr automountd 8
-daemon.
-Note that this does not include autofs mounts done by
+.Xr automountd 8 .
+Note that this does not include autofs mounts created by
 .Nm .
 To unmount all autofs mounts, use "umount -At autofs".
 .It Fl v
