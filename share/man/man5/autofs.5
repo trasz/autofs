@@ -35,7 +35,7 @@
 .Nd "automounter filesystem"
 .Sh SYNOPSIS
 To compile this driver into the kernel,
-place the following line in your
+place the following line in the
 kernel configuration file:
 .Bd -ragged -offset indent
 .Cd "options AUTOFS"
@@ -50,15 +50,15 @@ autofs_load="YES"
 .Sh DESCRIPTION
 The
 .Nm
-driver is the kernel component of automounter infrastructure.
+driver is the kernel component of the automounter infrastructure.
 Its job is to pass mount requests to the
 .Xr automountd 8
-daemon, and pause offending processes until the mount is completed.
-It is usually mounted by the
-.Xr automount 8
-utility.
+daemon, and pause the processes trying to access the automounted filesystem
+until the mount is completed.
+It is mounted by the
+.Xr automount 8 .
 .Sh OPTIONS
-The following options are available when
+These options are available when
 mounting
 .Nm
 file systems:
@@ -77,9 +77,8 @@ filesystems:
 .Pp
 To mount
 .Nm
-filesystems as specified by
-.Xr auto_master 5
-file:
+filesystems specified in
+.Xr auto_master 5 :
 .Pp
 .Dl "automount"
 .Sh SEE ALSO
@@ -96,5 +95,5 @@ driver first appeared in
 The
 .Nm
 was developed by
-.An Edward Tomasz Napierala Aq trasz@FreeBSD.org
+.An Edward Tomasz Napierala Aq Mt trasz@FreeBSD.org
 under sponsorship from the FreeBSD Foundation.
