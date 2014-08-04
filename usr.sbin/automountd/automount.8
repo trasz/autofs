@@ -55,7 +55,8 @@ The following options are available:
 Define a variable.
 Note that in the case of
 .Nm ,
-it is only useful with -L.
+it is only useful with
+.Fl L .
 .It Fl L
 Do not mount or unmount anything; instead parse
 .Xr auto_master 5
@@ -64,12 +65,14 @@ When specified more than once, all the maps, including indirect ones,
 will be parsed and shown.
 This is useful when debugging configuration problems.
 .It Fl f
-Force unmount, to be used with -u.
+Force unmount, to be used with
+.Fl u .
 .It Fl o
 Specify mount options to be used along with ones specified in the maps.
 Note that in the case of
 .Nm ,
-it is only useful with -L.
+it is only useful with
+.Fl L .
 .It Fl u
 Try to unmount filesystems mounted by
 .Xr automountd 8 .
