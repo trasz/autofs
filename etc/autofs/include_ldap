@@ -1,4 +1,7 @@
 #!/bin/sh
+#
+# $FreeBSD$
+#
 
 # Modify this to suit your needs.  The "$1" is the map name, eg. "auto_master".
 # To debug, simply run this script with map name as the only parameter.  It's
