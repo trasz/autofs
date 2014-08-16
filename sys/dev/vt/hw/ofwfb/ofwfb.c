@@ -66,7 +66,6 @@ static const struct vt_driver vt_ofwfb_driver = {
 	.vd_init	= ofwfb_init,
 	.vd_blank	= vt_fb_blank,
 	.vd_bitbltchr	= ofwfb_bitbltchr,
-	.vd_maskbitbltchr = ofwfb_bitbltchr,
 	.vd_fb_ioctl	= vt_fb_ioctl,
 	.vd_fb_mmap	= vt_fb_mmap,
 	.vd_priority	= VD_PRIORITY_GENERIC+1,
@@ -206,8 +205,8 @@ ofwfb_initialize(struct vt_device *vd)
 
 	switch (sc->fb.fb_bpp) {
 	case 8:
-		vt_generate_vga_palette(sc->fb.fb_cmap, COLOR_FORMAT_RGB, 255,
-		    0, 255, 8, 255, 16);
+		vt_generate_cons_palette(sc->fb.fb_cmap, COLOR_FORMAT_RGB, 255,
+		    16, 255, 8, 255, 0);
 
 		for (i = 0; i < 16; i++) {
 			OF_call_method("color!", sc->sc_handle, 4, 1,
@@ -229,11 +228,11 @@ ofwfb_initialize(struct vt_device *vd)
 		oldpix = bus_space_read_4(sc->sc_memt, sc->fb.fb_vbase, 0);
 		bus_space_write_4(sc->sc_memt, sc->fb.fb_vbase, 0, 0xff000000);
 		if (*(uint8_t *)(sc->fb.fb_vbase) == 0xff)
-			vt_generate_vga_palette(sc->fb.fb_cmap,
-			    COLOR_FORMAT_RGB, 255, 16, 255, 8, 255, 0);
-		else
-			vt_generate_vga_palette(sc->fb.fb_cmap,
+			vt_generate_cons_palette(sc->fb.fb_cmap,
 			    COLOR_FORMAT_RGB, 255, 0, 255, 8, 255, 16);
+		else
+			vt_generate_cons_palette(sc->fb.fb_cmap,
+			    COLOR_FORMAT_RGB, 255, 16, 255, 8, 255, 0);
 		bus_space_write_4(sc->sc_memt, sc->fb.fb_vbase, 0, oldpix);
 		break;
 
@@ -337,6 +336,8 @@ ofwfb_init(struct vt_device *vd)
 	#else
 		#error Unsupported platform!
 	#endif
+
+		sc->fb.fb_pbase = fb_phys;
 	} else {
 		/*
 		 * Some IBM systems don't have an address property. Try to
@@ -386,20 +387,15 @@ ofwfb_init(struct vt_device *vd)
 
 	#if defined(__powerpc__)
 		OF_decode_addr(node, fb_phys, &sc->sc_memt, &sc->fb.fb_vbase);
-	#elif defined(__sparc64__)
-		OF_decode_addr(node, fb_phys, &space, &phys);
-		sc->sc_memt = &ofwfb_memt[0];
-		sc->fb.fb_vbase = sparc64_fake_bustag(space, phys, sc->sc_memt);
+		sc->fb.fb_pbase = sc->fb.fb_vbase; /* 1:1 mapped */
 	#else
 		/* No ability to interpret assigned-addresses otherwise */
 		return (CN_DEAD);
 	#endif
         }
 
-	sc->fb.fb_pbase = fb_phys;
 
 	ofwfb_initialize(vd);
-	fb_probe(&sc->fb);
 	vt_fb_init(vd);
 
 	return (CN_INTERNAL);
