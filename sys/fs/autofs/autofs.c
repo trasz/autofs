@@ -280,7 +280,7 @@ autofs_cached(struct autofs_node *anp, const char *component, int componentlen)
 
 	amp = anp->an_mount;
 
-	AUTOFS_ASSERT_LOCKED(amp);
+	AUTOFS_ASSERT_UNLOCKED(amp);
 
 	/*
 	 * For top-level nodes we need to request automountd(8)
