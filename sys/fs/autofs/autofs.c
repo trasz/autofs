@@ -237,7 +237,6 @@ autofs_path(struct autofs_node *anp)
 		strcat(tmp, path);
 		free(path, M_AUTOFS);
 		path = tmp;
-		tmp = NULL;
 	}
 
 	tmp = malloc(strlen(amp->am_mountpoint) + strlen(path) + 2,
@@ -247,7 +246,6 @@ autofs_path(struct autofs_node *anp)
 	strcat(tmp, path);
 	free(path, M_AUTOFS);
 	path = tmp;
-	tmp = NULL;
 
 	return (path);
 }
