@@ -177,8 +177,6 @@ mounted:
 		 * to trigger.
 		 */
 		anp->an_cached = false;
-		//AUTOFS_DEBUG("node %s covered by mount; uncaching",
-		//    anp->an_name);
 	}
 
 	error = vfs_busy(vp->v_mountedhere, 0);
@@ -213,7 +211,6 @@ autofs_lookup(struct vop_lookup_args *ap)
 	int error, lock_flags;
 
 	if (cnp->cn_flags & ISDOTDOT) {
-		//AUTOFS_DEBUG("..");
 		KASSERT(anp->an_parent != NULL, ("NULL parent"));
 		/*
 		 * Note that in this case, dvp is the child vnode, and we are
@@ -238,7 +235,6 @@ autofs_lookup(struct vop_lookup_args *ap)
 	}
 
 	if (cnp->cn_namelen == 1 && cnp->cn_nameptr[0] == '.') {
-		//AUTOFS_DEBUG(".");
 		vref(dvp);
 		*vpp = dvp;
 
@@ -248,10 +244,8 @@ autofs_lookup(struct vop_lookup_args *ap)
 	if (autofs_cached(anp, cnp->cn_nameptr, cnp->cn_namelen) == false &&
 	    autofs_ignore_thread(cnp->cn_thread) == false) {
 		error = autofs_trigger_vn(dvp, cnp->cn_nameptr, cnp->cn_namelen, &newvp);
-		if (error != 0) {
-			//AUTOFS_DEBUG("autofs_trigger_vn failed, error %d", error);
+		if (error != 0)
 			return (error);
-		}
 
 		if (newvp != NULL) {
 			error = VOP_LOOKUP(newvp, ap->a_vpp, ap->a_cnp);
@@ -274,21 +268,17 @@ autofs_lookup(struct vop_lookup_args *ap)
 		}
 	}
 
-	if (cnp->cn_nameiop == RENAME) {
-		//AUTOFS_DEBUG("RENAME");
+	if (cnp->cn_nameiop == RENAME)
 		return (EOPNOTSUPP);
-	}
 
 	AUTOFS_LOCK(amp);
 	error = autofs_node_find(anp, cnp->cn_nameptr, cnp->cn_namelen, &child);
 	if (error != 0) {
 		if ((cnp->cn_flags & ISLASTCN) && cnp->cn_nameiop == CREATE) {
-			//AUTOFS_DEBUG("JUSTRETURN");
 			AUTOFS_UNLOCK(amp);
 			return (EJUSTRETURN);
 		}
 
-		//AUTOFS_DEBUG("ENOENT");
 		AUTOFS_UNLOCK(amp);
 		return (ENOENT);
 	}
@@ -300,12 +290,9 @@ autofs_lookup(struct vop_lookup_args *ap)
 
 	error = autofs_node_vn(child, mp, vpp);
 	if (error != 0) {
-		if ((cnp->cn_flags & ISLASTCN) && cnp->cn_nameiop == CREATE) {
-			//AUTOFS_DEBUG("JUSTRETURN");
+		if ((cnp->cn_flags & ISLASTCN) && cnp->cn_nameiop == CREATE)
 			return (EJUSTRETURN);
-		}
 
-		//AUTOFS_DEBUG("autofs_node_vn failed with error %d", error);
 		return (error);
 	}
 

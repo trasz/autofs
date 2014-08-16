@@ -185,11 +185,8 @@ autofs_uninit(struct vfsconf *vfsp)
 		sx_xunlock(&sc->sc_lock);
 		return (EBUSY);
 	}
-	if (sc->sc_cdev != NULL) {
-		//AUTOFS_DEBUG("removing device node");
+	if (sc->sc_cdev != NULL)
 		destroy_dev(sc->sc_cdev);
-		//AUTOFS_DEBUG("device node removed");
-	}
 
 	uma_zdestroy(autofs_request_zone);
 	uma_zdestroy(autofs_node_zone);
@@ -213,12 +210,9 @@ autofs_ignore_thread(const struct thread *td)
 
 	PROC_LOCK(p);
 	if (p->p_session->s_sid == sc->sc_dev_sid) {
-		//AUTOFS_DEBUG("must pass pid %d (%s)", p->p_pid, p->p_comm);
 		PROC_UNLOCK(p);
 		return (true);
 	}
-	//AUTOFS_DEBUG("must hold pid %d (%s), sid %d not %d",
-	//    p->p_pid, p->p_comm, p->p_session->s_sid, sc->sc_dev_sid);
 	PROC_UNLOCK(p);
 
 	return (false);
@@ -384,7 +378,6 @@ autofs_trigger_one(struct autofs_node *anp,
 	}
 
 	if (ar != NULL) {
-		//AUTOFS_DEBUG("found existing request for %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
 		refcount_acquire(&ar->ar_refcount);
 	} else {
 		ar = uma_zalloc(autofs_request_zone, M_WAITOK | M_ZERO);
@@ -397,7 +390,6 @@ autofs_trigger_one(struct autofs_node *anp,
 		strlcpy(ar->ar_key, key, sizeof(ar->ar_key));
 		strlcpy(ar->ar_options, amp->am_options, sizeof(ar->ar_options));
 
-		//AUTOFS_DEBUG("new request for %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
 		callout_init(&ar->ar_callout, 1);
 		callout_reset(&ar->ar_callout, autofs_timeout * hz, autofs_callout, ar);
 		refcount_init(&ar->ar_refcount, 1);
@@ -431,7 +423,6 @@ autofs_trigger_one(struct autofs_node *anp,
 		    ar->ar_path, request_error);
 	}
 
-	//AUTOFS_DEBUG("done with %s %s %s", ar->ar_from, ar->ar_key, ar->ar_path);
 	last = refcount_release(&ar->ar_refcount);
 	if (last) {
 		TAILQ_REMOVE(&sc->sc_requests, ar, ar_next);
@@ -450,12 +441,9 @@ autofs_trigger_one(struct autofs_node *anp,
 	 * the failure reason, without waiting for cache timer to expire.
 	 */
 	if (error == 0 && request_error == 0 && autofs_cache > 0) {
-		//AUTOFS_DEBUG("disabling trigger for %s", anp->an_name);
 		anp->an_cached = true;
 		callout_reset(&anp->an_callout, autofs_cache * hz,
 		    autofs_cache_callout, anp);
-	} else {
-		//AUTOFS_DEBUG("not disabling %s, key '%s', error %d", anp->an_name, key, error);
 	}
 
 	free(key, M_AUTOFS);
