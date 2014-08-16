@@ -45,29 +45,58 @@ daemon.
 .Sh AUTO_MASTER SYNTAX
 The
 .Nm
-file consists of lines with two or three entries, separated by whitespace,
-terminated by newline, as follows:
+file consists of lines with two or three entries separated by whitespace
+and terminated by newline character:
 .Bd -literal -offset indent
-mountpoint map_name [-options]
+.Pa mountpoint Pa map_name Op Ar -options
 .Ed
 .Pp
-The "mountpoint" is either a fully specified path, or "/-".
-In the former case the "map_name" must reference an indirect map; otherwise
-it must reference a direct map.
+.Pa mountpoint
+is either a fully specified path, or
+.Li /- .
+When
+.Pa mountpoint
+is a full path,
+.Pa map_name
+must reference an indirect map.
+Otherwise,
+.Pa map_name
+must reference a direct map.
+See
+.Sx "MAP SYNTAX" below.
 .Pp
-The "map_name" specifies map to use.
-If the map name begins with "-", it specifies a special map, see below.
-Otherwise, if it is not a fully specified path (i.e. it does not start with "/"),
+.Pa map_name
+specifies map to use.
+If
+.Pa map_name
+begins with
+.Li - ,
+it specifies a special map.
+See
+.Sx "MAP SYNTAX"
+below.
+If
+.Pa map_name
+is not a fully specified path
+.Pq it does not start with Li / ,
 .Xr automountd 8
-will search for it in the /etc directory; otherwise it will use the path
-specified.
-If the file is executable,
+will search for that name in
+.Li /etc .
+Otherwise it will use the path as given.
+If the file indicated by
+.Pa map_name
+is executable,
 .Xr automountd 8
-will assume it is an executable map, see below.
-Otherwise it will open the file and parse its contents.
+will assume it is an executable map.
+See
+.Sx "MAP SYNTAX"
+below.
+Otherwise, the file is opened and the contents parsed.
 .Pp
-The "options" is an optional field that starts with "-" and can contain generic
-filesystem mount options.
+.Pa -options
+is an optional field that starts with
+.Li -
+and can contain generic filesystem mount options.
 .Pp
 The following example specifies that the /etc/auto_example indirect map
 will be mounted on /example.
@@ -75,127 +104,160 @@ will be mounted on /example.
 /example auto_example
 .Ed
 .Sh MAP SYNTAX
-Map files consist of lines with a number of entries, separated by whitespace,
-terminated by newline, as follows:
+Map files consist of lines with a number of entries separated by whitespace
+and terminated by newline character:
 .Bd -literal -offset indent
-key [-options] [mountpoint [-options]] location [...]
+.Pa key Oo Ar -options Oc Oo Ar mountpoint Oo -options Oc Oc Ar location Op ...
 .Ed
 .Pp
-In most cases it is simplified to:
+In most cases, it can be simplified to:
 .Bd -literal -offset indent
-key [-options] location
+.Pa key Oo Ar -options Oc Ar location
 .Ed
 .Pp
-The "key" specifies path component used by
+.Pa key
+is the path component used by
 .Xr automountd 8
 to find the right map entry to use.
 It is also used to form the final mountpoint.
 .Pp
-The "options" field, if present, must begin with "-".
-When mounting the filesystem, all the options - from
-.Nm ,
-and from the map entry - get concatenated together.
-The special option "fstype" is used to specify filesystem type.
-It is not passed to the mount program as mount option; instead,
-it is passed as argument to "mount -t".
+The
+.Ar options
+field, if present, must begin with
+.Li - .
+When mounting the filesystem, options supplied to
+.Nm
+and options specified in the map entry are concatenated together.
+The special option
+.Li fstype
+is used to specify filesystem type.
+It is not passed to the mount program as an option.
+Instead, it is passed as argument to
+.Cm "mount -t".
 .Pp
-The optional "mountpoint" field is used to specify multiple mount points
+The optional
+.Pa mountpoint
+field is used to specify multiple mount points
 for a single key.
 .Pp
-The location field specifies the filesystem to be mounted.
-To pass location that begins with "/", prefix it with colon,
-e.g. ":/dev/cd0".
+The
+.Ar location
+field specifies the filesystem to be mounted.
+To pass location that begins with
+.Li / ,
+prefix it with colon.
+For example,
+.Li :/dev/cd0 .
 .Pp
-The following example, when used with
+This example, when used with the
 .Nm
-example above, specifies that the NFS share "192.168.1.1:/share/example/x"
-will get mounted on /example/x/ when any process attempts to access that
-mountpoint, with "intr" and "nfsv4" mount options:
+example above, specifies that the NFS share
+.Li 192.168.1.1:/share/example/x
+will be mounted on
+.Pa /example/x/
+when any process attempts to access that mountpoint, with
+.Li intr
+and
+.Li nfsv4
+mount options:
 .Bd -literal -offset indent
-x -intr,nfsv4 192.168.1.1:/share/example/x
+.Li x -intr,nfsv4 192.168.1.1:/share/example/x
 .Ed
 .Pp
-The following specifies map entry to automatically mount CD drive:
+Automatically mount the CD drive on access:
 .Bd -literal -offset indent
-cd -intr,fstype=cd9660 :/dev/cd0
+.Li cd -intr,fstype=cd9660 :/dev/cd0
 .Ed
 .Sh SPECIAL MAPS
-Special maps have names beginning with "-".
+Special maps have names beginning with
+.Li - .
 Supported special maps are:
 .Pp
 .Bl -tag -width "-hosts" -compact
-.It -hosts
+.It Li -hosts
 This map queries the remote NFS server and maps exported volumes.
-It is traditionally mounted on /net.
+It is traditionally mounted on
+.Pa /net .
 It enables access to files on a remote NFS server by accessing
-/net/nfs-server-ip/share-name/ directory, without need for any
-further configuration.
-.It -null
+.Pa /net/nfs-server-ip/share-name/
+directory, without the need for any further configuration.
+.It Li -null
 This map prevents the
 .Xr automountd 8
-daemon from mounting anything on the mountpoint.
+from mounting anything on the mountpoint.
 .El
 .Sh EXECUTABLE MAPS
-If the map file specified in auto_master has execute bit set, the
+If the map file specified in
+.Nm
+has execute bit set, the
 .Xr automountd 8
-daemon will execute it and parse its standard output instead of parsing
-its contents.
+will execute it and parse the standard output instead of parsing
+the file contents.
 .Sh INDIRECT VERSUS DIRECT MAPS
 Indirect maps are referred to in
 .Nm
-by entries with a fully qualified path as a mountpoint, and must contain only
+by entries with a fully qualified path as a mount point, and must contain only
 relative paths as keys.
 Direct maps are referred to in
 .Nm
-by entries with "/-" as the mountpoint, and must contain only fully qualified
-paths as keys.
-For indirect maps, the final mount point is determined by concatenating
+by entries with
+.Li /-
+as the mountpoint, and must contain only fully qualified paths as keys.
+For indirect maps, the final mount point is determined by concatenating the
 .Nm
-mountpoint, the map entry key, and optional map entry mountpoint.
-For direct maps, the final mount point is determined by concatenating map entry key and optional map entry mountpoint.
+mountpoint with the map entry key and optional map entry mountpoint.
+For direct maps, the final mount point is determined by concatenating
+the map entry key with the optional map entry mountpoint.
 .Pp
-The example above could be rewritten using direct map, by placing the following
-in
+The example above could be rewritten using direct map, by placing this in
 .Nm :
 .Bd -literal -offset indent
-/- auto_example
+.Li /- auto_example
 .Ed
 .Pp
-and the following in /etc/auto_example map file:
+and this in
+.Li /etc/auto_example
+map file:
 .Bd -literal -offset indent
-/example/x -intr,nfsv4 192.168.1.1:/share/example/x
-/example/cd -intr,fstype=cd9660 :/dev/cd0
+.Li /example/x -intr,nfsv4 192.168.1.1:/share/example/x
+.Li /example/cd -intr,fstype=cd9660 :/dev/cd0
 .Ed
 .Sh DIRECTORY SERVICES
 Both
 .Nm
-and maps may contain entries consisting of plus sign and map name:
+and maps may contain entries consisting of a plus sign and map name:
 .Bd -literal -offset indent
-+auto_master
+.Li +auto_master
 .Ed
 .Pp
 Those entries cause
 .Xr automountd 8
-daemon to retrieve named map from directory services (e.g. LDAP)
+daemon to retrieve the named map from directory services (like LDAP)
 and include it where the entry was.
 .Pp
-If the file containing map referenced in
+If the file containing the map referenced in
 .Nm
 is not found, the map will be retrieved from directory services instead.
 .Pp
-To retrieve entries from directory services, the
+To retrieve entries from directory services,
 .Xr automountd 8
-daemon runs /etc/autofs/include - which is usually a shell script - with map
-name as the only command line parameter.
-The script should output entries, formatted according to
+daemon runs
+.Pa /etc/autofs/include ,
+which is usually a shell script, with map name as the only command line
+parameter.
+The script should output entries formatted according to
 .Nm
-or automounter map syntax, to its standard output.
-Example script to use LDAP is included in /etc/autofs/include_ldap; one can
-simply symlink it to /etc/autofs/include.
+or automounter map syntax to standard output.
+An example script to use LDAP is included in
+.Pa /etc/autofs/include_ldap .
+It can be symlinked to
+.Pa /etc/autofs/include .
 .Sh FILES
 .Bl -tag -width ".Pa /etc/auto_master" -compact
 .It Pa /etc/auto_master
-The default location of the auto_master file
+The default location of the
+.Pa auto_master
+file.
 .El
 .Sh SEE ALSO
 .Xr autofs 5 ,

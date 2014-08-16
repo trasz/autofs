@@ -49,16 +49,19 @@ command parses the
 configuration file and any direct maps that it references, and mounts or unmounts
 .Xr autofs 4
 filesystems to match.
-The following options are available:
+These options are available:
 .Bl -tag -width ".Fl v"
 .It Fl D
 Define a variable.
 Note that in the case of
 .Nm ,
-it is only useful with
-.Fl L .
+it is only useful when
+.Fl L
+is used with
+.Nm .
 .It Fl L
-Do not mount or unmount anything; instead parse
+Do not mount or unmount anything.
+Instead parse
 .Xr auto_master 5
 and any direct maps, then print them to standard output.
 When specified more than once, all the maps, including indirect ones,
@@ -68,17 +71,18 @@ This is useful when debugging configuration problems.
 Force unmount, to be used with
 .Fl u .
 .It Fl o
-Specify mount options to be used along with ones specified in the maps.
-Note that in the case of
-.Nm ,
-it is only useful with
+Specify mount options to be used along with the ones specified in the maps.
+It is only useful with
 .Fl L .
 .It Fl u
 Try to unmount filesystems mounted by
 .Xr automountd 8 .
-Note that this does not include autofs mounts created by
-.Nm .
-To unmount all autofs mounts, use "umount -At autofs".
+.Xr autofs 5
+mounts are not unmounted.
+To unmount all
+.Xr autofs
+mounts, use
+.Cm "umount -At autofs".
 .It Fl v
 Increase verbosity.
 .El

@@ -42,26 +42,29 @@
 .Sh DESCRIPTION
 The
 .Nm
-daemon is responsible for unmounting filesystems mounted by automountd(8).
-Upon startup it retrieves a list of filesystems that have the "automounted"
+daemon is responsible for unmounting filesystems mounted by
+.Xr automountd 8 .
+On startup,
+.Nm
+retrieves a list of filesystems that have the
+.Li automounted
 mount option set.
-The list gets refreshed every time a filesystem gets mounted or unmounted.
-After specified time passes,
+The list is updated every time a filesystem is mounted or unmounted.
+After a specified time passes,
 .Nm
 attempts to unmount a filesystem, retrying after some time if necessary.
 .Pp
-The following options are available:
+These options are available:
 .Bl -tag -width ".Fl v"
 .It Fl d
-Debug mode - increase verbosity and do not daemonize.
+Debug mode: increase verbosity and do not daemonize.
 .It Fl r
-Number of seconds to wait before reattempting to unmount expired
-filesystem, after the previous attempt failed due to e.g. filesystem
-being busy.
-Default is 600, which amounts to 10 minutes.
+Number of seconds to wait before trying to unmount an expired filesystem
+after a previous attempt failed, possibly due to filesystem being busy.
+The default value is 600, or ten minutes.
 .It Fl t
 Number of seconds to wait before trying to unmount a filesystem.
-Default is 600, which amounts to 10 minutes.
+The default value is 600, or ten minutes.
 .It Fl v
 Increase verbosity.
 .El

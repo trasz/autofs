@@ -37,46 +37,49 @@
 .Nm
 .Op Fl D Ar name=value
 .Op Fl i
-.Op Fl m maxproc
+.Op Fl m Ar maxproc
 .Op Fl o Ar options
 .Op Fl d
 .Op Fl v
 .Sh DESCRIPTION
 The
 .Nm
-daemon is responsible for handling autofs(4) mount requests, parsing maps,
-and mounting appropriate filesystems.
-Upon startup the
+daemon is responsible for handling
+.Xr autofs 5
+mount requests, parsing maps,
+and mounting filesystems they specify.
+On startup,
 .Nm
-daemon forks into background and waits for kernel requests.
+forks into background and waits for kernel requests.
 When a request is received,
 .Nm
-forks a child process, which then parses appropriate map, mounts filesystems
-accordingly, and signals the kernel to release blocked processes that were
-waiting for mount.
+forks a child process.
+The child process parses the appropriate map and mounts filesystems accordingly.
+Then it signals the kernel to release blocked processes that were waiting
+for the mount.
 .Bl -tag -width ".Fl v"
 .It Fl D
 Define a variable.
 .It Fl i
 For indirect mounts, only create subdirectories if there are no wildcard
 entries.
-Without this option,
+Without
+.Fl i ,
 .Nm
-will create all the subdirectories it can, and it might not be
-immediately obvious to the user that, because of the wildcard map entry,
-she can also access a directory that has not yet been created.
-.It Fl m
-Set limit for the number of forked automountd processes, and thus the number
-of mount requests being handled in parallel.
+creates all the subdirectories it can.
+Users may not realize that the wildcard map entry makes it possible to access
+directories that have not yet been created.
+.It Fl m Ar maxproc
+Limit the number of forked
+.Nm
+processes, and thus the number of mount requests being handled in parallel.
 The default is 30.
 .It Fl d
-Debug mode - increase verbosity and do not daemonize.
-.It Fl o
+Debug mode: increase verbosity and do not daemonize.
+.It Fl o Ar options
 Specify mount options.
-Options passed here are prepended to the rest, which means the ones
-specified in maps or
-.Xr auto_master 5
-file can override them.
+Options specified here ill be overridden by options entered in maps or
+.Xr auto_master 5 .
 .It Fl v
 Increase verbosity.
 .El
