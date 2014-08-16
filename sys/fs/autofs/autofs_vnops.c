@@ -486,7 +486,7 @@ autofs_node_new(struct autofs_node *parent, struct autofs_mount *amp,
 	struct autofs_node *anp;
 
 	if (parent != NULL)
-		AUTOFS_LOCK_ASSERT(parent->an_mount);
+		AUTOFS_ASSERT_LOCKED(parent->an_mount);
 
 	anp = uma_zalloc(autofs_node_zone, M_WAITOK | M_ZERO);
 	if (namelen >= 0)
@@ -522,7 +522,7 @@ autofs_node_find(struct autofs_node *parent, const char *name,
 {
 	struct autofs_node *anp;
 
-	AUTOFS_LOCK_ASSERT(parent->an_mount);
+	AUTOFS_ASSERT_LOCKED(parent->an_mount);
 
 	TAILQ_FOREACH(anp, &parent->an_children, an_next) {
 		if (namelen >= 0) {
@@ -546,7 +546,7 @@ autofs_node_delete(struct autofs_node *anp)
 {
 	struct autofs_node *parent;
 
-	AUTOFS_LOCK_ASSERT(anp->an_mount);
+	AUTOFS_ASSERT_LOCKED(anp->an_mount);
 	KASSERT(TAILQ_EMPTY(&anp->an_children), ("have children"));
 
 	callout_drain(&anp->an_callout);
@@ -565,7 +565,7 @@ autofs_node_vn(struct autofs_node *anp, struct mount *mp, struct vnode **vpp)
 	struct vnode *vp;
 	int error;
 
-	AUTOFS_LOCK_ASSERT_NOT(anp->an_mount);
+	AUTOFS_ASSERT_UNLOCKED(anp->an_mount);
 
 	sx_xlock(&anp->an_vnode_lock);
 

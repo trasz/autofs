@@ -58,8 +58,8 @@ extern int autofs_mount_on_stat;
 
 #define AUTOFS_LOCK(X)		sx_xlock(&X->am_lock)
 #define AUTOFS_UNLOCK(X)	sx_xunlock(&X->am_lock)
-#define AUTOFS_LOCK_ASSERT(X)	sx_assert(&X->am_lock, SA_XLOCKED)
-#define AUTOFS_LOCK_ASSERT_NOT(X)	sx_assert(&X->am_lock, SA_UNLOCKED)
+#define AUTOFS_ASSERT_LOCKED(X)	sx_assert(&X->am_lock, SA_XLOCKED)
+#define AUTOFS_ASSERT_UNLOCKED(X)	sx_assert(&X->am_lock, SA_UNLOCKED)
 
 struct autofs_node {
 	TAILQ_ENTRY(autofs_node)	an_next;
