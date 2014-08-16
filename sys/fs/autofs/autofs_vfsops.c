@@ -103,11 +103,13 @@ autofs_mount(struct mount *mp)
 static int
 autofs_unmount(struct mount *mp, int mntflags)
 {
-	struct autofs_mount *amp = VFSTOAUTOFS(mp);
+	struct autofs_mount *amp;
 	struct autofs_node *anp;
 	struct autofs_request *ar;
 	int error, flags;
 	bool found;
+
+	amp = VFSTOAUTOFS(mp);
 
 	flags = 0;
 	if (mntflags & MNT_FORCE)
@@ -168,8 +170,10 @@ autofs_unmount(struct mount *mp, int mntflags)
 static int
 autofs_root(struct mount *mp, int flags, struct vnode **vpp)
 {
-	struct autofs_mount *amp = VFSTOAUTOFS(mp);
+	struct autofs_mount *amp;
 	int error;
+
+	amp = VFSTOAUTOFS(mp);
 
 	error = autofs_node_vn(amp->am_root, mp, vpp);
 

@@ -203,7 +203,9 @@ autofs_uninit(struct vfsconf *vfsp)
 bool
 autofs_ignore_thread(const struct thread *td)
 {
-	struct proc *p = td->td_proc;
+	struct proc *p;
+
+	p = td->td_proc;
 
 	if (sc->sc_dev_opened == false)
 		return (false);
@@ -221,8 +223,10 @@ autofs_ignore_thread(const struct thread *td)
 static char *
 autofs_path(struct autofs_node *anp)
 {
-	struct autofs_mount *amp = anp->an_mount;
+	struct autofs_mount *amp;
 	char *path, *tmp;
+
+	amp = anp->an_mount;
 
 	path = strdup("", M_AUTOFS);
 	for (; anp->an_parent != NULL; anp = anp->an_parent) {
@@ -249,8 +253,11 @@ autofs_path(struct autofs_node *anp)
 static void
 autofs_callout(void *context)
 {
-	struct autofs_request *ar = context;
-	struct autofs_softc *sc = ar->ar_mount->am_softc;
+	struct autofs_request *ar;
+	struct autofs_softc *sc;
+
+	ar = context;
+	sc = ar->ar_mount->am_softc;
 
 	sx_xlock(&sc->sc_lock);
 	AUTOFS_WARN("request %d for %s timed out after %d seconds",
@@ -269,7 +276,9 @@ bool
 autofs_cached(struct autofs_node *anp, const char *component, int componentlen)
 {
 	int error;
-	struct autofs_mount *amp = anp->an_mount;
+	struct autofs_mount *amp;
+
+	amp = anp->an_mount;
 
 	AUTOFS_ASSERT_LOCKED(amp);
 
@@ -293,8 +302,9 @@ autofs_cached(struct autofs_node *anp, const char *component, int componentlen)
 static void
 autofs_cache_callout(void *context)
 {
-	struct autofs_node *anp = context;
+	struct autofs_node *anp;
 
+	anp = context;
 	anp->an_cached = false;
 }
 
@@ -341,12 +351,15 @@ autofs_trigger_one(struct autofs_node *anp,
     const char *component, int componentlen)
 {
 	sigset_t oldset;
-	struct autofs_mount *amp = VFSTOAUTOFS(anp->an_vnode->v_mount);
-	struct autofs_softc *sc = amp->am_softc;
+	struct autofs_mount *amp;
+	struct autofs_softc *sc;
 	struct autofs_node *firstanp;
 	struct autofs_request *ar;
 	char *key, *path;
 	int error = 0, request_error, last;
+
+	amp = VFSTOAUTOFS(anp->an_vnode->v_mount);
+	sc = amp->am_softc;
 
 	sx_assert(&sc->sc_lock, SA_XLOCKED);
 

@@ -67,12 +67,16 @@ autofs_access(struct vop_access_args *ap)
 static int
 autofs_getattr(struct vop_getattr_args *ap)
 {
-	struct vnode *vp = ap->a_vp;
-	struct vnode *newvp;
-	struct autofs_node *anp = vp->v_data;
-	struct mount *mp = vp->v_mount;
-	struct vattr *vap = ap->a_vap;
+	struct vnode *vp, *newvp;
+	struct autofs_node *anp;
+	struct mount *mp;
+	struct vattr *vap;
 	int error;
+
+	vp = ap->a_vp;
+	anp = vp->v_data;
+	mp = vp->v_mount;
+	vap = ap->a_vap;
 
 	KASSERT(ap->a_vp->v_type == VDIR, ("!VDIR"));
 
@@ -128,10 +132,14 @@ autofs_getattr(struct vop_getattr_args *ap)
 static int
 autofs_trigger_vn(struct vnode *vp, const char *path, int pathlen, struct vnode **newvp)
 {
-	struct autofs_node *anp = vp->v_data;
-	struct autofs_mount *amp = VFSTOAUTOFS(vp->v_mount);
-	struct autofs_softc *sc = amp->am_softc;
+	struct autofs_node *anp;
+	struct autofs_mount *amp;
+	struct autofs_softc *sc;
 	int error, lock_flags;
+
+	anp = vp->v_data;
+	amp = VFSTOAUTOFS(vp->v_mount);
+	sc = amp->am_softc;
 
 	/*
 	 * Release the vnode lock, so that other operations, in partcular
@@ -200,15 +208,19 @@ mounted:
 static int
 autofs_lookup(struct vop_lookup_args *ap)
 {
-	struct vnode *dvp = ap->a_dvp;
-	struct vnode **vpp = ap->a_vpp;
-	struct vnode *newvp;
-	struct mount *mp = dvp->v_mount;
-	struct autofs_mount *amp = VFSTOAUTOFS(mp);
-	struct autofs_node *anp = dvp->v_data;
-	struct autofs_node *child;
-	struct componentname *cnp = ap->a_cnp;
+	struct vnode *dvp, *newvp, **vpp;
+	struct mount *mp;
+	struct autofs_mount *amp;
+	struct autofs_node *anp, *child;
+	struct componentname *cnp;
 	int error, lock_flags;
+
+	dvp = ap->a_dvp;
+	vpp = ap->a_vpp;
+	mp = dvp->v_mount;
+	amp = VFSTOAUTOFS(mp);
+	anp = dvp->v_data;
+	cnp = ap->a_cnp;
 
 	if (cnp->cn_flags & ISDOTDOT) {
 		KASSERT(anp->an_parent != NULL, ("NULL parent"));
@@ -302,11 +314,15 @@ autofs_lookup(struct vop_lookup_args *ap)
 static int
 autofs_mkdir(struct vop_mkdir_args *ap)
 {
-	struct vnode *vp = ap->a_dvp;
-	struct autofs_node *anp = vp->v_data;
-	struct autofs_mount *amp = VFSTOAUTOFS(vp->v_mount);
+	struct vnode *vp;
+	struct autofs_node *anp;
+	struct autofs_mount *amp;
 	struct autofs_node *child;
 	int error;
+
+	vp = ap->a_dvp;
+	anp = vp->v_data;
+	amp = VFSTOAUTOFS(vp->v_mount);
 
 	/*
 	 * Do not allow mkdir() if the calling thread is not
@@ -352,14 +368,17 @@ autofs_readdir_one(struct uio *uio, const char *name, int fileno)
 static int
 autofs_readdir(struct vop_readdir_args *ap)
 {
-	struct vnode *vp = ap->a_vp;
-	struct vnode *newvp;
-	struct autofs_mount *amp = VFSTOAUTOFS(vp->v_mount);
-	struct autofs_node *anp = vp->v_data;
-	struct autofs_node *child;
-	struct uio *uio = ap->a_uio;
+	struct vnode *vp, *newvp;
+	struct autofs_mount *amp;
+	struct autofs_node *anp, *child;
+	struct uio *uio;
 	off_t offset;
 	int error, i, resid;
+
+	vp = ap->a_vp;
+	amp = VFSTOAUTOFS(vp->v_mount);
+	anp = vp->v_data;
+	uio = ap->a_uio;
 
 	KASSERT(vp->v_type == VDIR, ("!VDIR"));
 
@@ -445,6 +464,9 @@ autofs_reclaim(struct vop_reclaim_args *ap)
 {
 	struct vnode *vp = ap->a_vp;
 	struct autofs_node *anp = vp->v_data;
+
+	vp = ap->a_vp;
+	anp = vp->v_data;
 
 	/*
 	 * We do not free autofs_node here; instead we are
