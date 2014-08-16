@@ -230,7 +230,8 @@ autofs_path(struct autofs_node *anp)
 
 	path = strdup("", M_AUTOFS);
 	for (; anp->an_parent != NULL; anp = anp->an_parent) {
-		tmp = malloc(strlen(anp->an_name) + strlen(path) + 2, M_AUTOFS, M_WAITOK);
+		tmp = malloc(strlen(anp->an_name) + strlen(path) + 2,
+		    M_AUTOFS, M_WAITOK);
 		strcpy(tmp, anp->an_name);
 		strcat(tmp, "/");
 		strcat(tmp, path);
@@ -239,7 +240,8 @@ autofs_path(struct autofs_node *anp)
 		tmp = NULL;
 	}
 
-	tmp = malloc(strlen(amp->am_mountpoint) + strlen(path) + 2, M_AUTOFS, M_WAITOK);
+	tmp = malloc(strlen(amp->am_mountpoint) + strlen(path) + 2,
+	    M_AUTOFS, M_WAITOK);
 	strcpy(tmp, amp->am_mountpoint);
 	strcat(tmp, "/");
 	strcat(tmp, path);
@@ -330,8 +332,10 @@ autofs_set_sigmask(sigset_t *oldset)
 		 * in p_sigmask.
 		 */
 		if (!SIGISMEMBER(curthread->td_sigmask, autofs_sig_set[i]) &&
-		    !SIGISMEMBER(curproc->p_sigacts->ps_sigignore, autofs_sig_set[i]))
+		    !SIGISMEMBER(curproc->p_sigacts->ps_sigignore,
+		    autofs_sig_set[i])) {
 			SIGDELSET(newset, autofs_sig_set[i]);
+		}
 	}
 	mtx_unlock(&curproc->p_sigacts->ps_mtx);
 	kern_sigprocmask(curthread, SIG_SETMASK, &newset, oldset,
@@ -383,9 +387,11 @@ autofs_trigger_one(struct autofs_node *anp,
 		KASSERT(strcmp(ar->ar_from, amp->am_from) == 0,
 		    ("from changed; %s != %s", ar->ar_from, amp->am_from));
 		KASSERT(strcmp(ar->ar_prefix, amp->am_prefix) == 0,
-		    ("prefix changed; %s != %s", ar->ar_prefix, amp->am_prefix));
+		    ("prefix changed; %s != %s",
+		     ar->ar_prefix, amp->am_prefix));
 		KASSERT(strcmp(ar->ar_options, amp->am_options) == 0,
-		    ("options changed; %s != %s", ar->ar_options, amp->am_options));
+		    ("options changed; %s != %s",
+		     ar->ar_options, amp->am_options));
 
 		break;
 	}
@@ -401,10 +407,12 @@ autofs_trigger_one(struct autofs_node *anp,
 		strlcpy(ar->ar_path, path, sizeof(ar->ar_path));
 		strlcpy(ar->ar_prefix, amp->am_prefix, sizeof(ar->ar_prefix));
 		strlcpy(ar->ar_key, key, sizeof(ar->ar_key));
-		strlcpy(ar->ar_options, amp->am_options, sizeof(ar->ar_options));
+		strlcpy(ar->ar_options,
+		    amp->am_options, sizeof(ar->ar_options));
 
 		callout_init(&ar->ar_callout, 1);
-		callout_reset(&ar->ar_callout, autofs_timeout * hz, autofs_callout, ar);
+		callout_reset(&ar->ar_callout,
+		    autofs_timeout * hz, autofs_callout, ar);
 		refcount_init(&ar->ar_refcount, 1);
 		TAILQ_INSERT_TAIL(&sc->sc_requests, ar, ar_next);
 	}
@@ -528,7 +536,8 @@ autofs_ioctl_request(struct autofs_softc *sc, struct autofs_daemon_request *adr)
 		error = cv_wait_sig(&sc->sc_cv, &sc->sc_lock);
 		if (error != 0) {
 			/*
-			 * XXX: For some reson this returns -1 instead of EINTR, wtf?!
+			 * XXX: For some reson this returns -1 instead
+			 * 	of EINTR, wtf?!
 			 */
 			error = EINTR;
 			sx_xunlock(&sc->sc_lock);

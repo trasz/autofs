@@ -130,7 +130,8 @@ autofs_getattr(struct vop_getattr_args *ap)
  * root vnode in 'newvp', locked.
  */
 static int
-autofs_trigger_vn(struct vnode *vp, const char *path, int pathlen, struct vnode **newvp)
+autofs_trigger_vn(struct vnode *vp, const char *path, int pathlen,
+    struct vnode **newvp)
 {
 	struct autofs_node *anp;
 	struct autofs_mount *amp;
@@ -255,7 +256,8 @@ autofs_lookup(struct vop_lookup_args *ap)
 
 	if (autofs_cached(anp, cnp->cn_nameptr, cnp->cn_namelen) == false &&
 	    autofs_ignore_thread(cnp->cn_thread) == false) {
-		error = autofs_trigger_vn(dvp, cnp->cn_nameptr, cnp->cn_namelen, &newvp);
+		error = autofs_trigger_vn(dvp,
+		    cnp->cn_nameptr, cnp->cn_namelen, &newvp);
 		if (error != 0)
 			return (error);
 
@@ -417,13 +419,15 @@ autofs_readdir(struct vop_readdir_args *ap)
 	}
 
 	if (offset == AUTOFS_DELEN && resid >= AUTOFS_DELEN) {
-		if (anp->an_parent == NULL)
+		if (anp->an_parent == NULL) {
 			/*
 			 * XXX: Right?
 			 */
 			error = autofs_readdir_one(uio, "..", anp->an_fileno);
-		else
-			error = autofs_readdir_one(uio, "..", anp->an_parent->an_fileno);
+		} else {
+			error = autofs_readdir_one(uio, "..",
+			    anp->an_parent->an_fileno);
+		}
 		if (error != 0)
 			return (error);
 		offset += AUTOFS_DELEN;
@@ -446,7 +450,8 @@ autofs_readdir(struct vop_readdir_args *ap)
 		if (i * AUTOFS_DELEN <= offset)
 			continue;
 
-		error = autofs_readdir_one(uio, child->an_name, child->an_fileno);
+		error = autofs_readdir_one(uio, child->an_name,
+		    child->an_fileno);
 		if (error != 0) {
 			AUTOFS_UNLOCK(amp);
 			return (error);
