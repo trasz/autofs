@@ -392,7 +392,8 @@ expand_ampersand(char *string, const char *key)
 		if (ret < 0)
 			log_err(1, "asprintf");
 
-		//log_debugx("\"%s\" expanded with key \"%s\" to \"%s\"", string, key, expanded);
+		//log_debugx("\"%s\" expanded with key \"%s\" to \"%s\"",
+		//    string, key, expanded);
 
 		/*
 		 * Figure out where to start searching for next variable.

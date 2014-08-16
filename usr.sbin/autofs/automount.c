@@ -96,7 +96,8 @@ find_statfs(const struct statfs *mntbuf, int nitems, const char *mountpoint)
 }
 
 static void
-mount_autofs(const char *from, const char *fspath, const char *options, const char *prefix)
+mount_autofs(const char *from, const char *fspath, const char *options,
+    const char *prefix)
 {
 	struct iovec *iov = NULL;
 	char errmsg[255];
@@ -108,17 +109,23 @@ mount_autofs(const char *from, const char *fspath, const char *options, const ch
 	    from, fspath, prefix, options);
 	memset(errmsg, 0, sizeof(errmsg));
 
-	build_iovec(&iov, &iovlen, "fstype", __DECONST(void *, "autofs"), (size_t)-1);
-	build_iovec(&iov, &iovlen, "fspath", __DECONST(void *, fspath), (size_t)-1);
-	build_iovec(&iov, &iovlen, "from", __DECONST(void *, from), (size_t)-1);
-	build_iovec(&iov, &iovlen, "errmsg", errmsg, sizeof(errmsg));
+	build_iovec(&iov, &iovlen, "fstype",
+	    __DECONST(void *, "autofs"), (size_t)-1);
+	build_iovec(&iov, &iovlen, "fspath",
+	    __DECONST(void *, fspath), (size_t)-1);
+	build_iovec(&iov, &iovlen, "from",
+	    __DECONST(void *, from), (size_t)-1);
+	build_iovec(&iov, &iovlen, "errmsg",
+	    errmsg, sizeof(errmsg));
 
 	/*
 	 * Append the options and mountpoint defined in auto_master(5);
 	 * this way automountd(8) does not need to parse it.
 	 */
-	build_iovec(&iov, &iovlen, "master_options", __DECONST(void *, options), (size_t)-1);
-	build_iovec(&iov, &iovlen, "master_prefix", __DECONST(void *, prefix), (size_t)-1);
+	build_iovec(&iov, &iovlen, "master_options",
+	    __DECONST(void *, options), (size_t)-1);
+	build_iovec(&iov, &iovlen, "master_prefix",
+	    __DECONST(void *, prefix), (size_t)-1);
 
 	error = nmount(iov, iovlen, 0);
 	if (error != 0) {
