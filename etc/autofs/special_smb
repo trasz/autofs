@@ -1,0 +1,18 @@
+#!/bin/sh
+#
+# $FreeBSD$
+#
+
+if [ $# -eq 0 ]; then
+	out=`getent hosts`
+	[ $? -eq 0 ] || exit 1
+	echo "$out" | awk '{ print $2 }' | sort -u
+	exit 0
+fi
+
+out=`smbclient -NgL "$1"`
+[ $? -eq 0 ] || exit 1
+
+echo "$out" | awk -F'|' -v host="$1" \
+    '$1 == "Disk" { printf "/%s\t-fstype=smbfs\t://guest@%s/%s ", $2, host, $2 } END { printf "\n" }'
+

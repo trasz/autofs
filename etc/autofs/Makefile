@@ -1,6 +1,6 @@
 # $FreeBSD$
 
-FILES=		include_ldap special_hosts special_null
+FILES=		include_ldap special_hosts special_null special_smb
 
 NO_OBJ=
 FILESDIR=	/etc/autofs
