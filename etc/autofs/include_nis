@@ -1,0 +1,6 @@
+#!/bin/sh
+#
+# $FreeBSD$
+#
+
+exec ypcat "$1"
