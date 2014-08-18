@@ -226,6 +226,12 @@ autofs_lookup(struct vop_lookup_args *ap)
 		 */
 		lock_flags = VOP_ISLOCKED(dvp);
 		vhold(dvp);
+		error = vfs_busy(mp, 0);
+		if (error != 0) {
+			AUTOFS_WARN("autofs_busy() failed with error %d",
+			    error);
+			return (error);
+		}
 		VOP_UNLOCK(dvp, 0);
 		error = autofs_node_vn(anp->an_parent, mp, vpp);
 		if (error != 0) {
@@ -234,6 +240,7 @@ autofs_lookup(struct vop_lookup_args *ap)
 		}
 		vn_lock(dvp, lock_flags | LK_RETRY);
 		vdrop(dvp);
+		vfs_unbusy(mp);
 
 		return (error);
 	}
