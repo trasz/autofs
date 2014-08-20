@@ -1,5 +1,7 @@
 FreeBSD 11-CURRENT branch to work on a new automounter.
 
+Slides: http://people.freebsd.org/~trasz/autofs.pdf
+
 Source Roadmap:
 ---------------
 sys/fs/autofs/		Kernel part
