@@ -4,9 +4,9 @@
 #
 
 if [ $# -eq 0 ]; then
-	out=`getent hosts`
+	out=`nmblookup '*'`
 	[ $? -eq 0 ] || exit 1
-	echo "$out" | awk '{ print $2 }' | sort -u
+	echo "$out" | awk '{ print $1 }' | sort -u
 	exit 0
 fi
 
@@ -14,5 +14,5 @@ out=`smbclient -NgL "$1"`
 [ $? -eq 0 ] || exit 1
 
 echo "$out" | awk -F'|' -v host="$1" \
-    '$1 == "Disk" { printf "/%s\t-fstype=smbfs\t://guest@%s/%s ", $2, host, $2 } END { printf "\n" }'
+    '$1 == "Disk" { printf "/%s\t-fstype=smbfs,-N,-U='',-I=%s\t://%s/%s ", $2, host, host, $2 } END { printf "\n" }'
 
