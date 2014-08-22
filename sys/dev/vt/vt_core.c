@@ -134,7 +134,7 @@ extern unsigned char vt_logo_image[];
 /* Font. */
 extern struct vt_font vt_font_default;
 #ifndef SC_NO_CUTPASTE
-extern struct mouse_cursor vt_default_mouse_pointer;
+extern struct vt_mouse_cursor vt_default_mouse_pointer;
 #endif
 
 static int signal_vt_rel(struct vt_window *);
@@ -162,6 +162,12 @@ static struct vt_device	vt_consdev = {
 	.vd_curwindow = &vt_conswindow,
 	.vd_markedwin = NULL,
 	.vd_kbstate = 0,
+
+#ifndef SC_NO_CUTPASTE
+	.vd_mcursor = &vt_default_mouse_pointer,
+	.vd_mcursor_fg = TC_WHITE,
+	.vd_mcursor_bg = TC_BLACK,
+#endif
 };
 static term_char_t vt_constextbuf[(_VTDEFW) * (VBF_DEFAULT_HISTORY_SIZE)];
 static term_char_t *vt_constextbufrows[VBF_DEFAULT_HISTORY_SIZE];
@@ -786,7 +792,7 @@ vtterm_param(struct terminal *tm, int cmd, unsigned int arg)
 	}
 }
 
-static inline void
+void
 vt_determine_colors(term_char_t c, int cursor,
     term_color_t *fg, term_color_t *bg)
 {
@@ -852,8 +858,8 @@ vt_flush(struct vt_device *vd)
 	term_rect_t tarea;
 	term_pos_t size;
 	term_char_t *r;
+	int cursor_displayed;
 #ifndef SC_NO_CUTPASTE
-	struct mouse_cursor *m;
 	int bpl, h, w;
 #endif
 
@@ -866,6 +872,8 @@ vt_flush(struct vt_device *vd)
 
 	if (vd->vd_flags & VDF_SPLASH || vw->vw_flags & VWF_BUSY)
 		return;
+
+	cursor_displayed = 0;
 
 #ifndef SC_NO_CUTPASTE
 	if ((vd->vd_flags & VDF_MOUSECURSOR) && /* Mouse support enabled. */
@@ -892,9 +900,6 @@ vt_flush(struct vt_device *vd)
 			vtbuf_mouse_cursor_position(&vw->vw_buf,
 			    vd->vd_moldx / vf->vf_width,
 			    vd->vd_moldy / vf->vf_height);
-			vtbuf_mouse_cursor_position(&vw->vw_buf,
-			    vd->vd_mx / vf->vf_width,
-			    vd->vd_my / vf->vf_height);
 
 			/*
 			 * Save point of last mouse cursor to erase it
@@ -902,6 +907,16 @@ vt_flush(struct vt_device *vd)
 			 */
 			vd->vd_moldx = vd->vd_mx;
 			vd->vd_moldy = vd->vd_my;
+		}
+
+		if (!kdb_active && panicstr == NULL) {
+			/* Mouse enabled, and DDB isn't active. */
+			cursor_displayed = 1;
+
+			/* Mark new mouse position as dirty. */
+			vtbuf_mouse_cursor_position(&vw->vw_buf,
+			    vd->vd_mx / vf->vf_width,
+			    vd->vd_my / vf->vf_height);
 		}
 	}
 #endif
@@ -918,47 +933,52 @@ vt_flush(struct vt_device *vd)
 		vd->vd_flags &= ~VDF_INVALID;
 	}
 
-	for (row = tarea.tr_begin.tp_row; row < tarea.tr_end.tp_row; row++) {
-		if (!VTBUF_DIRTYROW(&tmask, row))
-			continue;
-		r = VTBUF_GET_ROW(&vw->vw_buf, row);
-		for (col = tarea.tr_begin.tp_col;
-		    col < tarea.tr_end.tp_col; col++) {
-			if (!VTBUF_DIRTYCOL(&tmask, col))
-				continue;
-
-			vt_bitblt_char(vd, vf, r[col],
-			    VTBUF_ISCURSOR(&vw->vw_buf, row, col), row, col);
+	if (vd->vd_driver->vd_bitblt_text != NULL) {
+		if (tarea.tr_begin.tp_col < tarea.tr_end.tp_col) {
+			vd->vd_driver->vd_bitblt_text(vd, &vw->vw_buf, vf,
+			    &tarea, cursor_displayed);
 		}
-	}
+	} else {
+		/*
+		 * FIXME: Once all backend drivers expose the
+		 * vd_bitblt_text_t callback, this code can be removed.
+		 */
+		for (row = tarea.tr_begin.tp_row; row < tarea.tr_end.tp_row; row++) {
+			if (!VTBUF_DIRTYROW(&tmask, row))
+				continue;
+			r = VTBUF_GET_ROW(&vw->vw_buf, row);
+			for (col = tarea.tr_begin.tp_col;
+			    col < tarea.tr_end.tp_col; col++) {
+				if (!VTBUF_DIRTYCOL(&tmask, col))
+					continue;
+
+				vt_bitblt_char(vd, vf, r[col],
+				    VTBUF_ISCURSOR(&vw->vw_buf, row, col), row, col);
+			}
+		}
 
 #ifndef SC_NO_CUTPASTE
-	/* Mouse disabled. */
-	if (vw->vw_flags & VWF_MOUSE_HIDE)
-		return;
+		if (cursor_displayed) {
+			/* Bytes per source line. */
+			bpl = (vd->vd_mcursor->width + 7) >> 3;
+			w = vd->vd_mcursor->width;
+			h = vd->vd_mcursor->height;
 
-	/* No mouse for DDB. */
-	if (kdb_active || panicstr != NULL)
-		return;
+			if ((vd->vd_mx + vd->vd_mcursor->width) >
+			    (size.tp_col * vf->vf_width))
+				w = (size.tp_col * vf->vf_width) - vd->vd_mx - 1;
+			if ((vd->vd_my + vd->vd_mcursor->height) >
+			    (size.tp_row * vf->vf_height))
+				h = (size.tp_row * vf->vf_height) - vd->vd_my - 1;
 
-	if ((vd->vd_flags & (VDF_MOUSECURSOR|VDF_TEXTMODE)) ==
-	    VDF_MOUSECURSOR) {
-		m = &vt_default_mouse_pointer;
-		bpl = (m->w + 7) >> 3; /* Bytes per source line. */
-		w = m->w;
-		h = m->h;
-
-		if ((vd->vd_mx + m->w) > (size.tp_col * vf->vf_width))
-			w = (size.tp_col * vf->vf_width) - vd->vd_mx - 1;
-		if ((vd->vd_my + m->h) > (size.tp_row * vf->vf_height))
-			h = (size.tp_row * vf->vf_height) - vd->vd_my - 1;
-
-		vd->vd_driver->vd_bitbltchr(vd, m->map, m->mask, bpl,
-		    vd->vd_offset.tp_row + vd->vd_my,
-		    vd->vd_offset.tp_col + vd->vd_mx,
-		    w, h, TC_WHITE, TC_BLACK);
-	}
+			vd->vd_driver->vd_bitbltchr(vd,
+			    vd->vd_mcursor->map, vd->vd_mcursor->mask, bpl,
+			    vd->vd_offset.tp_row + vd->vd_my,
+			    vd->vd_offset.tp_col + vd->vd_mx,
+			    w, h, vd->vd_mcursor_fg, vd->vd_mcursor_bg);
+		}
 #endif
+	}
 }
 
 static void
