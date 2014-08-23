@@ -601,6 +601,14 @@ autofs_open(struct cdev *dev, int flags, int fmt, struct thread *td)
 {
 
 	sx_xlock(&autofs_softc->sc_lock);
+	/*
+	 * We must never block automountd(8) and its descendants, and we use
+	 * session ID to determine that: we store session id of the process
+	 * that opened the device, and then compare it with session ids
+	 * of triggering processes.  This means running a second automountd(8)
+	 * instance would break the previous one.  The check below prevents
+	 * it from happening.
+	 */
 	if (autofs_softc->sc_dev_opened) {
 		sx_xunlock(&autofs_softc->sc_lock);
 		return (EBUSY);

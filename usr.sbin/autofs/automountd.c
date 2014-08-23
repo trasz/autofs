@@ -234,8 +234,8 @@ handle_request(const struct autofs_daemon_request *adr, char *cmdline_options,
 
 		nobrowse = pick_option("nobrowse", &options);
 		if (nobrowse != NULL && adr->adr_key[0] == '\0') {
-			log_debugx("skipping map %s due to -nobrowse; exiting",
-			    map);
+			log_debugx("skipping map %s due to \"nobrowse\" "
+			    "option; exiting", map);
 			done(0);
 
 			/*
