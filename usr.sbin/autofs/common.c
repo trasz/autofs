@@ -935,8 +935,15 @@ parse_special_map(struct node *parent, const char *map, const char *key)
 
 	error = auto_pclose(yyin);
 	yyin = NULL;
-	if (error != 0)
-		log_errx(1, "failed to handle special map \"%s\"", map);
+	if (error != 0) {
+		if (key == NULL) {
+			log_errx(1, "failed to handle special map \"%s\", "
+			    "NULL key", map);
+		} else {
+			log_errx(1, "failed to handle special map \"%s\", "
+			    "key \"%s\"", map, key);
+		}
+	}
 
 	node_expand_includes(parent, false);
 	node_expand_direct_maps(parent);
