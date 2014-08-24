@@ -193,7 +193,6 @@ node_new_root(void)
 	n = calloc(1, sizeof(*n));
 	if (n == NULL)
 		log_err(1, "calloc");
-	// XXX
 	n->n_key = checked_strdup("/");
 	n->n_options = checked_strdup("");
 
@@ -202,9 +201,9 @@ node_new_root(void)
 	return (n);
 }
 
-struct node *
-node_new(struct node *parent, char *key, char *options, char *location,
-    const char *config_file, int config_line)
+static struct node *
+node_new_x(struct node *parent, char *key, char *options, char *map,
+    char *location, const char *config_file, int config_line)
 {
 	struct node *n;
 
@@ -220,37 +219,8 @@ node_new(struct node *parent, char *key, char *options, char *location,
 		n->n_options = options;
 	else
 		n->n_options = strdup("");
+	assert(location == NULL || map == NULL);
 	n->n_location = location;
-	assert(config_file != NULL);
-	n->n_config_file = config_file;
-	assert(config_line >= 0);
-	n->n_config_line = config_line;
-
-	assert(parent != NULL);
-	n->n_parent = parent;
-	TAILQ_INSERT_TAIL(&parent->n_children, n, n_next);
-
-	return (n);
-}
-
-struct node *
-node_new_map(struct node *parent, char *key, char *options, char *map,
-    const char *config_file, int config_line)
-{
-	struct node *n;
-
-	n = calloc(1, sizeof(*n));
-	if (n == NULL)
-		log_err(1, "calloc");
-
-	TAILQ_INIT(&n->n_children);
-	assert(key != NULL);
-	assert(key[0] != '\0');
-	n->n_key = key;
-	if (options != NULL)
-		n->n_options = options;
-	else
-		n->n_options = strdup("");
 	n->n_map = map;
 	assert(config_file != NULL);
 	n->n_config_file = config_file;
@@ -262,6 +232,25 @@ node_new_map(struct node *parent, char *key, char *options, char *map,
 	TAILQ_INSERT_TAIL(&parent->n_children, n, n_next);
 
 	return (n);
+
+}
+
+struct node *
+node_new_master(struct node *parent, char *key, char *options, char *map,
+    const char *config_file, int config_line)
+{
+
+	return (node_new_x(parent, key, options, map, NULL,
+	    config_file, config_line));
+}
+
+struct node *
+node_new_map(struct node *parent, char *key, char *options, char *location,
+    const char *config_file, int config_line)
+{
+
+	return (node_new_x(parent, key, options, NULL, location,
+	    config_file, config_line));
 }
 
 static struct node *
@@ -273,7 +262,7 @@ node_duplicate(const struct node *o, struct node *parent)
 	if (parent == NULL)
 		parent = o->n_parent;
 
-	n = node_new(parent, o->n_key, o->n_options, o->n_location,
+	n = node_new_x(parent, o->n_key, o->n_options, o->n_map, o->n_location,
 	    o->n_config_file, o->n_config_line);
 
 	TAILQ_FOREACH(child, &o->n_children, n_next)
@@ -743,7 +732,8 @@ parse_map_yyin(struct node *parent, const char *map, const char *executable_key)
 		if (key == NULL) {
 			key = checked_strdup(yytext);
 			if (key[0] == '+') {
-				node_new(parent, key, NULL, NULL, map, lineno);
+				node_new_map(parent, key, NULL, NULL,
+				    map, lineno);
 				key = options = NULL;
 				continue;
 			}
@@ -785,7 +775,7 @@ parse_map_yyin(struct node *parent, const char *map, const char *executable_key)
 		}
 
 		//log_debugx("adding map node, %s", key);
-		node = node_new(parent, key, options, NULL, map, lineno);
+		node = node_new_map(parent, key, options, NULL, map, lineno);
 		key = options = NULL;
 
 		for (;;) {
@@ -843,7 +833,7 @@ parse_map_yyin(struct node *parent, const char *map, const char *executable_key)
 			log_debugx("adding map node, %s %s %s",
 			    mountpoint, options2, location);
 #endif
-			node_new(node, mountpoint, options2, location,
+			node_new_map(node, mountpoint, options2, location,
 			    map, lineno);
 			mountpoint = options2 = location = NULL;
 again:
@@ -895,7 +885,7 @@ parse_map_keys_yyin(struct node *parent, const char *map)
 		key = strndup(line, linelen - 1);
 
 		log_debugx("adding key \"%s\"", key);
-		node_new(parent, key, NULL, NULL, map, lineno);
+		node_new_map(parent, key, NULL, NULL, map, lineno);
 		lineno++;
 	}
 	free(line);
@@ -1081,7 +1071,7 @@ parse_master_yyin(struct node *root, const char *master)
 		if (ret == 0 || ret == NEWLINE) {
 			if (mountpoint != NULL) {
 				//log_debugx("adding map for %s", mountpoint);
-				node_new_map(root, mountpoint, options, map,
+				node_new_master(root, mountpoint, options, map,
 				    master, lineno);
 			}
 			if (ret == 0) {

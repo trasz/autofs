@@ -205,7 +205,7 @@ handle_request(const struct autofs_daemon_request *adr, char *cmdline_options,
 	if (adr->adr_prefix[0] == '\0' || strcmp(adr->adr_prefix, "/") == 0) {
 		parent = root;
 	} else {
-		parent = node_new_map(root, checked_strdup(adr->adr_prefix),
+		parent = node_new_master(root, checked_strdup(adr->adr_prefix),
 		    checked_strdup(adr->adr_options), checked_strdup(map),
 		    checked_strdup("[kernel request]"), lineno);
 	}

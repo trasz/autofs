@@ -74,10 +74,10 @@ char	*separated_concat(const char *s1, const char *s2, char separator);
 void	create_directory(const char *path);
 
 struct node	*node_new_root(void);
-struct node	*node_new(struct node *parent, char *key, char *options,
-		    char *location, const char *config_file, int config_line);
-struct node	*node_new_map(struct node *parent, char *key, char *options,
+struct node	*node_new_master(struct node *parent, char *key, char *options,
 		    char *map, const char *config_file, int config_line);
+struct node	*node_new_map(struct node *parent, char *key, char *options,
+		    char *location, const char *config_file, int config_line);
 struct node	*node_find(struct node *root, const char *mountpoint);
 bool		node_is_direct_map(const struct node *n);
 char	*node_path(const struct node *n);
