@@ -182,7 +182,7 @@ struct vt_buf {
 #define	VBF_MTX_INIT	0x4	/* Mutex initialized. */
 #define	VBF_SCROLL	0x8	/* scroll locked mode. */
 #define	VBF_HISTORY_FULL 0x10	/* All rows filled. */
-	int			 vb_history_size;
+	unsigned int		 vb_history_size;
 #define	VBF_DEFAULT_HISTORY_SIZE	500
 	int			 vb_roffset;	/* (b) History rows offset. */
 	int			 vb_curroffset;	/* (b) Saved rows offset. */
@@ -200,7 +200,7 @@ void vtbuf_copy(struct vt_buf *, const term_rect_t *, const term_pos_t *);
 void vtbuf_fill_locked(struct vt_buf *, const term_rect_t *, term_char_t);
 void vtbuf_init_early(struct vt_buf *);
 void vtbuf_init(struct vt_buf *, const term_pos_t *);
-void vtbuf_grow(struct vt_buf *, const term_pos_t *, int);
+void vtbuf_grow(struct vt_buf *, const term_pos_t *, unsigned int);
 void vtbuf_putchar(struct vt_buf *, const term_pos_t *, term_char_t);
 void vtbuf_cursor_position(struct vt_buf *, const term_pos_t *);
 void vtbuf_scroll_mode(struct vt_buf *vb, int yes);
@@ -258,9 +258,11 @@ struct vt_window {
 	struct terminal		*vw_terminal;	/* (c) Terminal. */
 	struct vt_buf		 vw_buf;	/* (u) Screen buffer. */
 	struct vt_font		*vw_font;	/* (d) Graphical font. */
-	term_pos_t		 vw_offset;	/* (?) Pixel offset. */
+	term_rect_t		 vw_draw_area;	/* (?) Drawable area. */
 	unsigned int		 vw_number;	/* (c) Window number. */
 	int			 vw_kbdmode;	/* (?) Keyboard mode. */
+	int			 vw_prev_kbdmode;/* (?) Previous mode. */
+	int			 vw_grabbed;	/* (?) Grab count. */
 	char			*vw_kbdsq;	/* Escape sequence queue*/
 	unsigned int		 vw_flags;	/* (d) Per-window flags. */
 	int			 vw_mouse_level;/* Mouse op mode. */
@@ -271,6 +273,7 @@ struct vt_window {
 #define	VWF_VTYLOCK	0x10	/* Prevent window switch. */
 #define	VWF_MOUSE_HIDE	0x20	/* Disable mouse events processing. */
 #define	VWF_READY	0x40	/* Window fully initialized. */
+#define	VWF_GRAPHICS	0x80	/* Window in graphics mode (KDSETMODE). */
 #define	VWF_SWWAIT_REL	0x10000	/* Program wait for VT acquire is done. */
 #define	VWF_SWWAIT_ACQ	0x20000	/* Program wait for VT release is done. */
 	pid_t			 vw_pid;	/* Terminal holding process */
