@@ -6,7 +6,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2013, Intel Corp.
+ * Copyright (C) 2000 - 2016, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -42,8 +42,7 @@
  * POSSIBILITY OF SUCH DAMAGES.
  */
 
-
-#define __NSXFEVAL_C__
+#define EXPORT_ACPI_INTERFACES
 
 #include <contrib/dev/acpica/include/acpi.h>
 #include <contrib/dev/acpica/include/accommon.h>
@@ -91,7 +90,7 @@ AcpiEvaluateObjectTyped (
     ACPI_OBJECT_TYPE        ReturnType)
 {
     ACPI_STATUS             Status;
-    BOOLEAN                 MustFree = FALSE;
+    BOOLEAN                 FreeBufferOnError = FALSE;
 
 
     ACPI_FUNCTION_TRACE (AcpiEvaluateObjectTyped);
@@ -106,12 +105,13 @@ AcpiEvaluateObjectTyped (
 
     if (ReturnBuffer->Length == ACPI_ALLOCATE_BUFFER)
     {
-        MustFree = TRUE;
+        FreeBufferOnError = TRUE;
     }
 
     /* Evaluate the object */
 
-    Status = AcpiEvaluateObject (Handle, Pathname, ExternalParams, ReturnBuffer);
+    Status = AcpiEvaluateObject (Handle, Pathname,
+        ExternalParams, ReturnBuffer);
     if (ACPI_FAILURE (Status))
     {
         return_ACPI_STATUS (Status);
@@ -146,10 +146,15 @@ AcpiEvaluateObjectTyped (
         AcpiUtGetTypeName (((ACPI_OBJECT *) ReturnBuffer->Pointer)->Type),
         AcpiUtGetTypeName (ReturnType)));
 
-    if (MustFree)
+    if (FreeBufferOnError)
     {
-        /* Caller used ACPI_ALLOCATE_BUFFER, free the return buffer */
-
+        /*
+         * Free a buffer created via ACPI_ALLOCATE_BUFFER.
+         * Note: We use AcpiOsFree here because AcpiOsAllocate was used
+         * to allocate the buffer. This purposefully bypasses the
+         * (optionally enabled) allocation tracking mechanism since we
+         * only want to track internal allocations.
+         */
         AcpiOsFree (ReturnBuffer->Pointer);
         ReturnBuffer->Pointer = NULL;
     }
@@ -300,13 +305,12 @@ AcpiEvaluateObject (
     }
 
 
-#if 0
+#ifdef _FUTURE_FEATURE
 
     /*
      * Begin incoming argument count analysis. Check for too few args
      * and too many args.
      */
-
     switch (AcpiNsGetType (Info->Node))
     {
     case ACPI_TYPE_METHOD:
@@ -394,68 +398,73 @@ AcpiEvaluateObject (
      * If we are expecting a return value, and all went well above,
      * copy the return value to an external object.
      */
-    if (ReturnBuffer)
+    if (!ReturnBuffer)
     {
-        if (!Info->ReturnObject)
+        goto CleanupReturnObject;
+    }
+
+    if (!Info->ReturnObject)
+    {
+        ReturnBuffer->Length = 0;
+        goto Cleanup;
+    }
+
+    if (ACPI_GET_DESCRIPTOR_TYPE (Info->ReturnObject) ==
+        ACPI_DESC_TYPE_NAMED)
+    {
+        /*
+         * If we received a NS Node as a return object, this means that
+         * the object we are evaluating has nothing interesting to
+         * return (such as a mutex, etc.)  We return an error because
+         * these types are essentially unsupported by this interface.
+         * We don't check up front because this makes it easier to add
+         * support for various types at a later date if necessary.
+         */
+        Status = AE_TYPE;
+        Info->ReturnObject = NULL;   /* No need to delete a NS Node */
+        ReturnBuffer->Length = 0;
+    }
+
+    if (ACPI_FAILURE (Status))
+    {
+        goto CleanupReturnObject;
+    }
+
+    /* Dereference Index and RefOf references */
+
+    AcpiNsResolveReferences (Info);
+
+    /* Get the size of the returned object */
+
+    Status = AcpiUtGetObjectSize (Info->ReturnObject,
+        &BufferSpaceNeeded);
+    if (ACPI_SUCCESS (Status))
+    {
+        /* Validate/Allocate/Clear caller buffer */
+
+        Status = AcpiUtInitializeBuffer (ReturnBuffer,
+            BufferSpaceNeeded);
+        if (ACPI_FAILURE (Status))
         {
-            ReturnBuffer->Length = 0;
+            /*
+             * Caller's buffer is too small or a new one can't
+             * be allocated
+             */
+            ACPI_DEBUG_PRINT ((ACPI_DB_INFO,
+                "Needed buffer size %X, %s\n",
+                (UINT32) BufferSpaceNeeded,
+                AcpiFormatException (Status)));
         }
         else
         {
-            if (ACPI_GET_DESCRIPTOR_TYPE (Info->ReturnObject) ==
-                ACPI_DESC_TYPE_NAMED)
-            {
-                /*
-                 * If we received a NS Node as a return object, this means that
-                 * the object we are evaluating has nothing interesting to
-                 * return (such as a mutex, etc.)  We return an error because
-                 * these types are essentially unsupported by this interface.
-                 * We don't check up front because this makes it easier to add
-                 * support for various types at a later date if necessary.
-                 */
-                Status = AE_TYPE;
-                Info->ReturnObject = NULL;   /* No need to delete a NS Node */
-                ReturnBuffer->Length = 0;
-            }
+            /* We have enough space for the object, build it */
 
-            if (ACPI_SUCCESS (Status))
-            {
-                /* Dereference Index and RefOf references */
-
-                AcpiNsResolveReferences (Info);
-
-                /* Get the size of the returned object */
-
-                Status = AcpiUtGetObjectSize (Info->ReturnObject,
-                            &BufferSpaceNeeded);
-                if (ACPI_SUCCESS (Status))
-                {
-                    /* Validate/Allocate/Clear caller buffer */
-
-                    Status = AcpiUtInitializeBuffer (ReturnBuffer,
-                                BufferSpaceNeeded);
-                    if (ACPI_FAILURE (Status))
-                    {
-                        /*
-                         * Caller's buffer is too small or a new one can't
-                         * be allocated
-                         */
-                        ACPI_DEBUG_PRINT ((ACPI_DB_INFO,
-                            "Needed buffer size %X, %s\n",
-                            (UINT32) BufferSpaceNeeded,
-                            AcpiFormatException (Status)));
-                    }
-                    else
-                    {
-                        /* We have enough space for the object, build it */
-
-                        Status = AcpiUtCopyIobjectToEobject (Info->ReturnObject,
-                                    ReturnBuffer);
-                    }
-                }
-            }
+            Status = AcpiUtCopyIobjectToEobject (
+                Info->ReturnObject, ReturnBuffer);
         }
     }
+
+CleanupReturnObject:
 
     if (Info->ReturnObject)
     {
@@ -663,8 +672,8 @@ AcpiWalkNamespace (
     }
 
     Status = AcpiNsWalkNamespace (Type, StartObject, MaxDepth,
-                ACPI_NS_WALK_UNLOCK, DescendingCallback,
-                AscendingCallback, Context, ReturnValue);
+        ACPI_NS_WALK_UNLOCK, DescendingCallback,
+        AscendingCallback, Context, ReturnValue);
 
 UnlockAndExit2:
     (void) AcpiUtReleaseMutex (ACPI_MTX_NAMESPACE);
@@ -753,7 +762,7 @@ AcpiNsGetDeviceCallback (
             return (AE_CTRL_DEPTH);
         }
 
-        NoMatch = ACPI_STRCMP (Hid->String, Info->Hid);
+        NoMatch = strcmp (Hid->String, Info->Hid);
         ACPI_FREE (Hid);
 
         if (NoMatch)
@@ -777,7 +786,7 @@ AcpiNsGetDeviceCallback (
             Found = FALSE;
             for (i = 0; i < Cid->Count; i++)
             {
-                if (ACPI_STRCMP (Cid->Ids[i].String, Info->Hid) == 0)
+                if (strcmp (Cid->Ids[i].String, Info->Hid) == 0)
                 {
                     /* Found a matching CID */
 
@@ -815,8 +824,8 @@ AcpiNsGetDeviceCallback (
 
     /* We have a valid device, invoke the user function */
 
-    Status = Info->UserFunction (ObjHandle, NestingLevel, Info->Context,
-                ReturnValue);
+    Status = Info->UserFunction (ObjHandle, NestingLevel,
+        Info->Context, ReturnValue);
     return (Status);
 }
 
@@ -871,8 +880,8 @@ AcpiGetDevices (
      * We're going to call their callback from OUR callback, so we need
      * to know what it is, and their context parameter.
      */
-    Info.Hid          = HID;
-    Info.Context      = Context;
+    Info.Hid = HID;
+    Info.Context = Context;
     Info.UserFunction = UserFunction;
 
     /*
@@ -888,8 +897,8 @@ AcpiGetDevices (
     }
 
     Status = AcpiNsWalkNamespace (ACPI_TYPE_DEVICE, ACPI_ROOT_OBJECT,
-                ACPI_UINT32_MAX, ACPI_NS_WALK_UNLOCK,
-                AcpiNsGetDeviceCallback, NULL, &Info, ReturnValue);
+        ACPI_UINT32_MAX, ACPI_NS_WALK_UNLOCK,
+        AcpiNsGetDeviceCallback, NULL, &Info, ReturnValue);
 
     (void) AcpiUtReleaseMutex (ACPI_MTX_NAMESPACE);
     return_ACPI_STATUS (Status);

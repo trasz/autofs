@@ -176,7 +176,7 @@ enable_usb(device_t dev, bus_space_tag_t iot, bus_space_handle_t ioh)
 	    (OF_getprop_alloc(node, "phy_type", 1, (void **)&phy_type) > 0)) {
 		if (strncasecmp(phy_type, "utmi", strlen("utmi")) == 0)
 			tmp |= UTMI_PHY_EN;
-		free(phy_type, M_OFWPROP);
+		OF_prop_free(phy_type);
 	}
 	bus_space_write_4(iot, ioh, CONTROL, tmp);
 }
@@ -239,6 +239,7 @@ fsl_ehci_attach(device_t self)
 	sc->sc_bus.parent = self;
 	sc->sc_bus.devices = sc->sc_devices;
 	sc->sc_bus.devices_max = EHCI_MAX_DEVICES;
+	sc->sc_bus.dma_bits = 32;
 
 	if (usb_bus_mem_alloc_all(&sc->sc_bus,
 	    USB_GET_DMA_TAG(self), &ehci_iterate_hw_softc))
@@ -293,7 +294,7 @@ fsl_ehci_attach(device_t self)
 	}
 
 	/* Setup interrupt handler */
-	err = bus_setup_intr(self, sc->sc_irq_res, INTR_TYPE_BIO,
+	err = bus_setup_intr(self, sc->sc_irq_res, INTR_TYPE_BIO | INTR_MPSAFE,
 	    NULL, (driver_intr_t *)ehci_interrupt, sc, &sc->sc_intr_hdl);
 	if (err) {
 		device_printf(self, "Could not setup irq, %d\n", err);

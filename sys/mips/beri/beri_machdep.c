@@ -88,6 +88,12 @@ static void
 mips_init(void)
 {
 	int i;
+#ifdef FDT
+	struct mem_region mr[FDT_MEM_REGIONS];
+	uint64_t val;
+	int mr_cnt;
+	int j;
+#endif
 
 	for (i = 0; i < 10; i++) {
 		phys_avail[i] = 0;
@@ -101,6 +107,29 @@ mips_init(void)
 	dump_avail[1] = phys_avail[1];
 
 	physmem = realmem;
+
+#ifdef FDT
+	if (fdt_get_mem_regions(mr, &mr_cnt, &val) == 0) {
+
+		physmem = btoc(val);
+
+		KASSERT((phys_avail[0] >= mr[0].mr_start) && \
+			(phys_avail[0] < (mr[0].mr_start + mr[0].mr_size)),
+			("First region is not within FDT memory range"));
+
+		/* Limit size of the first region */
+		phys_avail[1] = (mr[0].mr_start + MIN(mr[0].mr_size, ctob(realmem)));
+		dump_avail[1] = phys_avail[1];
+
+		/* Add the rest of regions */
+		for (i = 1, j = 2; i < mr_cnt; i++, j+=2) {
+			phys_avail[j] = mr[i].mr_start;
+			phys_avail[j+1] = (mr[i].mr_start + mr[i].mr_size);
+			dump_avail[j] = phys_avail[j];
+			dump_avail[j+1] = phys_avail[j+1];
+		}
+	}
+#endif
 
 	init_param1();
 	init_param2(physmem);
@@ -164,9 +193,9 @@ _parse_bootargs(char *cmdline)
 		} else {
 			n = strsep(&v, "=");
 			if (v == NULL)
-				setenv(n, "1");
+				kern_setenv(n, "1");
 			else
-				setenv(n, v);
+				kern_setenv(n, v);
 		}
 	}
 }
@@ -223,10 +252,7 @@ platform_start(__register_t a0, __register_t a1,  __register_t a2,
 	 * Find the dtb passed in by the boot loader (currently fictional).
 	 */
 	kmdp = preload_search_by_type("elf kernel");
-	if (kmdp != NULL)
-		dtbp = MD_FETCH(kmdp, MODINFOMD_DTBP, vm_offset_t);
-	else
-		dtbp = (vm_offset_t)NULL;
+	dtbp = MD_FETCH(kmdp, MODINFOMD_DTBP, vm_offset_t);
 
 #if defined(FDT_DTB_STATIC)
 	/*
@@ -248,7 +274,7 @@ platform_start(__register_t a0, __register_t a1,  __register_t a2,
 	 * Configure more boot-time parameters passed in by loader.
 	 */
 	boothowto = MD_FETCH(kmdp, MODINFOMD_HOWTO, int);
-	kern_envp = MD_FETCH(kmdp, MODINFOMD_ENVP, char *);
+	init_static_kenv(MD_FETCH(kmdp, MODINFOMD_ENVP, char *), 0);
 
 	/*
 	 * Get bootargs from FDT if specified.

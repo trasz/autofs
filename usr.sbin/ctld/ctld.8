@@ -27,7 +27,7 @@
 .\"
 .\" $FreeBSD$
 .\"
-.Dd July 20, 2014
+.Dd July 21, 2016
 .Dt CTLD 8
 .Os
 .Sh NAME
@@ -37,6 +37,7 @@
 .Nm
 .Op Fl d
 .Op Fl f Ar config-file
+.Op Fl u
 .Sh DESCRIPTION
 The
 .Nm
@@ -80,10 +81,12 @@ The default is
 .Pa /etc/ctl.conf .
 .It Fl d
 Debug mode.
-The server sends verbose debug output to standard error, and does not
+The daemon sends verbose debug output to standard error, and does not
 put itself in the background.
-The server will also not fork and will exit after processing one connection.
+The daemon will also not fork and will exit after processing one connection.
 This option is only intended for debugging the target.
+.It Fl u
+Use UCL configuration file format instead of the traditional non-UCL format.
 .El
 .Sh FILES
 .Bl -tag -width ".Pa /var/run/ctld.pid" -compact
@@ -104,7 +107,13 @@ utility exits 0 on success, and >0 if an error occurs.
 .Sh SEE ALSO
 .Xr ctl 4 ,
 .Xr ctl.conf 5 ,
-.Xr ctladm 8
+.Xr ctladm 8 ,
+.Xr ctlstat 8
+.Sh HISTORY
+The
+.Nm
+command appeared in
+.Fx 10.0 .
 .Sh AUTHORS
 The
 .Nm

@@ -621,7 +621,7 @@ tre_compile_fast(fastmatch_t *fg, const tre_char_t *pat, size_t n,
 	  case TRE_CHAR('+'):
 	  case TRE_CHAR('?'):
 	    if ((cflags & REG_EXTENDED) && (i == 0))
-	      continue;
+	      goto badpat;
 	    else if ((cflags & REG_EXTENDED) ^ !escaped)
 	      STORE_CHAR;
 	    else
@@ -727,7 +727,7 @@ badpat:
       for (unsigned int i = 0; i < fg->len; i++)
 	if (fg->pattern[i] == '\\')
 	  escaped = !escaped;
-	else if (fg->pattern[i] == '.' && escaped)
+	else if (fg->pattern[i] == '.' && fg->escmap && escaped)
 	  {
 	    fg->escmap[i] = true;
 	    escaped = false;

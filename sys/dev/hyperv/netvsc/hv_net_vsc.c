@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2009-2012 Microsoft Corp.
+ * Copyright (c) 2009-2012,2016 Microsoft Corp.
  * Copyright (c) 2010-2012 Citrix Inc.
  * Copyright (c) 2012 NetApp Inc.
  * All rights reserved.
@@ -37,6 +37,7 @@
 #include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/socket.h>
+#include <sys/limits.h>
 #include <sys/lock.h>
 #include <net/if.h>
 #include <net/if_var.h>
@@ -45,87 +46,92 @@
 #include <machine/atomic.h>
 
 #include <dev/hyperv/include/hyperv.h>
-#include "hv_net_vsc.h"
-#include "hv_rndis.h"
-#include "hv_rndis_filter.h"
+#include <dev/hyperv/include/vmbus_xact.h>
+#include <dev/hyperv/netvsc/hv_net_vsc.h>
+#include <dev/hyperv/netvsc/hv_rndis.h>
+#include <dev/hyperv/netvsc/hv_rndis_filter.h>
+#include <dev/hyperv/netvsc/if_hnreg.h>
 
+MALLOC_DEFINE(M_NETVSC, "netvsc", "Hyper-V netvsc driver");
 
 /*
  * Forward declarations
  */
-static void hv_nv_on_channel_callback(void *context);
-static int  hv_nv_init_send_buffer_with_net_vsp(struct hv_device *device);
-static int  hv_nv_init_rx_buffer_with_net_vsp(struct hv_device *device);
-static int  hv_nv_destroy_send_buffer(netvsc_dev *net_dev);
-static int  hv_nv_destroy_rx_buffer(netvsc_dev *net_dev);
-static int  hv_nv_connect_to_vsp(struct hv_device *device);
-static void hv_nv_on_send_completion(struct hv_device *device,
-				     hv_vm_packet_descriptor *pkt);
-static void hv_nv_on_receive(struct hv_device *device,
-			     hv_vm_packet_descriptor *pkt);
-static void hv_nv_send_receive_completion(struct hv_device *device,
-					  uint64_t tid);
+static void hv_nv_on_channel_callback(struct vmbus_channel *chan,
+    void *xrxr);
+static int  hv_nv_init_send_buffer_with_net_vsp(struct hn_softc *sc);
+static int  hv_nv_init_rx_buffer_with_net_vsp(struct hn_softc *, int);
+static int  hv_nv_destroy_send_buffer(struct hn_softc *sc);
+static int  hv_nv_destroy_rx_buffer(struct hn_softc *sc);
+static int  hv_nv_connect_to_vsp(struct hn_softc *sc);
+static void hv_nv_on_send_completion(struct hn_softc *sc,
+    struct vmbus_channel *, const struct vmbus_chanpkt_hdr *pkt);
+static void hv_nv_on_receive_completion(struct vmbus_channel *chan,
+    uint64_t tid);
+static void hv_nv_on_receive(struct hn_softc *sc,
+    struct hn_rx_ring *rxr, struct vmbus_channel *chan,
+    const struct vmbus_chanpkt_hdr *pkt);
+static void hn_nvs_sent_none(struct hn_send_ctx *sndc,
+    struct hn_softc *, struct vmbus_channel *chan,
+    const void *, int);
+static void hn_nvs_sent_xact(struct hn_send_ctx *, struct hn_softc *sc,
+    struct vmbus_channel *, const void *, int);
 
+static struct hn_send_ctx	hn_send_ctx_none =
+    HN_SEND_CTX_INITIALIZER(hn_nvs_sent_none, NULL);
 
-/*
- *
- */
-static inline netvsc_dev *
-hv_nv_alloc_net_device(struct hv_device *device)
+uint32_t
+hn_chim_alloc(struct hn_softc *sc)
 {
-	netvsc_dev *net_dev;
-	hn_softc_t *sc = device_get_softc(device->device);
+	int i, bmap_cnt = sc->hn_chim_bmap_cnt;
+	u_long *bmap = sc->hn_chim_bmap;
+	uint32_t ret = HN_NVS_CHIM_IDX_INVALID;
 
-	net_dev = malloc(sizeof(netvsc_dev), M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (net_dev == NULL) {
-		return (NULL);
+	for (i = 0; i < bmap_cnt; ++i) {
+		int idx;
+
+		idx = ffsl(~bmap[i]);
+		if (idx == 0)
+			continue;
+
+		--idx; /* ffsl is 1-based */
+		KASSERT(i * LONG_BIT + idx < sc->hn_chim_cnt,
+		    ("invalid i %d and idx %d", i, idx));
+
+		if (atomic_testandset_long(&bmap[i], idx))
+			continue;
+
+		ret = i * LONG_BIT + idx;
+		break;
 	}
-
-	net_dev->dev = device;
-	net_dev->destroy = FALSE;
-	sc->net_dev = net_dev;
-
-	return (net_dev);
+	return (ret);
 }
 
-/*
- *
- */
-static inline netvsc_dev *
-hv_nv_get_outbound_net_device(struct hv_device *device)
+const void *
+hn_nvs_xact_execute(struct hn_softc *sc, struct vmbus_xact *xact,
+    void *req, int reqlen, size_t *resp_len)
 {
-	hn_softc_t *sc = device_get_softc(device->device);
-	netvsc_dev *net_dev = sc->net_dev;;
+	struct hn_send_ctx sndc;
+	int error;
 
-	if ((net_dev != NULL) && net_dev->destroy) {
-		return (NULL);
+	hn_send_ctx_init_simple(&sndc, hn_nvs_sent_xact, xact);
+	vmbus_xact_activate(xact);
+
+	error = hn_nvs_send(sc->hn_prichan, VMBUS_CHANPKT_FLAG_RC,
+	    req, reqlen, &sndc);
+	if (error) {
+		vmbus_xact_deactivate(xact);
+		return NULL;
 	}
-
-	return (net_dev);
+	return (vmbus_xact_wait(xact, resp_len));
 }
 
-/*
- *
- */
-static inline netvsc_dev *
-hv_nv_get_inbound_net_device(struct hv_device *device)
+static __inline int
+hn_nvs_req_send(struct hn_softc *sc, void *req, int reqlen)
 {
-	hn_softc_t *sc = device_get_softc(device->device);
-	netvsc_dev *net_dev = sc->net_dev;;
 
-	if (net_dev == NULL) {
-		return (net_dev);
-	}
-	/*
-	 * When the device is being destroyed; we only
-	 * permit incoming packets if and only if there
-	 * are outstanding sends.
-	 */
-	if (net_dev->destroy && net_dev->num_outstanding_sends == 0) {
-		return (NULL);
-	}
-
-	return (net_dev);
+	return (hn_nvs_send(sc->hn_prichan, VMBUS_CHANPKT_FLAG_NONE,
+	    req, reqlen, &hn_send_ctx_none));
 }
 
 /*
@@ -135,243 +141,237 @@ hv_nv_get_inbound_net_device(struct hv_device *device)
  *     Hyper-V extensible switch and the synthetic data path.
  */
 static int 
-hv_nv_init_rx_buffer_with_net_vsp(struct hv_device *device)
+hv_nv_init_rx_buffer_with_net_vsp(struct hn_softc *sc, int rxbuf_size)
 {
-	netvsc_dev *net_dev;
-	nvsp_msg *init_pkt;
-	int ret = 0;
+	struct vmbus_xact *xact = NULL;
+	struct hn_nvs_rxbuf_conn *conn;
+	const struct hn_nvs_rxbuf_connresp *resp;
+	size_t resp_len;
+	uint32_t status;
+	int error;
 
-	net_dev = hv_nv_get_outbound_net_device(device);
-	if (!net_dev) {
-		return (ENODEV);
-	}
+	KASSERT(rxbuf_size <= NETVSC_RECEIVE_BUFFER_SIZE,
+	    ("invalid rxbuf size %d", rxbuf_size));
 
-	net_dev->rx_buf = contigmalloc(net_dev->rx_buf_size, M_DEVBUF,
-	    M_ZERO, 0UL, BUS_SPACE_MAXADDR, PAGE_SIZE, 0);
-	if (net_dev->rx_buf == NULL) {
-		ret = ENOMEM;
+	/*
+	 * Connect the RXBUF GPADL to the primary channel.
+	 *
+	 * NOTE:
+	 * Only primary channel has RXBUF connected to it.  Sub-channels
+	 * just share this RXBUF.
+	 */
+	error = vmbus_chan_gpadl_connect(sc->hn_prichan,
+	    sc->hn_rxbuf_dma.hv_paddr, rxbuf_size, &sc->hn_rxbuf_gpadl);
+	if (error) {
+		if_printf(sc->hn_ifp, "rxbuf gpadl connect failed: %d\n",
+		    error);
 		goto cleanup;
 	}
 
 	/*
-	 * Establish the GPADL handle for this buffer on this channel.
-	 * Note:  This call uses the vmbus connection rather than the
-	 * channel to establish the gpadl handle. 
-	 * GPADL:  Guest physical address descriptor list.
+	 * Connect RXBUF to NVS.
 	 */
-	ret = hv_vmbus_channel_establish_gpadl(
-		device->channel, net_dev->rx_buf,
-		net_dev->rx_buf_size, &net_dev->rx_buf_gpadl_handle);
-	if (ret != 0) {
+
+	xact = vmbus_xact_get(sc->hn_xact, sizeof(*conn));
+	if (xact == NULL) {
+		if_printf(sc->hn_ifp, "no xact for nvs rxbuf conn\n");
+		error = ENXIO;
 		goto cleanup;
 	}
-	
-	/* sema_wait(&ext->channel_init_sema); KYS CHECK */
+	conn = vmbus_xact_req_data(xact);
+	conn->nvs_type = HN_NVS_TYPE_RXBUF_CONN;
+	conn->nvs_gpadl = sc->hn_rxbuf_gpadl;
+	conn->nvs_sig = HN_NVS_RXBUF_SIG;
 
-	/* Notify the NetVsp of the gpadl handle */
-	init_pkt = &net_dev->channel_init_packet;
-
-	memset(init_pkt, 0, sizeof(nvsp_msg));
-
-	init_pkt->hdr.msg_type = nvsp_msg_1_type_send_rx_buf;
-	init_pkt->msgs.vers_1_msgs.send_rx_buf.gpadl_handle =
-	    net_dev->rx_buf_gpadl_handle;
-	init_pkt->msgs.vers_1_msgs.send_rx_buf.id =
-	    NETVSC_RECEIVE_BUFFER_ID;
-
-	/* Send the gpadl notification request */
-
-	ret = hv_vmbus_channel_send_packet(device->channel, init_pkt,
-	    sizeof(nvsp_msg), (uint64_t)(uintptr_t)init_pkt,
-	    HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
-	    HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
-	if (ret != 0) {
+	resp = hn_nvs_xact_execute(sc, xact, conn, sizeof(*conn), &resp_len);
+	if (resp == NULL) {
+		if_printf(sc->hn_ifp, "exec rxbuf conn failed\n");
+		error = EIO;
 		goto cleanup;
 	}
-
-	sema_wait(&net_dev->channel_init_sema);
-
-	/* Check the response */
-	if (init_pkt->msgs.vers_1_msgs.send_rx_buf_complete.status
-	    != nvsp_status_success) {
-		ret = EINVAL;
+	if (resp_len < sizeof(*resp)) {
+		if_printf(sc->hn_ifp, "invalid rxbuf conn resp length %zu\n",
+		    resp_len);
+		error = EINVAL;
+		goto cleanup;
+	}
+	if (resp->nvs_type != HN_NVS_TYPE_RXBUF_CONNRESP) {
+		if_printf(sc->hn_ifp, "not rxbuf conn resp, type %u\n",
+		    resp->nvs_type);
+		error = EINVAL;
 		goto cleanup;
 	}
 
-	net_dev->rx_section_count =
-	    init_pkt->msgs.vers_1_msgs.send_rx_buf_complete.num_sections;
+	status = resp->nvs_status;
+	vmbus_xact_put(xact);
+	xact = NULL;
 
-	net_dev->rx_sections = malloc(net_dev->rx_section_count *
-	    sizeof(nvsp_1_rx_buf_section), M_DEVBUF, M_NOWAIT);
-	if (net_dev->rx_sections == NULL) {
-		ret = EINVAL;
+	if (status != HN_NVS_STATUS_OK) {
+		if_printf(sc->hn_ifp, "rxbuf conn failed: %x\n", status);
+		error = EIO;
 		goto cleanup;
 	}
-	memcpy(net_dev->rx_sections, 
-	    init_pkt->msgs.vers_1_msgs.send_rx_buf_complete.sections,
-	    net_dev->rx_section_count * sizeof(nvsp_1_rx_buf_section));
+	sc->hn_flags |= HN_FLAG_RXBUF_CONNECTED;
 
-
-	/*
-	 * For first release, there should only be 1 section that represents
-	 * the entire receive buffer
-	 */
-	if (net_dev->rx_section_count != 1
-	    || net_dev->rx_sections->offset != 0) {
-		ret = EINVAL;
-		goto cleanup;
-	}
-
-	goto exit;
+	return (0);
 
 cleanup:
-	hv_nv_destroy_rx_buffer(net_dev);
-	
-exit:
-	return (ret);
+	if (xact != NULL)
+		vmbus_xact_put(xact);
+	hv_nv_destroy_rx_buffer(sc);
+	return (error);
 }
 
 /*
  * Net VSC initialize send buffer with net VSP
  */
 static int 
-hv_nv_init_send_buffer_with_net_vsp(struct hv_device *device)
+hv_nv_init_send_buffer_with_net_vsp(struct hn_softc *sc)
 {
-	netvsc_dev *net_dev;
-	nvsp_msg *init_pkt;
-	int ret = 0;
+	struct vmbus_xact *xact = NULL;
+	struct hn_nvs_chim_conn *chim;
+	const struct hn_nvs_chim_connresp *resp;
+	size_t resp_len;
+	uint32_t status, sectsz;
+	int error;
 
-	net_dev = hv_nv_get_outbound_net_device(device);
-	if (!net_dev) {
-		return (ENODEV);
-	}
-
-	net_dev->send_buf  = contigmalloc(net_dev->send_buf_size, M_DEVBUF,
-	    M_ZERO, 0UL, BUS_SPACE_MAXADDR, PAGE_SIZE, 0);
-	if (net_dev->send_buf == NULL) {
-		ret = ENOMEM;
+	/*
+	 * Connect chimney sending buffer GPADL to the primary channel.
+	 *
+	 * NOTE:
+	 * Only primary channel has chimney sending buffer connected to it.
+	 * Sub-channels just share this chimney sending buffer.
+	 */
+	error = vmbus_chan_gpadl_connect(sc->hn_prichan,
+  	    sc->hn_chim_dma.hv_paddr, NETVSC_SEND_BUFFER_SIZE,
+	    &sc->hn_chim_gpadl);
+	if (error) {
+		if_printf(sc->hn_ifp, "chimney sending buffer gpadl "
+		    "connect failed: %d\n", error);
 		goto cleanup;
 	}
 
 	/*
-	 * Establish the gpadl handle for this buffer on this channel.
-	 * Note:  This call uses the vmbus connection rather than the
-	 * channel to establish the gpadl handle. 
+	 * Connect chimney sending buffer to NVS
 	 */
-	ret = hv_vmbus_channel_establish_gpadl(device->channel,
-	    net_dev->send_buf, net_dev->send_buf_size,
-	    &net_dev->send_buf_gpadl_handle);
-	if (ret != 0) {
+
+	xact = vmbus_xact_get(sc->hn_xact, sizeof(*chim));
+	if (xact == NULL) {
+		if_printf(sc->hn_ifp, "no xact for nvs chim conn\n");
+		error = ENXIO;
+		goto cleanup;
+	}
+	chim = vmbus_xact_req_data(xact);
+	chim->nvs_type = HN_NVS_TYPE_CHIM_CONN;
+	chim->nvs_gpadl = sc->hn_chim_gpadl;
+	chim->nvs_sig = HN_NVS_CHIM_SIG;
+
+	resp = hn_nvs_xact_execute(sc, xact, chim, sizeof(*chim), &resp_len);
+	if (resp == NULL) {
+		if_printf(sc->hn_ifp, "exec chim conn failed\n");
+		error = EIO;
+		goto cleanup;
+	}
+	if (resp_len < sizeof(*resp)) {
+		if_printf(sc->hn_ifp, "invalid chim conn resp length %zu\n",
+		    resp_len);
+		error = EINVAL;
+		goto cleanup;
+	}
+	if (resp->nvs_type != HN_NVS_TYPE_CHIM_CONNRESP) {
+		if_printf(sc->hn_ifp, "not chim conn resp, type %u\n",
+		    resp->nvs_type);
+		error = EINVAL;
 		goto cleanup;
 	}
 
-	/* Notify the NetVsp of the gpadl handle */
+	status = resp->nvs_status;
+	sectsz = resp->nvs_sectsz;
+	vmbus_xact_put(xact);
+	xact = NULL;
 
-	init_pkt = &net_dev->channel_init_packet;
-
-	memset(init_pkt, 0, sizeof(nvsp_msg));
-
-	init_pkt->hdr.msg_type = nvsp_msg_1_type_send_send_buf;
-	init_pkt->msgs.vers_1_msgs.send_rx_buf.gpadl_handle =
-	    net_dev->send_buf_gpadl_handle;
-	init_pkt->msgs.vers_1_msgs.send_rx_buf.id =
-	    NETVSC_SEND_BUFFER_ID;
-
-	/* Send the gpadl notification request */
-
-	ret = hv_vmbus_channel_send_packet(device->channel, init_pkt,
-	    sizeof(nvsp_msg), (uint64_t)(uintptr_t)init_pkt,
-	    HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
-	    HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
-	if (ret != 0) {
+	if (status != HN_NVS_STATUS_OK) {
+		if_printf(sc->hn_ifp, "chim conn failed: %x\n", status);
+		error = EIO;
 		goto cleanup;
 	}
-
-	sema_wait(&net_dev->channel_init_sema);
-
-	/* Check the response */
-	if (init_pkt->msgs.vers_1_msgs.send_send_buf_complete.status
-	    != nvsp_status_success) {
-		ret = EINVAL;
-		goto cleanup;
+	if (sectsz == 0) {
+		if_printf(sc->hn_ifp, "zero chimney sending buffer "
+		    "section size\n");
+		return 0;
 	}
 
-	net_dev->send_section_size =
-	    init_pkt->msgs.vers_1_msgs.send_send_buf_complete.section_size;
+	sc->hn_chim_szmax = sectsz;
+	sc->hn_chim_cnt = NETVSC_SEND_BUFFER_SIZE / sc->hn_chim_szmax;
+	if (NETVSC_SEND_BUFFER_SIZE % sc->hn_chim_szmax != 0) {
+		if_printf(sc->hn_ifp, "chimney sending sections are "
+		    "not properly aligned\n");
+	}
+	if (sc->hn_chim_cnt % LONG_BIT != 0) {
+		if_printf(sc->hn_ifp, "discard %d chimney sending sections\n",
+		    sc->hn_chim_cnt % LONG_BIT);
+	}
 
-	goto exit;
+	sc->hn_chim_bmap_cnt = sc->hn_chim_cnt / LONG_BIT;
+	sc->hn_chim_bmap = malloc(sc->hn_chim_bmap_cnt * sizeof(u_long),
+	    M_NETVSC, M_WAITOK | M_ZERO);
+
+	/* Done! */
+	sc->hn_flags |= HN_FLAG_CHIM_CONNECTED;
+	if (bootverbose) {
+		if_printf(sc->hn_ifp, "chimney sending buffer %d/%d\n",
+		    sc->hn_chim_szmax, sc->hn_chim_cnt);
+	}
+	return 0;
 
 cleanup:
-	hv_nv_destroy_send_buffer(net_dev);
-	
-exit:
-	return (ret);
+	if (xact != NULL)
+		vmbus_xact_put(xact);
+	hv_nv_destroy_send_buffer(sc);
+	return (error);
 }
 
 /*
  * Net VSC destroy receive buffer
  */
 static int
-hv_nv_destroy_rx_buffer(netvsc_dev *net_dev)
+hv_nv_destroy_rx_buffer(struct hn_softc *sc)
 {
-	nvsp_msg *revoke_pkt;
 	int ret = 0;
 
-	/*
-	 * If we got a section count, it means we received a
-	 * send_rx_buf_complete msg 
-	 * (ie sent nvsp_msg_1_type_send_rx_buf msg) therefore,
-	 * we need to send a revoke msg here
-	 */
-	if (net_dev->rx_section_count) {
-		/* Send the revoke receive buffer */
-		revoke_pkt = &net_dev->revoke_packet;
-		memset(revoke_pkt, 0, sizeof(nvsp_msg));
-
-		revoke_pkt->hdr.msg_type = nvsp_msg_1_type_revoke_rx_buf;
-		revoke_pkt->msgs.vers_1_msgs.revoke_rx_buf.id =
-		    NETVSC_RECEIVE_BUFFER_ID;
-
-		ret = hv_vmbus_channel_send_packet(net_dev->dev->channel,
-		    revoke_pkt, sizeof(nvsp_msg),
-		    (uint64_t)(uintptr_t)revoke_pkt,
-		    HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
+	if (sc->hn_flags & HN_FLAG_RXBUF_CONNECTED) {
+		struct hn_nvs_rxbuf_disconn disconn;
 
 		/*
-		 * If we failed here, we might as well return and have a leak 
-		 * rather than continue and a bugchk
+		 * Disconnect RXBUF from NVS.
 		 */
+		memset(&disconn, 0, sizeof(disconn));
+		disconn.nvs_type = HN_NVS_TYPE_RXBUF_DISCONN;
+		disconn.nvs_sig = HN_NVS_RXBUF_SIG;
+
+		/* NOTE: No response. */
+		ret = hn_nvs_req_send(sc, &disconn, sizeof(disconn));
 		if (ret != 0) {
+			if_printf(sc->hn_ifp,
+			    "send rxbuf disconn failed: %d\n", ret);
 			return (ret);
 		}
+		sc->hn_flags &= ~HN_FLAG_RXBUF_CONNECTED;
 	}
 		
-	/* Tear down the gpadl on the vsp end */
-	if (net_dev->rx_buf_gpadl_handle) {
-		ret = hv_vmbus_channel_teardown_gpdal(net_dev->dev->channel,
-		    net_dev->rx_buf_gpadl_handle);
+	if (sc->hn_rxbuf_gpadl != 0) {
 		/*
-		 * If we failed here, we might as well return and have a leak 
-		 * rather than continue and a bugchk
+		 * Disconnect RXBUF from primary channel.
 		 */
+		ret = vmbus_chan_gpadl_disconnect(sc->hn_prichan,
+		    sc->hn_rxbuf_gpadl);
 		if (ret != 0) {
+			if_printf(sc->hn_ifp,
+			    "rxbuf disconn failed: %d\n", ret);
 			return (ret);
 		}
-		net_dev->rx_buf_gpadl_handle = 0;
+		sc->hn_rxbuf_gpadl = 0;
 	}
-
-	if (net_dev->rx_buf) {
-		/* Free up the receive buffer */
-		contigfree(net_dev->rx_buf, net_dev->rx_buf_size, M_DEVBUF);
-		net_dev->rx_buf = NULL;
-	}
-
-	if (net_dev->rx_sections) {
-		free(net_dev->rx_sections, M_DEVBUF);
-		net_dev->rx_sections = NULL;
-		net_dev->rx_section_count = 0;
-	}
-
 	return (ret);
 }
 
@@ -379,102 +379,98 @@ hv_nv_destroy_rx_buffer(netvsc_dev *net_dev)
  * Net VSC destroy send buffer
  */
 static int
-hv_nv_destroy_send_buffer(netvsc_dev *net_dev)
+hv_nv_destroy_send_buffer(struct hn_softc *sc)
 {
-	nvsp_msg *revoke_pkt;
 	int ret = 0;
 
-	/*
-	 * If we got a section count, it means we received a
-	 * send_rx_buf_complete msg 
-	 * (ie sent nvsp_msg_1_type_send_rx_buf msg) therefore,
-	 * we need to send a revoke msg here
-	 */
-	if (net_dev->send_section_size) {
-		/* Send the revoke send buffer */
-		revoke_pkt = &net_dev->revoke_packet;
-		memset(revoke_pkt, 0, sizeof(nvsp_msg));
+	if (sc->hn_flags & HN_FLAG_CHIM_CONNECTED) {
+		struct hn_nvs_chim_disconn disconn;
 
-		revoke_pkt->hdr.msg_type =
-		    nvsp_msg_1_type_revoke_send_buf;
-		revoke_pkt->msgs.vers_1_msgs.revoke_send_buf.id =
-		    NETVSC_SEND_BUFFER_ID;
-
-		ret = hv_vmbus_channel_send_packet(net_dev->dev->channel,
-		    revoke_pkt, sizeof(nvsp_msg),
-		    (uint64_t)(uintptr_t)revoke_pkt,
-		    HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
 		/*
-		 * If we failed here, we might as well return and have a leak 
-		 * rather than continue and a bugchk
+		 * Disconnect chimney sending buffer from NVS.
 		 */
+		memset(&disconn, 0, sizeof(disconn));
+		disconn.nvs_type = HN_NVS_TYPE_CHIM_DISCONN;
+		disconn.nvs_sig = HN_NVS_CHIM_SIG;
+
+		/* NOTE: No response. */
+		ret = hn_nvs_req_send(sc, &disconn, sizeof(disconn));
 		if (ret != 0) {
+			if_printf(sc->hn_ifp,
+			    "send chim disconn failed: %d\n", ret);
 			return (ret);
 		}
+		sc->hn_flags &= ~HN_FLAG_CHIM_CONNECTED;
 	}
 		
-	/* Tear down the gpadl on the vsp end */
-	if (net_dev->send_buf_gpadl_handle) {
-		ret = hv_vmbus_channel_teardown_gpdal(net_dev->dev->channel,
-		    net_dev->send_buf_gpadl_handle);
-
+	if (sc->hn_chim_gpadl != 0) {
 		/*
-		 * If we failed here, we might as well return and have a leak 
-		 * rather than continue and a bugchk
+		 * Disconnect chimney sending buffer from primary channel.
 		 */
+		ret = vmbus_chan_gpadl_disconnect(sc->hn_prichan,
+		    sc->hn_chim_gpadl);
 		if (ret != 0) {
+			if_printf(sc->hn_ifp,
+			    "chim disconn failed: %d\n", ret);
 			return (ret);
 		}
-		net_dev->send_buf_gpadl_handle = 0;
+		sc->hn_chim_gpadl = 0;
 	}
 
-	if (net_dev->send_buf) {
-		/* Free up the receive buffer */
-		contigfree(net_dev->send_buf, net_dev->send_buf_size, M_DEVBUF);
-		net_dev->send_buf = NULL;
+	if (sc->hn_chim_bmap != NULL) {
+		free(sc->hn_chim_bmap, M_NETVSC);
+		sc->hn_chim_bmap = NULL;
 	}
 
 	return (ret);
 }
 
-
-/*
- * Attempt to negotiate the caller-specified NVSP version
- *
- * For NVSP v2, Server 2008 R2 does not set
- * init_pkt->msgs.init_msgs.init_compl.negotiated_prot_vers
- * to the negotiated version, so we cannot rely on that.
- */
 static int
-hv_nv_negotiate_nvsp_protocol(struct hv_device *device, netvsc_dev *net_dev,
-			      uint32_t nvsp_ver)
+hv_nv_negotiate_nvsp_protocol(struct hn_softc *sc, uint32_t nvs_ver)
 {
-	nvsp_msg *init_pkt;
-	int ret;
+	struct vmbus_xact *xact;
+	struct hn_nvs_init *init;
+	const struct hn_nvs_init_resp *resp;
+	size_t resp_len;
+	uint32_t status;
 
-	init_pkt = &net_dev->channel_init_packet;
-	memset(init_pkt, 0, sizeof(nvsp_msg));
-	init_pkt->hdr.msg_type = nvsp_msg_type_init;
+	xact = vmbus_xact_get(sc->hn_xact, sizeof(*init));
+	if (xact == NULL) {
+		if_printf(sc->hn_ifp, "no xact for nvs init\n");
+		return (ENXIO);
+	}
+	init = vmbus_xact_req_data(xact);
+	init->nvs_type = HN_NVS_TYPE_INIT;
+	init->nvs_ver_min = nvs_ver;
+	init->nvs_ver_max = nvs_ver;
 
-	/*
-	 * Specify parameter as the only acceptable protocol version
-	 */
-	init_pkt->msgs.init_msgs.init.p1.protocol_version = nvsp_ver;
-	init_pkt->msgs.init_msgs.init.protocol_version_2 = nvsp_ver;
-
-	/* Send the init request */
-	ret = hv_vmbus_channel_send_packet(device->channel, init_pkt,
-	    sizeof(nvsp_msg), (uint64_t)(uintptr_t)init_pkt,
-	    HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
-	    HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
-	if (ret != 0)
-		return (-1);
-
-	sema_wait(&net_dev->channel_init_sema);
-
-	if (init_pkt->msgs.init_msgs.init_compl.status != nvsp_status_success)
+	resp = hn_nvs_xact_execute(sc, xact, init, sizeof(*init), &resp_len);
+	if (resp == NULL) {
+		if_printf(sc->hn_ifp, "exec init failed\n");
+		vmbus_xact_put(xact);
+		return (EIO);
+	}
+	if (resp_len < sizeof(*resp)) {
+		if_printf(sc->hn_ifp, "invalid init resp length %zu\n",
+		    resp_len);
+		vmbus_xact_put(xact);
 		return (EINVAL);
+	}
+	if (resp->nvs_type != HN_NVS_TYPE_INIT_RESP) {
+		if_printf(sc->hn_ifp, "not init resp, type %u\n",
+		    resp->nvs_type);
+		vmbus_xact_put(xact);
+		return (EINVAL);
+	}
 
+	status = resp->nvs_status;
+	vmbus_xact_put(xact);
+
+	if (status != HN_NVS_STATUS_OK) {
+		if_printf(sc->hn_ifp, "nvs init failed for ver 0x%x\n",
+		    nvs_ver);
+		return (EINVAL);
+	}
 	return (0);
 }
 
@@ -484,119 +480,97 @@ hv_nv_negotiate_nvsp_protocol(struct hv_device *device, netvsc_dev *net_dev,
  * Not valid for NDIS version 1.
  */
 static int
-hv_nv_send_ndis_config(struct hv_device *device, uint32_t mtu)
+hv_nv_send_ndis_config(struct hn_softc *sc, uint32_t mtu)
 {
-	netvsc_dev *net_dev;
-	nvsp_msg *init_pkt;
-	int ret;
+	struct hn_nvs_ndis_conf conf;
+	int error;
 
-	net_dev = hv_nv_get_outbound_net_device(device);
-	if (!net_dev)
-		return (-ENODEV);
+	memset(&conf, 0, sizeof(conf));
+	conf.nvs_type = HN_NVS_TYPE_NDIS_CONF;
+	conf.nvs_mtu = mtu;
+	conf.nvs_caps = HN_NVS_NDIS_CONF_VLAN;
 
-	/*
-	 * Set up configuration packet, write MTU
-	 * Indicate we are capable of handling VLAN tags
-	 */
-	init_pkt = &net_dev->channel_init_packet;
-	memset(init_pkt, 0, sizeof(nvsp_msg));
-	init_pkt->hdr.msg_type = nvsp_msg_2_type_send_ndis_config;
-	init_pkt->msgs.vers_2_msgs.send_ndis_config.mtu = mtu;
-	init_pkt->
-		msgs.vers_2_msgs.send_ndis_config.capabilities.u1.u2.ieee8021q
-		= 1;
-
-	/* Send the configuration packet */
-	ret = hv_vmbus_channel_send_packet(device->channel, init_pkt,
-	    sizeof(nvsp_msg), (uint64_t)(uintptr_t)init_pkt,
-	    HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
-	if (ret != 0)
-		return (-EINVAL);
-
-	return (0);
+	/* NOTE: No response. */
+	error = hn_nvs_req_send(sc, &conf, sizeof(conf));
+	if (error)
+		if_printf(sc->hn_ifp, "send nvs ndis conf failed: %d\n", error);
+	return (error);
 }
 
 /*
  * Net VSC connect to VSP
  */
 static int
-hv_nv_connect_to_vsp(struct hv_device *device)
+hv_nv_connect_to_vsp(struct hn_softc *sc)
 {
-	netvsc_dev *net_dev;
-	nvsp_msg *init_pkt;
-	uint32_t nvsp_vers;
-	uint32_t ndis_version;
+	uint32_t protocol_list[] = { NVSP_PROTOCOL_VERSION_1,
+	    NVSP_PROTOCOL_VERSION_2,
+	    NVSP_PROTOCOL_VERSION_4,
+	    NVSP_PROTOCOL_VERSION_5 };
+	int i;
+	int protocol_number = nitems(protocol_list);
 	int ret = 0;
-	device_t dev = device->device;
-	hn_softc_t *sc = device_get_softc(dev);
-	struct ifnet *ifp = sc->arpcom.ac_ifp;
-
-	net_dev = hv_nv_get_outbound_net_device(device);
-	if (!net_dev) {
-		return (ENODEV);
-	}
+	device_t dev = sc->hn_dev;
+	struct ifnet *ifp = sc->hn_ifp;
+	struct hn_nvs_ndis_init ndis;
+	int rxbuf_size;
 
 	/*
-	 * Negotiate the NVSP version.  Try NVSP v2 first.
+	 * Negotiate the NVSP version.  Try the latest NVSP first.
 	 */
-	nvsp_vers = NVSP_PROTOCOL_VERSION_2;
-	ret = hv_nv_negotiate_nvsp_protocol(device, net_dev, nvsp_vers);
-	if (ret != 0) {
-		/* NVSP v2 failed, try NVSP v1 */
-		nvsp_vers = NVSP_PROTOCOL_VERSION_1;
-		ret = hv_nv_negotiate_nvsp_protocol(device, net_dev, nvsp_vers);
-		if (ret != 0) {
-			/* NVSP v1 failed, return bad status */
-			return (ret);
+	for (i = protocol_number - 1; i >= 0; i--) {
+		if (hv_nv_negotiate_nvsp_protocol(sc, protocol_list[i]) == 0) {
+			sc->hn_nvs_ver = protocol_list[i];
+			if (bootverbose) {
+				device_printf(dev, "NVS version 0x%x\n",
+				    sc->hn_nvs_ver);
+			}
+			break;
 		}
 	}
-	net_dev->nvsp_version = nvsp_vers;
+
+	if (i < 0) {
+		if (bootverbose)
+			device_printf(dev, "failed to negotiate a valid "
+			    "protocol.\n");
+		return (EPROTO);
+	}
 
 	/*
 	 * Set the MTU if supported by this NVSP protocol version
 	 * This needs to be right after the NVSP init message per Haiyang
 	 */
-	if (nvsp_vers >= NVSP_PROTOCOL_VERSION_2)
-		ret = hv_nv_send_ndis_config(device, ifp->if_mtu);
+	if (sc->hn_nvs_ver >= NVSP_PROTOCOL_VERSION_2)
+		ret = hv_nv_send_ndis_config(sc, ifp->if_mtu);
 
 	/*
-	 * Send the NDIS version
+	 * Initialize NDIS.
 	 */
-	init_pkt = &net_dev->channel_init_packet;
 
-	memset(init_pkt, 0, sizeof(nvsp_msg));
+	memset(&ndis, 0, sizeof(ndis));
+	ndis.nvs_type = HN_NVS_TYPE_NDIS_INIT;
+	ndis.nvs_ndis_major = NDIS_VERSION_MAJOR_6;
+	if (sc->hn_nvs_ver <= NVSP_PROTOCOL_VERSION_4)
+		ndis.nvs_ndis_minor = NDIS_VERSION_MINOR_1;
+	else
+		ndis.nvs_ndis_minor = NDIS_VERSION_MINOR_30;
 
-	/*
-	 * Updated to version 5.1, minimum, for VLAN per Haiyang
-	 */
-	ndis_version = NDIS_VERSION;
-
-	init_pkt->hdr.msg_type = nvsp_msg_1_type_send_ndis_vers;
-	init_pkt->msgs.vers_1_msgs.send_ndis_vers.ndis_major_vers =
-	    (ndis_version & 0xFFFF0000) >> 16;
-	init_pkt->msgs.vers_1_msgs.send_ndis_vers.ndis_minor_vers =
-	    ndis_version & 0xFFFF;
-
-	/* Send the init request */
-
-	ret = hv_vmbus_channel_send_packet(device->channel, init_pkt,
-	    sizeof(nvsp_msg), (uint64_t)(uintptr_t)init_pkt,
-	    HV_VMBUS_PACKET_TYPE_DATA_IN_BAND, 0);
+	/* NOTE: No response. */
+	ret = hn_nvs_req_send(sc, &ndis, sizeof(ndis));
 	if (ret != 0) {
+		if_printf(sc->hn_ifp, "send nvs ndis init failed: %d\n", ret);
 		goto cleanup;
 	}
-	/*
-	 * TODO:  BUGBUG - We have to wait for the above msg since the netvsp
-	 * uses KMCL which acknowledges packet (completion packet) 
-	 * since our Vmbus always set the
-	 * HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED flag
-	 */
-	/* sema_wait(&NetVscChannel->channel_init_sema); */
 
 	/* Post the big receive buffer to NetVSP */
-	ret = hv_nv_init_rx_buffer_with_net_vsp(device);
+	if (sc->hn_nvs_ver <= NVSP_PROTOCOL_VERSION_2)
+		rxbuf_size = NETVSC_RECEIVE_BUFFER_SIZE_LEGACY;
+	else
+		rxbuf_size = NETVSC_RECEIVE_BUFFER_SIZE;
+
+	ret = hv_nv_init_rx_buffer_with_net_vsp(sc, rxbuf_size);
 	if (ret == 0)
-		ret = hv_nv_init_send_buffer_with_net_vsp(device);
+		ret = hv_nv_init_send_buffer_with_net_vsp(sc);
 
 cleanup:
 	return (ret);
@@ -606,10 +580,21 @@ cleanup:
  * Net VSC disconnect from VSP
  */
 static void
-hv_nv_disconnect_from_vsp(netvsc_dev *net_dev)
+hv_nv_disconnect_from_vsp(struct hn_softc *sc)
 {
-	hv_nv_destroy_rx_buffer(net_dev);
-	hv_nv_destroy_send_buffer(net_dev);
+	hv_nv_destroy_rx_buffer(sc);
+	hv_nv_destroy_send_buffer(sc);
+}
+
+void
+hv_nv_subchan_attach(struct vmbus_channel *chan, struct hn_rx_ring *rxr)
+{
+	KASSERT(rxr->hn_rx_idx == vmbus_chan_subidx(chan),
+	    ("chan%u subidx %u, rxr%d mismatch",
+	     vmbus_chan_id(chan), vmbus_chan_subidx(chan), rxr->hn_rx_idx));
+	vmbus_chan_open(chan, NETVSC_DEVICE_RING_BUFFER_SIZE,
+	    NETVSC_DEVICE_RING_BUFFER_SIZE, NULL, 0,
+	    hv_nv_on_channel_callback, rxr);
 }
 
 /*
@@ -617,184 +602,109 @@ hv_nv_disconnect_from_vsp(netvsc_dev *net_dev)
  * 
  * Callback when the device belonging to this driver is added
  */
-netvsc_dev *
-hv_nv_on_device_add(struct hv_device *device, void *additional_info)
+int
+hv_nv_on_device_add(struct hn_softc *sc, struct hn_rx_ring *rxr)
 {
-	netvsc_dev *net_dev;
-	netvsc_packet *packet;
-	netvsc_packet *next_packet;
-	int i, ret = 0;
-
-	net_dev = hv_nv_alloc_net_device(device);
-	if (!net_dev)
-		goto cleanup;
-
-	/* Initialize the NetVSC channel extension */
-	net_dev->rx_buf_size = NETVSC_RECEIVE_BUFFER_SIZE;
-	mtx_init(&net_dev->rx_pkt_list_lock, "HV-RPL", NULL,
-	    MTX_SPIN | MTX_RECURSE);
-
-	net_dev->send_buf_size = NETVSC_SEND_BUFFER_SIZE;
-
-	/* Same effect as STAILQ_HEAD_INITIALIZER() static initializer */
-	STAILQ_INIT(&net_dev->myrx_packet_list);
-
-	/* 
-	 * malloc a sufficient number of netvsc_packet buffers to hold
-	 * a packet list.  Add them to the netvsc device packet queue.
-	 */
-	for (i=0; i < NETVSC_RECEIVE_PACKETLIST_COUNT; i++) {
-		packet = malloc(sizeof(netvsc_packet) +
-		    (NETVSC_RECEIVE_SG_COUNT * sizeof(hv_vmbus_page_buffer)),
-		    M_DEVBUF, M_NOWAIT | M_ZERO);
-		if (!packet) {
-			break;
-		}
-		STAILQ_INSERT_TAIL(&net_dev->myrx_packet_list, packet,
-		    mylist_entry);
-	}
-
-	sema_init(&net_dev->channel_init_sema, 0, "netdev_sema");
+	struct vmbus_channel *chan = sc->hn_prichan;
+	int ret = 0;
 
 	/*
 	 * Open the channel
 	 */
-	ret = hv_vmbus_channel_open(device->channel,
+	KASSERT(rxr->hn_rx_idx == vmbus_chan_subidx(chan),
+	    ("chan%u subidx %u, rxr%d mismatch",
+	     vmbus_chan_id(chan), vmbus_chan_subidx(chan), rxr->hn_rx_idx));
+	ret = vmbus_chan_open(chan,
 	    NETVSC_DEVICE_RING_BUFFER_SIZE, NETVSC_DEVICE_RING_BUFFER_SIZE,
-	    NULL, 0, hv_nv_on_channel_callback, device);
+	    NULL, 0, hv_nv_on_channel_callback, rxr);
 	if (ret != 0)
 		goto cleanup;
 
 	/*
 	 * Connect with the NetVsp
 	 */
-	ret = hv_nv_connect_to_vsp(device);
+	ret = hv_nv_connect_to_vsp(sc);
 	if (ret != 0)
 		goto close;
 
-	return (net_dev);
+	return (0);
 
 close:
 	/* Now, we can close the channel safely */
-
-	hv_vmbus_channel_close(device->channel);
-
+	vmbus_chan_close(chan);
 cleanup:
-	/*
-	 * Free the packet buffers on the netvsc device packet queue.
-	 * Release other resources.
-	 */
-	if (net_dev) {
-		sema_destroy(&net_dev->channel_init_sema);
-
-		packet = STAILQ_FIRST(&net_dev->myrx_packet_list);
-		while (packet != NULL) {
-			next_packet = STAILQ_NEXT(packet, mylist_entry);
-			free(packet, M_DEVBUF);
-			packet = next_packet;
-		}
-		/* Reset the list to initial state */
-		STAILQ_INIT(&net_dev->myrx_packet_list);
-
-		mtx_destroy(&net_dev->rx_pkt_list_lock);
-
-		free(net_dev, M_DEVBUF);
-	}
-
-	return (NULL);
+	return (ret);
 }
 
 /*
  * Net VSC on device remove
  */
 int
-hv_nv_on_device_remove(struct hv_device *device, boolean_t destroy_channel)
+hv_nv_on_device_remove(struct hn_softc *sc, boolean_t destroy_channel)
 {
-	netvsc_packet *net_vsc_pkt;
-	netvsc_packet *next_net_vsc_pkt;
-	hn_softc_t *sc = device_get_softc(device->device);
-	netvsc_dev *net_dev = sc->net_dev;;
 	
-	/* Stop outbound traffic ie sends and receives completions */
-	mtx_lock(&device->channel->inbound_lock);
-	net_dev->destroy = TRUE;
-	mtx_unlock(&device->channel->inbound_lock);
-
-	/* Wait for all send completions */
-	while (net_dev->num_outstanding_sends) {
-		DELAY(100);
-	}
-
-	hv_nv_disconnect_from_vsp(net_dev);
-
-	/* At this point, no one should be accessing net_dev except in here */
+	hv_nv_disconnect_from_vsp(sc);
 
 	/* Now, we can close the channel safely */
 
-	if (!destroy_channel) {
-		device->channel->state =
-		    HV_CHANNEL_CLOSING_NONDESTRUCTIVE_STATE;
-	}
-
-	hv_vmbus_channel_close(device->channel);
-
-	/* Release all resources */
-	net_vsc_pkt = STAILQ_FIRST(&net_dev->myrx_packet_list);
-	while (net_vsc_pkt != NULL) {
-		next_net_vsc_pkt = STAILQ_NEXT(net_vsc_pkt, mylist_entry);
-		free(net_vsc_pkt, M_DEVBUF);
-		net_vsc_pkt = next_net_vsc_pkt;
-	}
-
-	/* Reset the list to initial state */
-	STAILQ_INIT(&net_dev->myrx_packet_list);
-
-	mtx_destroy(&net_dev->rx_pkt_list_lock);
-	sema_destroy(&net_dev->channel_init_sema);
-	free(net_dev, M_DEVBUF);
+	vmbus_chan_close(sc->hn_prichan);
 
 	return (0);
+}
+
+static void
+hn_nvs_sent_xact(struct hn_send_ctx *sndc,
+    struct hn_softc *sc __unused, struct vmbus_channel *chan __unused,
+    const void *data, int dlen)
+{
+
+	vmbus_xact_wakeup(sndc->hn_cbarg, data, dlen);
+}
+
+static void
+hn_nvs_sent_none(struct hn_send_ctx *sndc __unused,
+    struct hn_softc *sc __unused, struct vmbus_channel *chan __unused,
+    const void *data __unused, int dlen __unused)
+{
+	/* EMPTY */
+}
+
+void
+hn_chim_free(struct hn_softc *sc, uint32_t chim_idx)
+{
+	u_long mask;
+	uint32_t idx;
+
+	idx = chim_idx / LONG_BIT;
+	KASSERT(idx < sc->hn_chim_bmap_cnt,
+	    ("invalid chimney index 0x%x", chim_idx));
+
+	mask = 1UL << (chim_idx % LONG_BIT);
+	KASSERT(sc->hn_chim_bmap[idx] & mask,
+	    ("index bitmap 0x%lx, chimney index %u, "
+	     "bitmap idx %d, bitmask 0x%lx",
+	     sc->hn_chim_bmap[idx], chim_idx, idx, mask));
+
+	atomic_clear_long(&sc->hn_chim_bmap[idx], mask);
 }
 
 /*
  * Net VSC on send completion
  */
-static void 
-hv_nv_on_send_completion(struct hv_device *device, hv_vm_packet_descriptor *pkt)
+static void
+hv_nv_on_send_completion(struct hn_softc *sc, struct vmbus_channel *chan,
+    const struct vmbus_chanpkt_hdr *pkt)
 {
-	netvsc_dev *net_dev;
-	nvsp_msg *nvsp_msg_pkt;
-	netvsc_packet *net_vsc_pkt;
+	struct hn_send_ctx *sndc;
 
-	net_dev = hv_nv_get_inbound_net_device(device);
-	if (!net_dev) {
-		return;
-	}
-
-	nvsp_msg_pkt =
-	    (nvsp_msg *)((unsigned long)pkt + (pkt->data_offset8 << 3));
-
-	if (nvsp_msg_pkt->hdr.msg_type == nvsp_msg_type_init_complete
-		|| nvsp_msg_pkt->hdr.msg_type
-			== nvsp_msg_1_type_send_rx_buf_complete
-		|| nvsp_msg_pkt->hdr.msg_type
-			== nvsp_msg_1_type_send_send_buf_complete) {
-		/* Copy the response back */
-		memcpy(&net_dev->channel_init_packet, nvsp_msg_pkt,
-		    sizeof(nvsp_msg));			
-		sema_post(&net_dev->channel_init_sema);
-	} else if (nvsp_msg_pkt->hdr.msg_type ==
-				   nvsp_msg_1_type_send_rndis_pkt_complete) {
-		/* Get the send context */
-		net_vsc_pkt =
-		    (netvsc_packet *)(unsigned long)pkt->transaction_id;
-
-		/* Notify the layer above us */
-		net_vsc_pkt->compl.send.on_send_completion(
-		    net_vsc_pkt->compl.send.send_completion_context);
-
-		atomic_subtract_int(&net_dev->num_outstanding_sends, 1);
-	}
+	sndc = (struct hn_send_ctx *)(uintptr_t)pkt->cph_xactid;
+	sndc->hn_cb(sndc, sc, chan, VMBUS_CHANPKT_CONST_DATA(pkt),
+	    VMBUS_CHANPKT_DATALEN(pkt));
+	/*
+	 * NOTE:
+	 * 'sndc' CAN NOT be accessed anymore, since it can be freed by
+	 * its callback.
+	 */
 }
 
 /*
@@ -803,44 +713,24 @@ hv_nv_on_send_completion(struct hv_device *device, hv_vm_packet_descriptor *pkt)
  * Returns 0 on success, non-zero on failure.
  */
 int
-hv_nv_on_send(struct hv_device *device, netvsc_packet *pkt)
+hv_nv_on_send(struct vmbus_channel *chan, uint32_t rndis_mtype,
+    struct hn_send_ctx *sndc, struct vmbus_gpa *gpa, int gpa_cnt)
 {
-	netvsc_dev *net_dev;
-	nvsp_msg send_msg;
+	struct hn_nvs_rndis rndis;
 	int ret;
 
-	net_dev = hv_nv_get_outbound_net_device(device);
-	if (!net_dev)
-		return (ENODEV);
+	rndis.nvs_type = HN_NVS_TYPE_RNDIS;
+	rndis.nvs_rndis_mtype = rndis_mtype;
+	rndis.nvs_chim_idx = sndc->hn_chim_idx;
+	rndis.nvs_chim_sz = sndc->hn_chim_sz;
 
-	send_msg.hdr.msg_type = nvsp_msg_1_type_send_rndis_pkt;
-	if (pkt->is_data_pkt) {
-		/* 0 is RMC_DATA */
-		send_msg.msgs.vers_1_msgs.send_rndis_pkt.chan_type = 0;
+	if (gpa_cnt) {
+		ret = hn_nvs_send_sglist(chan, gpa, gpa_cnt,
+		    &rndis, sizeof(rndis), sndc);
 	} else {
-		/* 1 is RMC_CONTROL */
-		send_msg.msgs.vers_1_msgs.send_rndis_pkt.chan_type = 1;
+		ret = hn_nvs_send(chan, VMBUS_CHANPKT_FLAG_RC,
+		    &rndis, sizeof(rndis), sndc);
 	}
-
-	/* Not using send buffer section */
-	send_msg.msgs.vers_1_msgs.send_rndis_pkt.send_buf_section_idx =
-	    0xFFFFFFFF;
-	send_msg.msgs.vers_1_msgs.send_rndis_pkt.send_buf_section_size = 0;
-
-	if (pkt->page_buf_count) {
-		ret = hv_vmbus_channel_send_packet_pagebuffer(device->channel,
-		    pkt->page_buffers, pkt->page_buf_count,
-		    &send_msg, sizeof(nvsp_msg), (uint64_t)(uintptr_t)pkt);
-	} else {
-		ret = hv_vmbus_channel_send_packet(device->channel,
-		    &send_msg, sizeof(nvsp_msg), (uint64_t)(uintptr_t)pkt,
-		    HV_VMBUS_PACKET_TYPE_DATA_IN_BAND,
-		    HV_VMBUS_DATA_PACKET_FLAG_COMPLETION_REQUESTED);
-	}
-
-	/* Record outstanding send only if send_packet() succeeded */
-	if (ret == 0)
-		atomic_add_int(&net_dev->num_outstanding_sends, 1);
 
 	return (ret);
 }
@@ -851,172 +741,67 @@ hv_nv_on_send(struct hv_device *device, netvsc_packet *pkt)
  * In the FreeBSD Hyper-V virtual world, this function deals exclusively
  * with virtual addresses.
  */
-static void 
-hv_nv_on_receive(struct hv_device *device, hv_vm_packet_descriptor *pkt)
+static void
+hv_nv_on_receive(struct hn_softc *sc, struct hn_rx_ring *rxr,
+    struct vmbus_channel *chan, const struct vmbus_chanpkt_hdr *pkthdr)
 {
-	netvsc_dev *net_dev;
-	hv_vm_transfer_page_packet_header *vm_xfer_page_pkt;
-	nvsp_msg *nvsp_msg_pkt;
-	netvsc_packet *net_vsc_pkt = NULL;
-	unsigned long start;
-	xfer_page_packet *xfer_page_pkt = NULL;
-	STAILQ_HEAD(PKT_LIST, netvsc_packet_) mylist_head =
-	    STAILQ_HEAD_INITIALIZER(mylist_head);
+	const struct vmbus_chanpkt_rxbuf *pkt;
+	const struct hn_nvs_hdr *nvs_hdr;
 	int count = 0;
 	int i = 0;
 
-	net_dev = hv_nv_get_inbound_net_device(device);
-	if (!net_dev)
+	/* Make sure that this is a RNDIS message. */
+	nvs_hdr = VMBUS_CHANPKT_CONST_DATA(pkthdr);
+	if (__predict_false(nvs_hdr->nvs_type != HN_NVS_TYPE_RNDIS)) {
+		if_printf(rxr->hn_ifp, "nvs type %u, not RNDIS\n",
+		    nvs_hdr->nvs_type);
 		return;
-
-	/*
-	 * All inbound packets other than send completion should be
-	 * xfer page packet.
-	 */
-	if (pkt->type != HV_VMBUS_PACKET_TYPE_DATA_USING_TRANSFER_PAGES)
-		return;
-
-	nvsp_msg_pkt = (nvsp_msg *)((unsigned long)pkt
-		+ (pkt->data_offset8 << 3));
-
-	/* Make sure this is a valid nvsp packet */
-	if (nvsp_msg_pkt->hdr.msg_type != nvsp_msg_1_type_send_rndis_pkt)
-		return;
+	}
 	
-	vm_xfer_page_pkt = (hv_vm_transfer_page_packet_header *)pkt;
+	pkt = (const struct vmbus_chanpkt_rxbuf *)pkthdr;
 
-	if (vm_xfer_page_pkt->transfer_page_set_id
-		!= NETVSC_RECEIVE_BUFFER_ID) {
+	if (pkt->cp_rxbuf_id != NETVSC_RECEIVE_BUFFER_ID) {
+		if_printf(rxr->hn_ifp, "rxbuf_id %d is invalid!\n",
+		    pkt->cp_rxbuf_id);
 		return;
 	}
 
-	STAILQ_INIT(&mylist_head);
-
-	/*
-	 * Grab free packets (range count + 1) to represent this xfer page
-	 * packet.  +1 to represent the xfer page packet itself.  We grab it
-	 * here so that we know exactly how many we can fulfill.
-	 */
-	mtx_lock_spin(&net_dev->rx_pkt_list_lock);
-	while (!STAILQ_EMPTY(&net_dev->myrx_packet_list)) {	
-		net_vsc_pkt = STAILQ_FIRST(&net_dev->myrx_packet_list);
-		STAILQ_REMOVE_HEAD(&net_dev->myrx_packet_list, mylist_entry);
-
-		STAILQ_INSERT_TAIL(&mylist_head, net_vsc_pkt, mylist_entry);
-
-		if (++count == vm_xfer_page_pkt->range_count + 1)
-			break;
-	}
-
-	mtx_unlock_spin(&net_dev->rx_pkt_list_lock);
-
-	/*
-	 * We need at least 2 netvsc pkts (1 to represent the xfer page
-	 * and at least 1 for the range) i.e. we can handle some of the
-	 * xfer page packet ranges...
-	 */
-	if (count < 2) {
-		/* Return netvsc packet to the freelist */
-		mtx_lock_spin(&net_dev->rx_pkt_list_lock);
-		for (i=count; i != 0; i--) {
-			net_vsc_pkt = STAILQ_FIRST(&mylist_head);
-			STAILQ_REMOVE_HEAD(&mylist_head, mylist_entry);
-
-			STAILQ_INSERT_TAIL(&net_dev->myrx_packet_list,
-			    net_vsc_pkt, mylist_entry);
-		}
-		mtx_unlock_spin(&net_dev->rx_pkt_list_lock);
-
-		hv_nv_send_receive_completion(device,
-		    vm_xfer_page_pkt->d.transaction_id);
-
-		return;
-	}
-
-	/* Take the first packet in the list */
-	xfer_page_pkt = (xfer_page_packet *)STAILQ_FIRST(&mylist_head);
-	STAILQ_REMOVE_HEAD(&mylist_head, mylist_entry);
-
-	/* This is how many data packets we can supply */
-	xfer_page_pkt->count = count - 1;
+	count = pkt->cp_rxbuf_cnt;
 
 	/* Each range represents 1 RNDIS pkt that contains 1 Ethernet frame */
-	for (i=0; i < (count - 1); i++) {
-		net_vsc_pkt = STAILQ_FIRST(&mylist_head);
-		STAILQ_REMOVE_HEAD(&mylist_head, mylist_entry);
-
-		/*
-		 * Initialize the netvsc packet
-		 */
-		net_vsc_pkt->xfer_page_pkt = xfer_page_pkt;
-		net_vsc_pkt->compl.rx.rx_completion_context = net_vsc_pkt;
-		net_vsc_pkt->device = device;
-		/* Save this so that we can send it back */
-		net_vsc_pkt->compl.rx.rx_completion_tid =
-		    vm_xfer_page_pkt->d.transaction_id;
-
-		net_vsc_pkt->tot_data_buf_len =
-		    vm_xfer_page_pkt->ranges[i].byte_count;
-		net_vsc_pkt->page_buf_count = 1;
-
-		net_vsc_pkt->page_buffers[0].length =
-		    vm_xfer_page_pkt->ranges[i].byte_count;
-
-		/* The virtual address of the packet in the receive buffer */
-		start = ((unsigned long)net_dev->rx_buf +
-		    vm_xfer_page_pkt->ranges[i].byte_offset);
-		start = ((unsigned long)start) & ~(PAGE_SIZE - 1);
-
-		/* Page number of the virtual page containing packet start */
-		net_vsc_pkt->page_buffers[0].pfn = start >> PAGE_SHIFT;
-
-		/* Calculate the page relative offset */
-		net_vsc_pkt->page_buffers[0].offset =
-		    vm_xfer_page_pkt->ranges[i].byte_offset & (PAGE_SIZE - 1);
-
-		/*
-		 * In this implementation, we are dealing with virtual
-		 * addresses exclusively.  Since we aren't using physical
-		 * addresses at all, we don't care if a packet crosses a
-		 * page boundary.  For this reason, the original code to
-		 * check for and handle page crossings has been removed.
-		 */
-
-		/*
-		 * Pass it to the upper layer.  The receive completion call
-		 * has been moved into this function.
-		 */
-		hv_rf_on_receive(device, net_vsc_pkt);
-
-		/*
-		 * Moved completion call back here so that all received 
-		 * messages (not just data messages) will trigger a response
-		 * message back to the host.
-		 */
-		hv_nv_on_receive_completion(net_vsc_pkt);
+	for (i = 0; i < count; i++) {
+		hv_rf_on_receive(sc, rxr,
+		    rxr->hn_rxbuf + pkt->cp_rxbuf[i].rb_ofs,
+		    pkt->cp_rxbuf[i].rb_len);
 	}
+	
+	/*
+	 * Moved completion call back here so that all received 
+	 * messages (not just data messages) will trigger a response
+	 * message back to the host.
+	 */
+	hv_nv_on_receive_completion(chan, pkt->cp_hdr.cph_xactid);
 }
 
 /*
- * Net VSC send receive completion
+ * Net VSC on receive completion
+ *
+ * Send a receive completion packet to RNDIS device (ie NetVsp)
  */
 static void
-hv_nv_send_receive_completion(struct hv_device *device, uint64_t tid)
+hv_nv_on_receive_completion(struct vmbus_channel *chan, uint64_t tid)
 {
-	nvsp_msg rx_comp_msg;
+	struct hn_nvs_rndis_ack ack;
 	int retries = 0;
 	int ret = 0;
 	
-	rx_comp_msg.hdr.msg_type = nvsp_msg_1_type_send_rndis_pkt_complete;
-
-	/* Pass in the status */
-	rx_comp_msg.msgs.vers_1_msgs.send_rndis_pkt_complete.status =
-	    nvsp_status_success;
+	ack.nvs_type = HN_NVS_TYPE_RNDIS_ACK;
+	ack.nvs_status = HN_NVS_STATUS_OK;
 
 retry_send_cmplt:
 	/* Send the completion */
-	ret = hv_vmbus_channel_send_packet(device->channel, &rx_comp_msg,
-	    sizeof(nvsp_msg), tid, HV_VMBUS_PACKET_TYPE_COMPLETION, 0);
+	ret = vmbus_chan_send(chan, VMBUS_CHANPKT_TYPE_COMP,
+	    VMBUS_CHANPKT_FLAG_NONE, &ack, sizeof(ack), tid);
 	if (ret == 0) {
 		/* success */
 		/* no-op */
@@ -1031,114 +816,82 @@ retry_send_cmplt:
 	}
 }
 
-/*
- * Net VSC on receive completion
- *
- * Send a receive completion packet to RNDIS device (ie NetVsp)
- */
-void
-hv_nv_on_receive_completion(void *context)
+static void
+hn_proc_notify(struct hn_softc *sc, const struct vmbus_chanpkt_hdr *pkt)
 {
-	netvsc_packet *packet = (netvsc_packet *)context;
-	struct hv_device *device = (struct hv_device *)packet->device;
-	netvsc_dev    *net_dev;
-	uint64_t       tid = 0;
-	boolean_t send_rx_completion = FALSE;
+	const struct hn_nvs_hdr *hdr;
 
-	/*
-	 * Even though it seems logical to do a hv_nv_get_outbound_net_device()
-	 * here to send out receive completion, we are using
-	 * hv_nv_get_inbound_net_device() since we may have disabled
-	 * outbound traffic already.
-	 */
-	net_dev = hv_nv_get_inbound_net_device(device);
-	if (net_dev == NULL)
+	hdr = VMBUS_CHANPKT_CONST_DATA(pkt);
+	if (hdr->nvs_type == HN_NVS_TYPE_TXTBL_NOTE) {
+		/* Useless; ignore */
 		return;
-	
-	/* Overloading use of the lock. */
-	mtx_lock_spin(&net_dev->rx_pkt_list_lock);
-
-	packet->xfer_page_pkt->count--;
-
-	/*
-	 * Last one in the line that represent 1 xfer page packet.
-	 * Return the xfer page packet itself to the free list.
-	 */
-	if (packet->xfer_page_pkt->count == 0) {
-		send_rx_completion = TRUE;
-		tid = packet->compl.rx.rx_completion_tid;
-		STAILQ_INSERT_TAIL(&net_dev->myrx_packet_list,
-		    (netvsc_packet *)(packet->xfer_page_pkt), mylist_entry);
 	}
-
-	/* Put the packet back on the free list */
-	STAILQ_INSERT_TAIL(&net_dev->myrx_packet_list, packet, mylist_entry);
-	mtx_unlock_spin(&net_dev->rx_pkt_list_lock);
-
-	/* Send a receive completion for the xfer page packet */
-	if (send_rx_completion)
-		hv_nv_send_receive_completion(device, tid);
+	if_printf(sc->hn_ifp, "got notify, nvs type %u\n", hdr->nvs_type);
 }
 
 /*
  * Net VSC on channel callback
  */
 static void
-hv_nv_on_channel_callback(void *context)
+hv_nv_on_channel_callback(struct vmbus_channel *chan, void *xrxr)
 {
-	/* Fixme:  Magic number */
-	const int net_pkt_size = 2048;
-	struct hv_device *device = (struct hv_device *)context;
-	netvsc_dev *net_dev;
-	uint32_t bytes_rxed;
-	uint64_t request_id;
-	uint8_t  *packet;
-	hv_vm_packet_descriptor *desc;
-	uint8_t *buffer;
-	int     bufferlen = net_pkt_size;
-	int     ret = 0;
+	struct hn_rx_ring *rxr = xrxr;
+	struct hn_softc *sc = rxr->hn_ifp->if_softc;
+	void *buffer;
+	int bufferlen = NETVSC_PACKET_SIZE;
 
-	packet = malloc(net_pkt_size * sizeof(uint8_t), M_DEVBUF, M_NOWAIT);
-	if (!packet)
-		return;
-
-	buffer = packet;
-
-	net_dev = hv_nv_get_inbound_net_device(device);
-	if (net_dev == NULL)
-		goto out;
-
+	buffer = rxr->hn_rdbuf;
 	do {
-		ret = hv_vmbus_channel_recv_packet_raw(device->channel,
-		    buffer, bufferlen, &bytes_rxed, &request_id);
+		struct vmbus_chanpkt_hdr *pkt = buffer;
+		uint32_t bytes_rxed;
+		int ret;
+
+		bytes_rxed = bufferlen;
+		ret = vmbus_chan_recv_pkt(chan, pkt, &bytes_rxed);
 		if (ret == 0) {
 			if (bytes_rxed > 0) {
-				desc = (hv_vm_packet_descriptor *)buffer;
-				switch (desc->type) {
-				case HV_VMBUS_PACKET_TYPE_COMPLETION:
-					hv_nv_on_send_completion(device, desc);
+				switch (pkt->cph_type) {
+				case VMBUS_CHANPKT_TYPE_COMP:
+					hv_nv_on_send_completion(sc, chan, pkt);
 					break;
-				case HV_VMBUS_PACKET_TYPE_DATA_USING_TRANSFER_PAGES:
-					hv_nv_on_receive(device, desc);
+				case VMBUS_CHANPKT_TYPE_RXBUF:
+					hv_nv_on_receive(sc, rxr, chan, pkt);
+					break;
+				case VMBUS_CHANPKT_TYPE_INBAND:
+					hn_proc_notify(sc, pkt);
 					break;
 				default:
+					if_printf(rxr->hn_ifp,
+					    "unknown chan pkt %u\n",
+					    pkt->cph_type);
 					break;
 				}
-			} else {
-				break;
 			}
 		} else if (ret == ENOBUFS) {
 			/* Handle large packet */
-			free(buffer, M_DEVBUF);
-			buffer = malloc(bytes_rxed, M_DEVBUF, M_NOWAIT);
+			if (bufferlen > NETVSC_PACKET_SIZE) {
+				free(buffer, M_NETVSC);
+				buffer = NULL;
+			}
+
+			/* alloc new buffer */
+			buffer = malloc(bytes_rxed, M_NETVSC, M_NOWAIT);
 			if (buffer == NULL) {
+				if_printf(rxr->hn_ifp,
+				    "hv_cb malloc buffer failed, len=%u\n",
+				    bytes_rxed);
+				bufferlen = 0;
 				break;
 			}
 			bufferlen = bytes_rxed;
+		} else {
+			/* No more packets */
+			break;
 		}
 	} while (1);
 
-out:
-	free(buffer, M_DEVBUF);
-}
+	if (bufferlen > NETVSC_PACKET_SIZE)
+		free(buffer, M_NETVSC);
 
+	hv_rf_channel_rollup(rxr, rxr->hn_txr);
+}

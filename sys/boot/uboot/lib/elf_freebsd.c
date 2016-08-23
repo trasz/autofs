@@ -31,6 +31,10 @@ __FBSDID("$FreeBSD$");
 #include <sys/param.h>
 #include <sys/linker.h>
 
+#ifdef __mips__
+#include <sys/proc.h>
+#include <machine/frame.h>
+#endif
 #include <machine/md_var.h>
 #include <machine/metadata.h>
 #include <machine/elf.h>
@@ -80,8 +84,8 @@ __elfN(uboot_exec)(struct preloaded_file *fp)
 	if ((error = md_load(fp->f_args, &mdp)) != 0)
 		return (error);
 
-	entry = uboot_vm_translate(e->e_entry);
-	printf("Kernel entry at 0x%x...\n", (unsigned)entry);
+	entry = (void *)e->e_entry;
+	printf("Kernel entry at %p...\n", entry);
 
 	dev_cleanup();
 	printf("Kernel args: %s\n", fp->f_args);

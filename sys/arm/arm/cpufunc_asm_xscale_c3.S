@@ -73,6 +73,7 @@
  * XScale core 3 assembly functions for CPU / MMU / TLB specific operations
  */
 
+#include <machine/armreg.h>
 #include <machine/asm.h>
 __FBSDID("$FreeBSD$");
 
@@ -80,9 +81,6 @@ __FBSDID("$FreeBSD$");
  * Size of the XScale core D-cache.
  */
 #define	DCACHE_SIZE		0x00008000
-
-.Lblock_userspace_access:
-	.word	_C_LABEL(block_userspace_access)
 
 /*
  * CPWAIT -- Canonical method to wait for CP15 update.
@@ -122,28 +120,19 @@ __FBSDID("$FreeBSD$");
 #define	XSCALE_CACHE_CLEAN_BLOCK					\
 	stmfd	sp!, {r4}					;	\
 	mrs	r4, cpsr					;	\
-	orr	r0, r4, #(I32_bit | F32_bit)			;	\
+	orr	r0, r4, #(PSR_I | PSR_F)			;	\
 	msr	cpsr_fsxc, r0
 
 #define	XSCALE_CACHE_CLEAN_UNBLOCK					\
 	msr	cpsr_fsxc, r4					;	\
 	ldmfd	sp!, {r4}
 #else
-#define	XSCALE_CACHE_CLEAN_BLOCK					\
-	stmfd	sp!, {r4}					;	\
-	ldr	r4, .Lblock_userspace_access			;	\
-	ldr	ip, [r4]					;	\
-	orr	r0, ip, #1					;	\
-	str	r0, [r4]	
-
-#define	XSCALE_CACHE_CLEAN_UNBLOCK					\
-	str	ip, [r3]					;	\
-	ldmfd	sp!, {r4}
+#define	XSCALE_CACHE_CLEAN_BLOCK
+#define	XSCALE_CACHE_CLEAN_UNBLOCK
 #endif /* CACHE_CLEAN_BLOCK_INTR */
 
 
 ENTRY_NP(xscalec3_cache_syncI)
-xscalec3_cache_purgeID:
 EENTRY_NP(xscalec3_cache_purgeID)
 	mcr	p15, 0, r0, c7, c5, 0	/* flush I cache (D cleaned below) */
 EENTRY_NP(xscalec3_cache_cleanID)
@@ -217,7 +206,7 @@ ENTRY(xscalec3_cache_syncI_rng)
 
 	CPWAIT_AND_RETURN(r0)
 END(xscalec3_cache_syncI_rng)
-	
+
 ENTRY(xscalec3_cache_purgeD_rng)
 
 	cmp	r1, #0x4000
@@ -350,13 +339,8 @@ END(xscalec3_l2cache_flush_rng)
 ENTRY(xscalec3_setttb)
 #ifdef CACHE_CLEAN_BLOCK_INTR
 	mrs	r3, cpsr
-	orr	r1, r3, #(I32_bit | F32_bit)
+	orr	r1, r3, #(PSR_I | PSR_F)
 	msr	cpsr_fsxc, r1
-#else
-	ldr	r3, .Lblock_userspace_access
-	ldr	r2, [r3]
-	orr	r1, r2, #1
-	str	r1, [r3]
 #endif
 	stmfd	sp!, {r0-r3, lr}
 	bl	_C_LABEL(xscalec3_cache_cleanID)

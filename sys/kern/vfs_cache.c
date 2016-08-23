@@ -39,6 +39,7 @@ __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/counter.h>
 #include <sys/filedesc.h>
 #include <sys/fnv_hash.h>
 #include <sys/kernel.h>
@@ -149,7 +150,7 @@ struct	namecache_ts {
  */
 
 /*
- * Structures associated with name cacheing.
+ * Structures associated with name caching.
  */
 #define NCHHASH(hash) \
 	(&nchashtbl[(hash) & nchash])
@@ -170,7 +171,7 @@ SYSCTL_ULONG(_debug, OID_AUTO, numcache, CTLFLAG_RD, &numcache, 0,
 static u_long	numcachehv;		/* number of cache entries with vnodes held */
 SYSCTL_ULONG(_debug, OID_AUTO, numcachehv, CTLFLAG_RD, &numcachehv, 0,
     "Number of namecache entries with vnodes held");
-static u_int	ncsizefactor = 2;
+u_int	ncsizefactor = 2;
 SYSCTL_UINT(_vfs, OID_AUTO, ncsizefactor, CTLFLAG_RW, &ncsizefactor, 0,
     "Size factor for namecache");
 
@@ -264,7 +265,7 @@ SYSCTL_INT(_debug, OID_AUTO, vfscache, CTLFLAG_RW, &doingcache, 0,
     "VFS namecache enabled");
 
 /* Export size information to userland */
-SYSCTL_INT(_debug_sizeof, OID_AUTO, namecache, CTLFLAG_RD, 0,
+SYSCTL_INT(_debug_sizeof, OID_AUTO, namecache, CTLFLAG_RD, SYSCTL_NULL_INT_PTR,
     sizeof(struct namecache), "sizeof(struct namecache)");
 
 /*
@@ -272,38 +273,34 @@ SYSCTL_INT(_debug_sizeof, OID_AUTO, namecache, CTLFLAG_RD, 0,
  */
 static SYSCTL_NODE(_vfs, OID_AUTO, cache, CTLFLAG_RW, 0,
     "Name cache statistics");
-#define STATNODE(mode, name, var, descr) \
-	SYSCTL_ULONG(_vfs_cache, OID_AUTO, name, mode, var, 0, descr);
-STATNODE(CTLFLAG_RD, numneg, &numneg, "Number of negative cache entries");
-STATNODE(CTLFLAG_RD, numcache, &numcache, "Number of cache entries");
-static u_long numcalls; STATNODE(CTLFLAG_RD, numcalls, &numcalls,
-    "Number of cache lookups");
-static u_long dothits; STATNODE(CTLFLAG_RD, dothits, &dothits,
-    "Number of '.' hits");
-static u_long dotdothits; STATNODE(CTLFLAG_RD, dotdothits, &dotdothits,
-    "Number of '..' hits");
-static u_long numchecks; STATNODE(CTLFLAG_RD, numchecks, &numchecks,
-    "Number of checks in lookup");
-static u_long nummiss; STATNODE(CTLFLAG_RD, nummiss, &nummiss,
-    "Number of cache misses");
-static u_long nummisszap; STATNODE(CTLFLAG_RD, nummisszap, &nummisszap,
-    "Number of cache misses we do not want to cache");
-static u_long numposzaps; STATNODE(CTLFLAG_RD, numposzaps, &numposzaps, 
+#define STATNODE_ULONG(name, descr)	\
+	SYSCTL_ULONG(_vfs_cache, OID_AUTO, name, CTLFLAG_RD, &name, 0, descr);
+#define STATNODE_COUNTER(name, descr)	\
+	static counter_u64_t name;	\
+	SYSCTL_COUNTER_U64(_vfs_cache, OID_AUTO, name, CTLFLAG_RD, &name, descr);
+STATNODE_ULONG(numneg, "Number of negative cache entries");
+STATNODE_ULONG(numcache, "Number of cache entries");
+STATNODE_COUNTER(numcalls, "Number of cache lookups");
+STATNODE_COUNTER(dothits, "Number of '.' hits");
+STATNODE_COUNTER(dotdothits, "Number of '..' hits");
+STATNODE_COUNTER(numchecks, "Number of checks in lookup");
+STATNODE_COUNTER(nummiss, "Number of cache misses");
+STATNODE_COUNTER(nummisszap, "Number of cache misses we do not want to cache");
+STATNODE_COUNTER(numposzaps,
     "Number of cache hits (positive) we do not want to cache");
-static u_long numposhits; STATNODE(CTLFLAG_RD, numposhits, &numposhits,
-    "Number of cache hits (positive)");
-static u_long numnegzaps; STATNODE(CTLFLAG_RD, numnegzaps, &numnegzaps,
+STATNODE_COUNTER(numposhits, "Number of cache hits (positive)");
+STATNODE_COUNTER(numnegzaps,
     "Number of cache hits (negative) we do not want to cache");
-static u_long numneghits; STATNODE(CTLFLAG_RD, numneghits, &numneghits,
-    "Number of cache hits (negative)");
-static u_long numupgrades; STATNODE(CTLFLAG_RD, numupgrades, &numupgrades,
+STATNODE_COUNTER(numneghits, "Number of cache hits (negative)");
+/* These count for kern___getcwd(), too. */
+STATNODE_COUNTER(numfullpathcalls, "Number of fullpath search calls");
+STATNODE_COUNTER(numfullpathfail1, "Number of fullpath search errors (ENOTDIR)");
+STATNODE_COUNTER(numfullpathfail2,
+    "Number of fullpath search errors (VOP_VPTOCNP failures)");
+STATNODE_COUNTER(numfullpathfail4, "Number of fullpath search errors (ENOMEM)");
+STATNODE_COUNTER(numfullpathfound, "Number of successful fullpath calls");
+static long numupgrades; STATNODE_ULONG(numupgrades,
     "Number of updates of the cache after lookup (write lock + retry)");
-
-SYSCTL_OPAQUE(_vfs_cache, OID_AUTO, nchstats, CTLFLAG_RD | CTLFLAG_MPSAFE,
-    &nchstats, sizeof(nchstats), "LU",
-    "VFS cache effectiveness statistics");
-
-
 
 static void cache_zap(struct namecache *ncp);
 static int vn_vptocnp_locked(struct vnode **vp, struct ucred *cred, char *buf,
@@ -312,6 +309,38 @@ static int vn_fullpath1(struct thread *td, struct vnode *vp, struct vnode *rdir,
     char *buf, char **retbuf, u_int buflen);
 
 static MALLOC_DEFINE(M_VFSCACHE, "vfscache", "VFS name cache entries");
+
+static uint32_t
+cache_get_hash(char *name, u_char len, struct vnode *dvp)
+{
+	uint32_t hash;
+
+	hash = fnv_32_buf(name, len, FNV1_32_INIT);
+	hash = fnv_32_buf(&dvp, sizeof(dvp), hash);
+	return (hash);
+}
+
+static int
+sysctl_nchstats(SYSCTL_HANDLER_ARGS)
+{
+	struct nchstats snap;
+
+	if (req->oldptr == NULL)
+		return (SYSCTL_OUT(req, 0, sizeof(snap)));
+
+	snap = nchstats;
+	snap.ncs_goodhits = counter_u64_fetch(numposhits);
+	snap.ncs_neghits = counter_u64_fetch(numneghits);
+	snap.ncs_badhits = counter_u64_fetch(numposzaps) +
+	    counter_u64_fetch(numnegzaps);
+	snap.ncs_miss = counter_u64_fetch(nummisszap) +
+	    counter_u64_fetch(nummiss);
+
+	return (SYSCTL_OUT(req, &snap, sizeof(snap)));
+}
+SYSCTL_PROC(_vfs_cache, OID_AUTO, nchstats, CTLTYPE_OPAQUE | CTLFLAG_RD |
+    CTLFLAG_MPSAFE, 0, 0, sysctl_nchstats, "LU",
+    "VFS cache effectiveness statistics");
 
 #ifdef DIAGNOSTIC
 /*
@@ -323,29 +352,31 @@ static SYSCTL_NODE(_debug, OID_AUTO, hashstat, CTLFLAG_RW, NULL,
 static int
 sysctl_debug_hashstat_rawnchash(SYSCTL_HANDLER_ARGS)
 {
-	int error;
 	struct nchashhead *ncpp;
 	struct namecache *ncp;
-	int n_nchash;
-	int count;
+	int i, error, n_nchash, *cntbuf;
 
+retry:
 	n_nchash = nchash + 1;	/* nchash is max index, not count */
-	if (!req->oldptr)
+	if (req->oldptr == NULL)
 		return SYSCTL_OUT(req, 0, n_nchash * sizeof(int));
-
-	/* Scan hash tables for applicable entries */
-	for (ncpp = nchashtbl; n_nchash > 0; n_nchash--, ncpp++) {
-		CACHE_RLOCK();
-		count = 0;
-		LIST_FOREACH(ncp, ncpp, nc_hash) {
-			count++;
-		}
+	cntbuf = malloc(n_nchash * sizeof(int), M_TEMP, M_ZERO | M_WAITOK);
+	CACHE_RLOCK();
+	if (n_nchash != nchash + 1) {
 		CACHE_RUNLOCK();
-		error = SYSCTL_OUT(req, &count, sizeof(count));
-		if (error)
-			return (error);
+		free(cntbuf, M_TEMP);
+		goto retry;
 	}
-	return (0);
+	/* Scan hash tables counting entries */
+	for (ncpp = nchashtbl, i = 0; i < n_nchash; ncpp++, i++)
+		LIST_FOREACH(ncp, ncpp, nc_hash)
+			cntbuf[i]++;
+	CACHE_RUNLOCK();
+	for (error = 0, i = 0; i < n_nchash; i++)
+		if ((error = SYSCTL_OUT(req, &cntbuf[i], sizeof(int))) != 0)
+			break;
+	free(cntbuf, M_TEMP);
+	return (error);
 }
 SYSCTL_PROC(_debug_hashstat, OID_AUTO, rawnchash, CTLTYPE_INT|CTLFLAG_RD|
     CTLFLAG_MPSAFE, 0, 0, sysctl_debug_hashstat_rawnchash, "S,int",
@@ -363,6 +394,7 @@ sysctl_debug_hashstat_nchash(SYSCTL_HANDLER_ARGS)
 	if (!req->oldptr)
 		return SYSCTL_OUT(req, 0, 4 * sizeof(int));
 
+	CACHE_RLOCK();
 	n_nchash = nchash + 1;	/* nchash is max index, not count */
 	used = 0;
 	maxlength = 0;
@@ -370,17 +402,16 @@ sysctl_debug_hashstat_nchash(SYSCTL_HANDLER_ARGS)
 	/* Scan hash tables for applicable entries */
 	for (ncpp = nchashtbl; n_nchash > 0; n_nchash--, ncpp++) {
 		count = 0;
-		CACHE_RLOCK();
 		LIST_FOREACH(ncp, ncpp, nc_hash) {
 			count++;
 		}
-		CACHE_RUNLOCK();
 		if (count)
 			used++;
 		if (maxlength < count)
 			maxlength = count;
 	}
 	n_nchash = nchash + 1;
+	CACHE_RUNLOCK();
 	pct = (used * 100) / (n_nchash / 100);
 	error = SYSCTL_OUT(req, &n_nchash, sizeof(n_nchash));
 	if (error)
@@ -408,22 +439,19 @@ SYSCTL_PROC(_debug_hashstat, OID_AUTO, nchash, CTLTYPE_INT|CTLFLAG_RD|
  *   pointer to a vnode or if it is just a negative cache entry.
  */
 static void
-cache_zap(ncp)
-	struct namecache *ncp;
+cache_zap(struct namecache *ncp)
 {
 	struct vnode *vp;
 
 	rw_assert(&cache_lock, RA_WLOCKED);
 	CTR2(KTR_VFS, "cache_zap(%p) vp %p", ncp, ncp->nc_vp);
-#ifdef KDTRACE_HOOKS
 	if (ncp->nc_vp != NULL) {
-		SDT_PROBE(vfs, namecache, zap, done, ncp->nc_dvp,
-		    nc_get_name(ncp), ncp->nc_vp, 0, 0);
+		SDT_PROBE3(vfs, namecache, zap, done, ncp->nc_dvp,
+		    nc_get_name(ncp), ncp->nc_vp);
 	} else {
-		SDT_PROBE(vfs, namecache, zap_negative, done, ncp->nc_dvp,
-		    nc_get_name(ncp), 0, 0, 0);
+		SDT_PROBE2(vfs, namecache, zap_negative, done, ncp->nc_dvp,
+		    nc_get_name(ncp));
 	}
-#endif
 	vp = NULL;
 	LIST_REMOVE(ncp, nc_hash);
 	if (ncp->nc_flag & NCF_ISDOTDOT) {
@@ -446,7 +474,7 @@ cache_zap(ncp)
 	}
 	numcache--;
 	cache_free(ncp);
-	if (vp)
+	if (vp != NULL)
 		vdrop(vp);
 }
 
@@ -457,7 +485,7 @@ cache_zap(ncp)
  * cnp pointing to the name of the entry being sought. If the lookup
  * succeeds, the vnode is returned in *vpp, and a status of -1 is
  * returned. If the lookup determines that the name does not exist
- * (negative cacheing), a status of ENOENT is returned. If the lookup
+ * (negative caching), a status of ENOENT is returned. If the lookup
  * fails, a status of zero is returned.  If the directory vnode is
  * recycled out from under us due to a forced unmount, a status of
  * ENOENT is returned.
@@ -468,12 +496,8 @@ cache_zap(ncp)
  */
 
 int
-cache_lookup(dvp, vpp, cnp, tsp, ticksp)
-	struct vnode *dvp;
-	struct vnode **vpp;
-	struct componentname *cnp;
-	struct timespec *tsp;
-	int *ticksp;
+cache_lookup(struct vnode *dvp, struct vnode **vpp, struct componentname *cnp,
+    struct timespec *tsp, int *ticksp)
 {
 	struct namecache *ncp;
 	uint32_t hash;
@@ -484,9 +508,8 @@ cache_lookup(dvp, vpp, cnp, tsp, ticksp)
 		return (0);
 	}
 retry:
-	CACHE_RLOCK();
 	wlocked = 0;
-	numcalls++;
+	counter_u64_add(numcalls, 1);
 	error = 0;
 
 retry_wlocked:
@@ -495,20 +518,39 @@ retry_wlocked:
 			*vpp = dvp;
 			CTR2(KTR_VFS, "cache_lookup(%p, %s) found via .",
 			    dvp, cnp->cn_nameptr);
-			dothits++;
-			SDT_PROBE(vfs, namecache, lookup, hit, dvp, ".",
-			    *vpp, 0, 0);
+			counter_u64_add(dothits, 1);
+			SDT_PROBE3(vfs, namecache, lookup, hit, dvp, ".", *vpp);
 			if (tsp != NULL)
 				timespecclear(tsp);
 			if (ticksp != NULL)
 				*ticksp = ticks;
-			goto success;
+			VREF(*vpp);
+			/*
+			 * When we lookup "." we still can be asked to lock it
+			 * differently...
+			 */
+			ltype = cnp->cn_lkflags & LK_TYPE_MASK;
+			if (ltype != VOP_ISLOCKED(*vpp)) {
+				if (ltype == LK_EXCLUSIVE) {
+					vn_lock(*vpp, LK_UPGRADE | LK_RETRY);
+					if ((*vpp)->v_iflag & VI_DOOMED) {
+						/* forced unmount */
+						vrele(*vpp);
+						*vpp = NULL;
+						return (ENOENT);
+					}
+				} else
+					vn_lock(*vpp, LK_DOWNGRADE | LK_RETRY);
+			}
+			return (-1);
 		}
+		if (!wlocked)
+			CACHE_RLOCK();
 		if (cnp->cn_namelen == 2 && cnp->cn_nameptr[1] == '.') {
-			dotdothits++;
+			counter_u64_add(dotdothits, 1);
 			if (dvp->v_cache_dd == NULL) {
-				SDT_PROBE(vfs, namecache, lookup, miss, dvp,
-				    "..", NULL, 0, 0);
+				SDT_PROBE3(vfs, namecache, lookup, miss, dvp,
+				    "..", NULL);
 				goto unlock;
 			}
 			if ((cnp->cn_flags & MAKEENTRY) == 0) {
@@ -530,8 +572,8 @@ retry_wlocked:
 				goto negative_success;
 			CTR3(KTR_VFS, "cache_lookup(%p, %s) found %p via ..",
 			    dvp, cnp->cn_nameptr, *vpp);
-			SDT_PROBE(vfs, namecache, lookup, hit, dvp, "..",
-			    *vpp, 0, 0);
+			SDT_PROBE3(vfs, namecache, lookup, hit, dvp, "..",
+			    *vpp);
 			cache_out_ts(ncp, tsp, ticksp);
 			if ((ncp->nc_flag & (NCF_ISDOTDOT | NCF_DTS)) ==
 			    NCF_DTS && tsp != NULL)
@@ -539,12 +581,12 @@ retry_wlocked:
 				    nc_dotdottime;
 			goto success;
 		}
-	}
+	} else if (!wlocked)
+		CACHE_RLOCK();
 
-	hash = fnv_32_buf(cnp->cn_nameptr, cnp->cn_namelen, FNV1_32_INIT);
-	hash = fnv_32_buf(&dvp, sizeof(dvp), hash);
+	hash = cache_get_hash(cnp->cn_nameptr, cnp->cn_namelen, dvp);
 	LIST_FOREACH(ncp, (NCHHASH(hash)), nc_hash) {
-		numchecks++;
+		counter_u64_add(numchecks, 1);
 		if (ncp->nc_dvp == dvp && ncp->nc_nlen == cnp->cn_namelen &&
 		    !bcmp(nc_get_name(ncp), cnp->cn_nameptr, ncp->nc_nlen))
 			break;
@@ -552,21 +594,19 @@ retry_wlocked:
 
 	/* We failed to find an entry */
 	if (ncp == NULL) {
-		SDT_PROBE(vfs, namecache, lookup, miss, dvp, cnp->cn_nameptr,
-		    NULL, 0, 0);
+		SDT_PROBE3(vfs, namecache, lookup, miss, dvp, cnp->cn_nameptr,
+		    NULL);
 		if ((cnp->cn_flags & MAKEENTRY) == 0) {
-			nummisszap++;
+			counter_u64_add(nummisszap, 1);
 		} else {
-			nummiss++;
+			counter_u64_add(nummiss, 1);
 		}
-		nchstats.ncs_miss++;
 		goto unlock;
 	}
 
 	/* We don't want to have an entry, so dump it */
 	if ((cnp->cn_flags & MAKEENTRY) == 0) {
-		numposzaps++;
-		nchstats.ncs_badhits++;
+		counter_u64_add(numposzaps, 1);
 		if (!wlocked && !CACHE_UPGRADE_LOCK())
 			goto wlock;
 		cache_zap(ncp);
@@ -576,13 +616,12 @@ retry_wlocked:
 
 	/* We found a "positive" match, return the vnode */
 	if (ncp->nc_vp) {
-		numposhits++;
-		nchstats.ncs_goodhits++;
+		counter_u64_add(numposhits, 1);
 		*vpp = ncp->nc_vp;
 		CTR4(KTR_VFS, "cache_lookup(%p, %s) found %p via ncp %p",
 		    dvp, cnp->cn_nameptr, *vpp, ncp);
-		SDT_PROBE(vfs, namecache, lookup, hit, dvp, nc_get_name(ncp),
-		    *vpp, 0, 0);
+		SDT_PROBE3(vfs, namecache, lookup, hit, dvp, nc_get_name(ncp),
+		    *vpp);
 		cache_out_ts(ncp, tsp, ticksp);
 		goto success;
 	}
@@ -590,8 +629,7 @@ retry_wlocked:
 negative_success:
 	/* We found a negative match, and want to create it, so purge */
 	if (cnp->cn_nameiop == CREATE) {
-		numnegzaps++;
-		nchstats.ncs_badhits++;
+		counter_u64_add(numnegzaps, 1);
 		if (!wlocked && !CACHE_UPGRADE_LOCK())
 			goto wlock;
 		cache_zap(ncp);
@@ -601,7 +639,7 @@ negative_success:
 
 	if (!wlocked && !CACHE_UPGRADE_LOCK())
 		goto wlock;
-	numneghits++;
+	counter_u64_add(numneghits, 1);
 	/*
 	 * We found a "negative" match, so we shift it to the end of
 	 * the "negative" cache entries queue to satisfy LRU.  Also,
@@ -610,11 +648,10 @@ negative_success:
 	 */
 	TAILQ_REMOVE(&ncneg, ncp, nc_dst);
 	TAILQ_INSERT_TAIL(&ncneg, ncp, nc_dst);
-	nchstats.ncs_neghits++;
 	if (ncp->nc_flag & NCF_WHITE)
 		cnp->cn_flags |= ISWHITEOUT;
-	SDT_PROBE(vfs, namecache, lookup, hit__negative, dvp, nc_get_name(ncp),
-	    0, 0, 0);
+	SDT_PROBE2(vfs, namecache, lookup, hit__negative, dvp,
+	    nc_get_name(ncp));
 	cache_out_ts(ncp, tsp, ticksp);
 	CACHE_WUNLOCK();
 	return (ENOENT);
@@ -635,42 +672,18 @@ success:
 	 * On success we return a locked and ref'd vnode as per the lookup
 	 * protocol.
 	 */
-	if (dvp == *vpp) {   /* lookup on "." */
-		VREF(*vpp);
-		if (wlocked)
-			CACHE_WUNLOCK();
-		else
-			CACHE_RUNLOCK();
-		/*
-		 * When we lookup "." we still can be asked to lock it
-		 * differently...
-		 */
-		ltype = cnp->cn_lkflags & LK_TYPE_MASK;
-		if (ltype != VOP_ISLOCKED(*vpp)) {
-			if (ltype == LK_EXCLUSIVE) {
-				vn_lock(*vpp, LK_UPGRADE | LK_RETRY);
-				if ((*vpp)->v_iflag & VI_DOOMED) {
-					/* forced unmount */
-					vrele(*vpp);
-					*vpp = NULL;
-					return (ENOENT);
-				}
-			} else
-				vn_lock(*vpp, LK_DOWNGRADE | LK_RETRY);
-		}
-		return (-1);
-	}
+	MPASS(dvp != *vpp);
 	ltype = 0;	/* silence gcc warning */
 	if (cnp->cn_flags & ISDOTDOT) {
 		ltype = VOP_ISLOCKED(dvp);
 		VOP_UNLOCK(dvp, 0);
 	}
-	VI_LOCK(*vpp);
+	vhold(*vpp);
 	if (wlocked)
 		CACHE_WUNLOCK();
 	else
 		CACHE_RUNLOCK();
-	error = vget(*vpp, cnp->cn_lkflags | LK_INTERLOCK, cnp->cn_thread);
+	error = vget(*vpp, cnp->cn_lkflags | LK_VNHELD, cnp->cn_thread);
 	if (cnp->cn_flags & ISDOTDOT) {
 		vn_lock(dvp, ltype | LK_RETRY);
 		if (dvp->v_iflag & VI_DOOMED) {
@@ -702,20 +715,14 @@ unlock:
  * Add an entry to the cache.
  */
 void
-cache_enter_time(dvp, vp, cnp, tsp, dtsp)
-	struct vnode *dvp;
-	struct vnode *vp;
-	struct componentname *cnp;
-	struct timespec *tsp;
-	struct timespec *dtsp;
+cache_enter_time(struct vnode *dvp, struct vnode *vp, struct componentname *cnp,
+    struct timespec *tsp, struct timespec *dtsp)
 {
 	struct namecache *ncp, *n2;
 	struct namecache_ts *n3;
 	struct nchashhead *ncpp;
 	uint32_t hash;
 	int flag;
-	int hold;
-	int zap;
 	int len;
 
 	CTR3(KTR_VFS, "cache_enter(%p, %p, %s)", dvp, vp, cnp->cn_nameptr);
@@ -767,15 +774,11 @@ cache_enter_time(dvp, vp, cnp, tsp, dtsp)
 				return;
 			}
 			dvp->v_cache_dd = NULL;
-			SDT_PROBE(vfs, namecache, enter, done, dvp, "..", vp,
-			    0, 0);
+			SDT_PROBE3(vfs, namecache, enter, done, dvp, "..", vp);
 			CACHE_WUNLOCK();
 			flag = NCF_ISDOTDOT;
 		}
 	}
-
-	hold = 0;
-	zap = 0;
 
 	/*
 	 * Calculate the hash key and setup as much of the new
@@ -796,9 +799,8 @@ cache_enter_time(dvp, vp, cnp, tsp, dtsp)
 		}
 	}
 	len = ncp->nc_nlen = cnp->cn_namelen;
-	hash = fnv_32_buf(cnp->cn_nameptr, len, FNV1_32_INIT);
+	hash = cache_get_hash(cnp->cn_nameptr, len, dvp);
 	strlcpy(nc_get_name(ncp), cnp->cn_nameptr, len + 1);
-	hash = fnv_32_buf(&dvp, sizeof(dvp), hash);
 	CACHE_WLOCK();
 
 	/*
@@ -838,9 +840,9 @@ cache_enter_time(dvp, vp, cnp, tsp, dtsp)
 		 * has populated v_cache_dd pointer already.
 		 */
 		if (dvp->v_cache_dd != NULL) {
-		    CACHE_WUNLOCK();
-		    cache_free(ncp);
-		    return;
+			CACHE_WUNLOCK();
+			cache_free(ncp);
+			return;
 		}
 		KASSERT(vp == NULL || vp->v_type == VDIR,
 		    ("wrong vnode type %p", vp));
@@ -848,24 +850,22 @@ cache_enter_time(dvp, vp, cnp, tsp, dtsp)
 	}
 
 	numcache++;
-	if (!vp) {
-		numneg++;
-		if (cnp->cn_flags & ISWHITEOUT)
-			ncp->nc_flag |= NCF_WHITE;
-	} else if (vp->v_type == VDIR) {
-		if (flag != NCF_ISDOTDOT) {
-			/*
-			 * For this case, the cache entry maps both the
-			 * directory name in it and the name ".." for the
-			 * directory's parent.
-			 */
-			if ((n2 = vp->v_cache_dd) != NULL &&
-			    (n2->nc_flag & NCF_ISDOTDOT) != 0)
-				cache_zap(n2);
-			vp->v_cache_dd = ncp;
+	if (vp != NULL) {
+		if (vp->v_type == VDIR) {
+			if (flag != NCF_ISDOTDOT) {
+				/*
+				 * For this case, the cache entry maps both the
+				 * directory name in it and the name ".." for the
+				 * directory's parent.
+				 */
+				if ((n2 = vp->v_cache_dd) != NULL &&
+				    (n2->nc_flag & NCF_ISDOTDOT) != 0)
+					cache_zap(n2);
+				vp->v_cache_dd = ncp;
+			}
+		} else {
+			vp->v_cache_dd = NULL;
 		}
-	} else {
-		vp->v_cache_dd = NULL;
 	}
 
 	/*
@@ -875,7 +875,7 @@ cache_enter_time(dvp, vp, cnp, tsp, dtsp)
 	LIST_INSERT_HEAD(ncpp, ncp, nc_hash);
 	if (flag != NCF_ISDOTDOT) {
 		if (LIST_EMPTY(&dvp->v_cache_src)) {
-			hold = 1;
+			vhold(dvp);
 			numcachehv++;
 		}
 		LIST_INSERT_HEAD(&dvp->v_cache_src, ncp, nc_src);
@@ -886,25 +886,24 @@ cache_enter_time(dvp, vp, cnp, tsp, dtsp)
 	 * "negative" cache queue, otherwise, we place it into the
 	 * destination vnode's cache entries queue.
 	 */
-	if (vp) {
+	if (vp != NULL) {
 		TAILQ_INSERT_HEAD(&vp->v_cache_dst, ncp, nc_dst);
-		SDT_PROBE(vfs, namecache, enter, done, dvp, nc_get_name(ncp),
-		    vp, 0, 0);
+		SDT_PROBE3(vfs, namecache, enter, done, dvp, nc_get_name(ncp),
+		    vp);
 	} else {
+		if (cnp->cn_flags & ISWHITEOUT)
+			ncp->nc_flag |= NCF_WHITE;
 		TAILQ_INSERT_TAIL(&ncneg, ncp, nc_dst);
-		SDT_PROBE(vfs, namecache, enter_negative, done, dvp,
-		    nc_get_name(ncp), 0, 0, 0);
+		numneg++;
+		SDT_PROBE2(vfs, namecache, enter_negative, done, dvp,
+		    nc_get_name(ncp));
 	}
 	if (numneg * ncnegfactor > numcache) {
 		ncp = TAILQ_FIRST(&ncneg);
 		KASSERT(ncp->nc_vp == NULL, ("ncp %p vp %p on ncneg",
 		    ncp, ncp->nc_vp));
-		zap = 1;
-	}
-	if (hold)
-		vhold(dvp);
-	if (zap)
 		cache_zap(ncp);
+	}
 	CACHE_WUNLOCK();
 }
 
@@ -931,20 +930,71 @@ nchinit(void *dummy __unused)
 	    NULL, NULL, NULL, NULL, UMA_ALIGN_PTR, UMA_ZONE_ZINIT);
 
 	nchashtbl = hashinit(desiredvnodes * 2, M_VFSCACHE, &nchash);
+
+	numcalls = counter_u64_alloc(M_WAITOK);
+	dothits = counter_u64_alloc(M_WAITOK);
+	dotdothits = counter_u64_alloc(M_WAITOK);
+	numchecks = counter_u64_alloc(M_WAITOK);
+	nummiss = counter_u64_alloc(M_WAITOK);
+	nummisszap = counter_u64_alloc(M_WAITOK);
+	numposzaps = counter_u64_alloc(M_WAITOK);
+	numposhits = counter_u64_alloc(M_WAITOK);
+	numnegzaps = counter_u64_alloc(M_WAITOK);
+	numneghits = counter_u64_alloc(M_WAITOK);
+	numfullpathcalls = counter_u64_alloc(M_WAITOK);
+	numfullpathfail1 = counter_u64_alloc(M_WAITOK);
+	numfullpathfail2 = counter_u64_alloc(M_WAITOK);
+	numfullpathfail4 = counter_u64_alloc(M_WAITOK);
+	numfullpathfound = counter_u64_alloc(M_WAITOK);
 }
 SYSINIT(vfs, SI_SUB_VFS, SI_ORDER_SECOND, nchinit, NULL);
 
+void
+cache_changesize(int newmaxvnodes)
+{
+	struct nchashhead *new_nchashtbl, *old_nchashtbl;
+	u_long new_nchash, old_nchash;
+	struct namecache *ncp;
+	uint32_t hash;
+	int i;
+
+	new_nchashtbl = hashinit(newmaxvnodes * 2, M_VFSCACHE, &new_nchash);
+	/* If same hash table size, nothing to do */
+	if (nchash == new_nchash) {
+		free(new_nchashtbl, M_VFSCACHE);
+		return;
+	}
+	/*
+	 * Move everything from the old hash table to the new table.
+	 * None of the namecache entries in the table can be removed
+	 * because to do so, they have to be removed from the hash table.
+	 */
+	CACHE_WLOCK();
+	old_nchashtbl = nchashtbl;
+	old_nchash = nchash;
+	nchashtbl = new_nchashtbl;
+	nchash = new_nchash;
+	for (i = 0; i <= old_nchash; i++) {
+		while ((ncp = LIST_FIRST(&old_nchashtbl[i])) != NULL) {
+			hash = cache_get_hash(nc_get_name(ncp), ncp->nc_nlen,
+			    ncp->nc_dvp);
+			LIST_REMOVE(ncp, nc_hash);
+			LIST_INSERT_HEAD(NCHHASH(hash), ncp, nc_hash);
+		}
+	}
+	CACHE_WUNLOCK();
+	free(old_nchashtbl, M_VFSCACHE);
+}
 
 /*
  * Invalidate all entries to a particular vnode.
  */
 void
-cache_purge(vp)
-	struct vnode *vp;
+cache_purge(struct vnode *vp)
 {
 
 	CTR1(KTR_VFS, "cache_purge(%p)", vp);
-	SDT_PROBE(vfs, namecache, purge, done, vp, 0, 0, 0, 0);
+	SDT_PROBE1(vfs, namecache, purge, done, vp);
 	CACHE_WLOCK();
 	while (!LIST_EMPTY(&vp->v_cache_src))
 		cache_zap(LIST_FIRST(&vp->v_cache_src));
@@ -963,13 +1013,12 @@ cache_purge(vp)
  * Invalidate all negative entries for a particular directory vnode.
  */
 void
-cache_purge_negative(vp)
-	struct vnode *vp;
+cache_purge_negative(struct vnode *vp)
 {
 	struct namecache *cp, *ncp;
 
 	CTR1(KTR_VFS, "cache_purge_negative(%p)", vp);
-	SDT_PROBE(vfs, namecache, purge_negative, done, vp, 0, 0, 0, 0);
+	SDT_PROBE1(vfs, namecache, purge_negative, done, vp);
 	CACHE_WLOCK();
 	LIST_FOREACH_SAFE(cp, &vp->v_cache_src, nc_src, ncp) {
 		if (cp->nc_vp == NULL)
@@ -982,14 +1031,13 @@ cache_purge_negative(vp)
  * Flush all entries referencing a particular filesystem.
  */
 void
-cache_purgevfs(mp)
-	struct mount *mp;
+cache_purgevfs(struct mount *mp)
 {
 	struct nchashhead *ncpp;
 	struct namecache *ncp, *nnp;
 
 	/* Scan hash tables for applicable entries */
-	SDT_PROBE(vfs, namecache, purgevfs, done, mp, 0, 0, 0, 0);
+	SDT_PROBE1(vfs, namecache, purgevfs, done, mp);
 	CACHE_WLOCK();
 	for (ncpp = &nchashtbl[nchash]; ncpp >= nchashtbl; ncpp--) {
 		LIST_FOREACH_SAFE(ncp, ncpp, nc_hash, nnp) {
@@ -1006,12 +1054,7 @@ cache_purgevfs(mp)
  */
 
 int
-vfs_cache_lookup(ap)
-	struct vop_lookup_args /* {
-		struct vnode *a_dvp;
-		struct vnode **a_vpp;
-		struct componentname *a_cnp;
-	} */ *ap;
+vfs_cache_lookup(struct vop_lookup_args *ap)
 {
 	struct vnode *dvp;
 	int error;
@@ -1043,14 +1086,6 @@ vfs_cache_lookup(ap)
 	return (error);
 }
 
-
-#ifndef _SYS_SYSPROTO_H_
-struct  __getcwd_args {
-	u_char	*buf;
-	u_int	buflen;
-};
-#endif
-
 /*
  * XXX All of these sysctls would probably be more productive dead.
  */
@@ -1060,16 +1095,16 @@ SYSCTL_INT(_debug, OID_AUTO, disablecwd, CTLFLAG_RW, &disablecwd, 0,
 
 /* Implementation of the getcwd syscall. */
 int
-sys___getcwd(td, uap)
-	struct thread *td;
-	struct __getcwd_args *uap;
+sys___getcwd(struct thread *td, struct __getcwd_args *uap)
 {
 
-	return (kern___getcwd(td, uap->buf, UIO_USERSPACE, uap->buflen));
+	return (kern___getcwd(td, uap->buf, UIO_USERSPACE, uap->buflen,
+	    MAXPATHLEN));
 }
 
 int
-kern___getcwd(struct thread *td, u_char *buf, enum uio_seg bufseg, u_int buflen)
+kern___getcwd(struct thread *td, char *buf, enum uio_seg bufseg, u_int buflen,
+    u_int path_max)
 {
 	char *bp, *tmpbuf;
 	struct filedesc *fdp;
@@ -1080,8 +1115,8 @@ kern___getcwd(struct thread *td, u_char *buf, enum uio_seg bufseg, u_int buflen)
 		return (ENODEV);
 	if (buflen < 2)
 		return (EINVAL);
-	if (buflen > MAXPATHLEN)
-		buflen = MAXPATHLEN;
+	if (buflen > path_max)
+		buflen = path_max;
 
 	tmpbuf = malloc(buflen, M_TEMP, M_WAITOK);
 	fdp = td->td_proc->p_fd;
@@ -1113,22 +1148,9 @@ kern___getcwd(struct thread *td, u_char *buf, enum uio_seg bufseg, u_int buflen)
  * Thus begins the fullpath magic.
  */
 
-#undef STATNODE
-#define STATNODE(name, descr)						\
-	static u_int name;						\
-	SYSCTL_UINT(_vfs_cache, OID_AUTO, name, CTLFLAG_RD, &name, 0, descr)
-
 static int disablefullpath;
 SYSCTL_INT(_debug, OID_AUTO, disablefullpath, CTLFLAG_RW, &disablefullpath, 0,
     "Disable the vn_fullpath function");
-
-/* These count for kern___getcwd(), too. */
-STATNODE(numfullpathcalls, "Number of fullpath search calls");
-STATNODE(numfullpathfail1, "Number of fullpath search errors (ENOTDIR)");
-STATNODE(numfullpathfail2,
-    "Number of fullpath search errors (VOP_VPTOCNP failures)");
-STATNODE(numfullpathfail4, "Number of fullpath search errors (ENOMEM)");
-STATNODE(numfullpathfound, "Number of successful fullpath calls");
 
 /*
  * Retrieve the full filesystem path that correspond to a vnode from the name
@@ -1217,16 +1239,16 @@ vn_vptocnp_locked(struct vnode **vp, struct ucred *cred, char *buf,
 		if (*buflen < ncp->nc_nlen) {
 			CACHE_RUNLOCK();
 			vrele(*vp);
-			numfullpathfail4++;
+			counter_u64_add(numfullpathfail4, 1);
 			error = ENOMEM;
-			SDT_PROBE(vfs, namecache, fullpath, return, error,
-			    vp, NULL, 0, 0);
+			SDT_PROBE3(vfs, namecache, fullpath, return, error,
+			    vp, NULL);
 			return (error);
 		}
 		*buflen -= ncp->nc_nlen;
 		memcpy(buf + *buflen, nc_get_name(ncp), ncp->nc_nlen);
-		SDT_PROBE(vfs, namecache, fullpath, hit, ncp->nc_dvp,
-		    nc_get_name(ncp), vp, 0, 0);
+		SDT_PROBE3(vfs, namecache, fullpath, hit, ncp->nc_dvp,
+		    nc_get_name(ncp), vp);
 		dvp = *vp;
 		*vp = ncp->nc_dvp;
 		vref(*vp);
@@ -1235,16 +1257,15 @@ vn_vptocnp_locked(struct vnode **vp, struct ucred *cred, char *buf,
 		CACHE_RLOCK();
 		return (0);
 	}
-	SDT_PROBE(vfs, namecache, fullpath, miss, vp, 0, 0, 0, 0);
+	SDT_PROBE1(vfs, namecache, fullpath, miss, vp);
 
 	CACHE_RUNLOCK();
 	vn_lock(*vp, LK_SHARED | LK_RETRY);
 	error = VOP_VPTOCNP(*vp, &dvp, cred, buf, buflen);
 	vput(*vp);
 	if (error) {
-		numfullpathfail2++;
-		SDT_PROBE(vfs, namecache, fullpath, return,  error, vp,
-		    NULL, 0, 0);
+		counter_u64_add(numfullpathfail2, 1);
+		SDT_PROBE3(vfs, namecache, fullpath, return,  error, vp, NULL);
 		return (error);
 	}
 
@@ -1255,8 +1276,7 @@ vn_vptocnp_locked(struct vnode **vp, struct ucred *cred, char *buf,
 		CACHE_RUNLOCK();
 		vrele(dvp);
 		error = ENOENT;
-		SDT_PROBE(vfs, namecache, fullpath, return, error, vp,
-		    NULL, 0, 0);
+		SDT_PROBE3(vfs, namecache, fullpath, return, error, vp, NULL);
 		return (error);
 	}
 	/*
@@ -1284,8 +1304,8 @@ vn_fullpath1(struct thread *td, struct vnode *vp, struct vnode *rdir,
 	error = 0;
 	slash_prefixed = 0;
 
-	SDT_PROBE(vfs, namecache, fullpath, entry, vp, 0, 0, 0, 0);
-	numfullpathcalls++;
+	SDT_PROBE1(vfs, namecache, fullpath, entry, vp);
+	counter_u64_add(numfullpathcalls, 1);
 	vref(vp);
 	CACHE_RLOCK();
 	if (vp->v_type != VDIR) {
@@ -1306,8 +1326,8 @@ vn_fullpath1(struct thread *td, struct vnode *vp, struct vnode *rdir,
 				CACHE_RUNLOCK();
 				vrele(vp);
 				error = ENOENT;
-				SDT_PROBE(vfs, namecache, fullpath, return,
-				    error, vp, NULL, 0, 0);
+				SDT_PROBE3(vfs, namecache, fullpath, return,
+				    error, vp, NULL);
 				break;
 			}
 			vp1 = vp->v_mount->mnt_vnodecovered;
@@ -1321,10 +1341,10 @@ vn_fullpath1(struct thread *td, struct vnode *vp, struct vnode *rdir,
 		if (vp->v_type != VDIR) {
 			CACHE_RUNLOCK();
 			vrele(vp);
-			numfullpathfail1++;
+			counter_u64_add(numfullpathfail1, 1);
 			error = ENOTDIR;
-			SDT_PROBE(vfs, namecache, fullpath, return,
-			    error, vp, NULL, 0, 0);
+			SDT_PROBE3(vfs, namecache, fullpath, return,
+			    error, vp, NULL);
 			break;
 		}
 		error = vn_vptocnp_locked(&vp, td->td_ucred, buf, &buflen);
@@ -1334,8 +1354,8 @@ vn_fullpath1(struct thread *td, struct vnode *vp, struct vnode *rdir,
 			CACHE_RUNLOCK();
 			vrele(vp);
 			error = ENOMEM;
-			SDT_PROBE(vfs, namecache, fullpath, return, error,
-			    startvp, NULL, 0, 0);
+			SDT_PROBE3(vfs, namecache, fullpath, return, error,
+			    startvp, NULL);
 			break;
 		}
 		buf[--buflen] = '/';
@@ -1347,19 +1367,18 @@ vn_fullpath1(struct thread *td, struct vnode *vp, struct vnode *rdir,
 		if (buflen == 0) {
 			CACHE_RUNLOCK();
 			vrele(vp);
-			numfullpathfail4++;
-			SDT_PROBE(vfs, namecache, fullpath, return, ENOMEM,
-			    startvp, NULL, 0, 0);
+			counter_u64_add(numfullpathfail4, 1);
+			SDT_PROBE3(vfs, namecache, fullpath, return, ENOMEM,
+			    startvp, NULL);
 			return (ENOMEM);
 		}
 		buf[--buflen] = '/';
 	}
-	numfullpathfound++;
+	counter_u64_add(numfullpathfound, 1);
 	CACHE_RUNLOCK();
 	vrele(vp);
 
-	SDT_PROBE(vfs, namecache, fullpath, return, 0, startvp, buf + buflen,
-	    0, 0);
+	SDT_PROBE3(vfs, namecache, fullpath, return, 0, startvp, buf + buflen);
 	*retbuf = buf + buflen;
 	return (0);
 }
@@ -1376,9 +1395,9 @@ vn_dir_dd_ino(struct vnode *vp)
 		if ((ncp->nc_flag & NCF_ISDOTDOT) != 0)
 			continue;
 		ddvp = ncp->nc_dvp;
-		VI_LOCK(ddvp);
+		vhold(ddvp);
 		CACHE_RUNLOCK();
-		if (vget(ddvp, LK_INTERLOCK | LK_SHARED | LK_NOWAIT, curthread))
+		if (vget(ddvp, LK_SHARED | LK_NOWAIT | LK_VNHELD, curthread))
 			return (NULL);
 		return (ddvp);
 	}

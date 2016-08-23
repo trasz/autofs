@@ -29,12 +29,15 @@
 __FBSDID("$FreeBSD$");
 
 #include <sys/types.h>
+
+#include <sys/capsicum.h>
 #include <sys/elf32.h>
 #include <sys/elf64.h>
 #include <sys/endian.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <err.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <stddef.h>
@@ -258,6 +261,7 @@ e_machines(u_int mach)
 	case EM_386:	return "EM_386";
 	case EM_68K:	return "EM_68K";
 	case EM_88K:	return "EM_88K";
+	case EM_IAMCU:	return "EM_IAMCU";
 	case EM_860:	return "EM_860";
 	case EM_MIPS:	return "EM_MIPS";
 	case EM_PPC:	return "EM_PPC";
@@ -268,6 +272,7 @@ e_machines(u_int mach)
 	case EM_IA_64:	return "EM_IA_64";
 	case EM_X86_64:	return "EM_X86_64";
 	case EM_AARCH64:return "EM_AARCH64";
+	case EM_RISCV:	return "EM_RISCV";
 	}
 	snprintf(machdesc, sizeof(machdesc),
 	    "(unknown machine) -- type 0x%x", mach);
@@ -291,7 +296,7 @@ static const char *ei_data[] = {
 };
 
 static const char *ei_abis[256] = {
-	"ELFOSABI_SYSV", "ELFOSABI_HPUX", "ELFOSABI_NETBSD", "ELFOSABI_LINUX",
+	"ELFOSABI_NONE", "ELFOSABI_HPUX", "ELFOSABI_NETBSD", "ELFOSABI_LINUX",
 	"ELFOSABI_HURD", "ELFOSABI_86OPEN", "ELFOSABI_SOLARIS", "ELFOSABI_AIX",
 	"ELFOSABI_IRIX", "ELFOSABI_FREEBSD", "ELFOSABI_TRU64",
 	"ELFOSABI_MODESTO", "ELFOSABI_OPENBSD",
@@ -374,7 +379,9 @@ sh_types(uint64_t machine, uint64_t sht) {
 			break;
 		case EM_MIPS:
 			switch (sht) {
+			case SHT_MIPS_REGINFO: return "SHT_MIPS_REGINFO";
 			case SHT_MIPS_OPTIONS: return "SHT_MIPS_OPTIONS";
+			case SHT_MIPS_ABIFLAGS: return "SHT_MIPS_ABIFLAGS";
 			}
 			break;
 		}
@@ -401,9 +408,27 @@ static const char *sh_flags[] = {
 	"SHF_WRITE|SHF_ALLOC|SHF_EXECINSTR"
 };
 
-static const char *st_types[] = {
-	"STT_NOTYPE", "STT_OBJECT", "STT_FUNC", "STT_SECTION", "STT_FILE"
-};
+static const char *
+st_type(unsigned int mach, unsigned int type)
+{
+        static char s_type[32];
+
+        switch (type) {
+        case STT_NOTYPE: return "STT_NOTYPE";
+        case STT_OBJECT: return "STT_OBJECT";
+        case STT_FUNC: return "STT_FUNC";
+        case STT_SECTION: return "STT_SECTION";
+        case STT_FILE: return "STT_FILE";
+        case STT_COMMON: return "STT_COMMON";
+        case STT_TLS: return "STT_TLS";
+        case 13:
+                if (mach == EM_SPARCV9)
+                        return "STT_SPARC_REGISTER";
+                break;
+        }
+        snprintf(s_type, sizeof(s_type), "<unknown: %#x>", type);
+        return (s_type);
+}
 
 static const char *st_bindings[] = {
 	"STB_LOCAL", "STB_GLOBAL", "STB_WEAK"
@@ -467,6 +492,7 @@ elf_get_shstrndx(Elf32_Ehdr *e, void *sh)
 int
 main(int ac, char **av)
 {
+	cap_rights_t rights;
 	u_int64_t phoff;
 	u_int64_t shoff;
 	u_int64_t phentsize;
@@ -527,6 +553,9 @@ main(int ac, char **av)
 		case 'w':
 			if ((out = fopen(optarg, "w")) == NULL)
 				err(1, "%s", optarg);
+			cap_rights_init(&rights, CAP_FSTAT, CAP_WRITE);
+			if (cap_rights_limit(fileno(out), &rights) < 0 && errno != ENOSYS)
+				err(1, "unable to limit rights for %s", optarg);
 			break;
 		case '?':
 		default:
@@ -539,6 +568,17 @@ main(int ac, char **av)
 	if ((fd = open(*av, O_RDONLY)) < 0 ||
 	    fstat(fd, &sb) < 0)
 		err(1, "%s", *av);
+	cap_rights_init(&rights, CAP_MMAP_R);
+	if (cap_rights_limit(fd, &rights) < 0 && errno != ENOSYS)
+		err(1, "unable to limit rights for %s", *av);
+	close(STDIN_FILENO);
+	cap_rights_init(&rights, CAP_WRITE);
+	if (cap_rights_limit(STDOUT_FILENO, &rights) < 0 && errno != ENOSYS)
+		err(1, "unable to limit rights for stdout");
+	if (cap_rights_limit(STDERR_FILENO, &rights) < 0 && errno != ENOSYS)
+		err(1, "unable to limit rights for stderr");
+	if (cap_enter() < 0 && errno != ENOSYS)
+		err(1, "unable to enter capability mode");
 	e = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
 	if (e == MAP_FAILED)
 		err(1, NULL);
@@ -802,6 +842,7 @@ elf_print_shdr(Elf32_Ehdr *e, void *sh)
 static void
 elf_print_symtab(Elf32_Ehdr *e, void *sh, char *str)
 {
+	u_int64_t machine;
 	u_int64_t offset;
 	u_int64_t entsize;
 	u_int64_t size;
@@ -813,6 +854,7 @@ elf_print_symtab(Elf32_Ehdr *e, void *sh, char *str)
 	int len;
 	int i;
 
+	machine = elf_get_quarter(e, e, E_MACHINE);
 	offset = elf_get_off(e, sh, SH_OFFSET);
 	entsize = elf_get_size(e, sh, SH_ENTSIZE);
 	size = elf_get_size(e, sh, SH_SIZE);
@@ -832,7 +874,7 @@ elf_print_symtab(Elf32_Ehdr *e, void *sh, char *str)
 		fprintf(out, "\tst_value: %#jx\n", value);
 		fprintf(out, "\tst_size: %jd\n", (intmax_t)size);
 		fprintf(out, "\tst_info: %s %s\n",
-		    st_types[ELF32_ST_TYPE(info)],
+		    st_type(machine, ELF32_ST_TYPE(info)),
 		    st_bindings[ELF32_ST_BIND(info)]);
 		fprintf(out, "\tst_shndx: %jd\n", (intmax_t)shndx);
 	}

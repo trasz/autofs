@@ -61,9 +61,15 @@
 #include "services/localzone.h"
 #include "services/cache/infra.h"
 #include "services/cache/rrset.h"
-#include "ldns/sbuffer.h"
+#include "sldns/sbuffer.h"
 #ifdef HAVE_PTHREAD
 #include <signal.h>
+#endif
+#ifdef HAVE_SYS_WAIT_H
+#include <sys/wait.h>
+#endif
+#ifdef HAVE_TIME_H
+#include <time.h>
 #endif
 
 #if defined(UB_ON_WINDOWS) && defined (HAVE_WINDOWS_H)
@@ -218,6 +224,12 @@ static void ub_stop_bg(struct ub_ctx* ctx)
 			ub_thread_join(ctx->bg_tid);
 		} else {
 			lock_basic_unlock(&ctx->cfglock);
+#ifndef UB_ON_WINDOWS
+			if(waitpid(ctx->bg_pid, NULL, 0) == -1) {
+				if(verbosity > 2)
+					log_err("waitpid: %s", strerror(errno));
+			}
+#endif
 		}
 	}
 	else {
@@ -355,6 +367,26 @@ ub_ctx_add_ta_file(struct ub_ctx* ctx, const char* fname)
 		return UB_AFTERFINAL;
 	}
 	if(!cfg_strlist_insert(&ctx->env->cfg->trust_anchor_file_list, dup)) {
+		lock_basic_unlock(&ctx->cfglock);
+		free(dup);
+		return UB_NOMEM;
+	}
+	lock_basic_unlock(&ctx->cfglock);
+	return UB_NOERROR;
+}
+
+int ub_ctx_add_ta_autr(struct ub_ctx* ctx, const char* fname)
+{
+	char* dup = strdup(fname);
+	if(!dup) return UB_NOMEM;
+	lock_basic_lock(&ctx->cfglock);
+	if(ctx->finalized) {
+		lock_basic_unlock(&ctx->cfglock);
+		free(dup);
+		return UB_AFTERFINAL;
+	}
+	if(!cfg_strlist_insert(&ctx->env->cfg->auto_trust_anchor_file_list,
+		dup)) {
 		lock_basic_unlock(&ctx->cfglock);
 		free(dup);
 		return UB_NOMEM;
@@ -892,6 +924,88 @@ ub_ctx_set_fwd(struct ub_ctx* ctx, const char* addr)
 	return UB_NOERROR;
 }
 
+int ub_ctx_set_stub(struct ub_ctx* ctx, const char* zone, const char* addr,
+	int isprime)
+{
+	char* a;
+	struct config_stub **prev, *elem;
+
+	/* check syntax for zone name */
+	if(zone) {
+		uint8_t* nm;
+		int nmlabs;
+		size_t nmlen;
+		if(!parse_dname(zone, &nm, &nmlen, &nmlabs)) {
+			errno=EINVAL;
+			return UB_SYNTAX;
+		}
+		free(nm);
+	} else {
+		zone = ".";
+	}
+
+	/* check syntax for addr (if not NULL) */
+	if(addr) {
+		struct sockaddr_storage storage;
+		socklen_t stlen;
+		if(!extstrtoaddr(addr, &storage, &stlen)) {
+			errno=EINVAL;
+			return UB_SYNTAX;
+		}
+	}
+
+	lock_basic_lock(&ctx->cfglock);
+	if(ctx->finalized) {
+		lock_basic_unlock(&ctx->cfglock);
+		errno=EINVAL;
+		return UB_AFTERFINAL;
+	}
+
+	/* arguments all right, now find or add the stub */
+	prev = &ctx->env->cfg->stubs;
+	elem = cfg_stub_find(&prev, zone);
+	if(!elem && !addr) {
+		/* not found and we want to delete, nothing to do */
+		lock_basic_unlock(&ctx->cfglock);
+		return UB_NOERROR;
+	} else if(elem && !addr) {
+		/* found, and we want to delete */
+		*prev = elem->next;
+		config_delstub(elem);
+		lock_basic_unlock(&ctx->cfglock);
+		return UB_NOERROR;
+	} else if(!elem) {
+		/* not found, create the stub entry */
+		elem=(struct config_stub*)calloc(1, sizeof(struct config_stub));
+		if(elem) elem->name = strdup(zone);
+		if(!elem || !elem->name) {
+			free(elem);
+			lock_basic_unlock(&ctx->cfglock);
+			errno = ENOMEM;
+			return UB_NOMEM;
+		}
+		elem->next = ctx->env->cfg->stubs;
+		ctx->env->cfg->stubs = elem;
+	}
+
+	/* add the address to the list and set settings */
+	elem->isprime = isprime;
+	a = strdup(addr);
+	if(!a) {
+		lock_basic_unlock(&ctx->cfglock);
+		errno = ENOMEM;
+		return UB_NOMEM;
+	}
+	if(!cfg_strlist_insert(&elem->addrs, a)) {
+		lock_basic_unlock(&ctx->cfglock);
+		free(a);
+		errno = ENOMEM;
+		return UB_NOMEM;
+	}
+	lock_basic_unlock(&ctx->cfglock);
+	return UB_NOERROR;
+}
+
 int 
 ub_ctx_resolvconf(struct ub_ctx* ctx, const char* fname)
 {
@@ -926,7 +1040,7 @@ ub_ctx_resolvconf(struct ub_ctx* ctx, const char* fname)
 			while (ptr) {
 				numserv++;
 				if((retval=ub_ctx_set_fwd(ctx, 
-					ptr->IpAddress.String)!=0)) {
+					ptr->IpAddress.String))!=0) {
 					free(info);
 					return retval;
 				}
@@ -959,7 +1073,7 @@ ub_ctx_resolvconf(struct ub_ctx* ctx, const char* fname)
 				parse++;
 			addr = parse;
 			/* skip [0-9a-fA-F.:]*, i.e. IP4 and IP6 address */
-			while(isxdigit(*parse) || *parse=='.' || *parse==':')
+			while(isxdigit((unsigned char)*parse) || *parse=='.' || *parse==':')
 				parse++;
 			/* terminate after the address, remove newline */
 			*parse = 0;
@@ -1008,7 +1122,6 @@ ub_ctx_hosts(struct ub_ctx* ctx, const char* fname)
 					"\\hosts");
 				retval=ub_ctx_hosts(ctx, buf);
 			}
-			free(name);
 			return retval;
 		}
 		return UB_READFILE;
@@ -1031,7 +1144,9 @@ ub_ctx_hosts(struct ub_ctx* ctx, const char* fname)
 		/* format: <addr> spaces <name> spaces <name> ... */
 		addr = parse;
 		/* skip addr */
-		while(isxdigit(*parse) || *parse == '.' || *parse == ':')
+		while(isxdigit((unsigned char)*parse) || *parse == '.' || *parse == ':')
+			parse++;
+		if(*parse == '\r')
 			parse++;
 		if(*parse == '\n' || *parse == 0)
 			continue;
@@ -1046,7 +1161,8 @@ ub_ctx_hosts(struct ub_ctx* ctx, const char* fname)
 		*parse++ = 0; /* end delimiter for addr ... */
 		/* go to names and add them */
 		while(*parse) {
-			while(*parse == ' ' || *parse == '\t' || *parse=='\n')
+			while(*parse == ' ' || *parse == '\t' || *parse=='\n'
+				|| *parse=='\r')
 				parse++;
 			if(*parse == 0 || *parse == '#')
 				break;

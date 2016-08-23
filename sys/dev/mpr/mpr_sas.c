@@ -1,6 +1,7 @@
 /*-
  * Copyright (c) 2009 Yahoo! Inc.
- * Copyright (c) 2011-2014 LSI Corp.
+ * Copyright (c) 2011-2015 LSI Corp.
+ * Copyright (c) 2013-2016 Avago Technologies
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -23,12 +24,15 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
+ *
+ * Avago Technologies (LSI) MPT-Fusion Host Adapter FreeBSD
+ *
  */
 
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
-/* Communications core for LSI MPT2 */
+/* Communications core for Avago Technologies (LSI) MPT3 */
 
 /* TODO Move headers to mprvar */
 #include <sys/types.h>
@@ -115,21 +119,15 @@ static void mprsas_remove_complete(struct mpr_softc *, struct mpr_command *);
 static void mprsas_action(struct cam_sim *sim, union ccb *ccb);
 static void mprsas_poll(struct cam_sim *sim);
 static void mprsas_scsiio_timeout(void *data);
-static void mprsas_abort_complete(struct mpr_softc *sc,
-    struct mpr_command *cm);
+static void mprsas_abort_complete(struct mpr_softc *sc, struct mpr_command *cm);
 static void mprsas_action_scsiio(struct mprsas_softc *, union ccb *);
 static void mprsas_scsiio_complete(struct mpr_softc *, struct mpr_command *);
 static void mprsas_action_resetdev(struct mprsas_softc *, union ccb *);
-static void mprsas_resetdev_complete(struct mpr_softc *,
-    struct mpr_command *);
-static int  mprsas_send_abort(struct mpr_softc *sc, struct mpr_command *tm,
+static void mprsas_resetdev_complete(struct mpr_softc *, struct mpr_command *);
+static int mprsas_send_abort(struct mpr_softc *sc, struct mpr_command *tm,
     struct mpr_command *cm);
-static int  mprsas_send_reset(struct mpr_softc *sc, struct mpr_command *tm,
-    uint8_t type);
 static void mprsas_async(void *callback_arg, uint32_t code,
     struct cam_path *path, void *arg);
-static void mprsas_prepare_ssu(struct mpr_softc *sc, struct cam_path *path,
-    struct ccb_getdev *cgd);
 #if (__FreeBSD_version < 901503) || \
     ((__FreeBSD_version >= 1000000) && (__FreeBSD_version < 1000006))
 static void mprsas_check_eedp(struct mpr_softc *sc, struct cam_path *path,
@@ -142,13 +140,11 @@ static void mprsas_portenable_complete(struct mpr_softc *sc,
     struct mpr_command *cm);
 
 #if __FreeBSD_version >= 900026
-static void
-mprsas_smpio_complete(struct mpr_softc *sc, struct mpr_command *cm);
-static void mprsas_send_smpcmd(struct mprsas_softc *sassc,
-	       	union ccb *ccb, uint64_t sasaddr);
-static void
-mprsas_action_smpio(struct mprsas_softc *sassc, union ccb *ccb);
-#endif
+static void mprsas_smpio_complete(struct mpr_softc *sc, struct mpr_command *cm);
+static void mprsas_send_smpcmd(struct mprsas_softc *sassc, union ccb *ccb,
+    uint64_t sasaddr);
+static void mprsas_action_smpio(struct mprsas_softc *sassc, union ccb *ccb);
+#endif //FreeBSD_version >= 900026
 
 struct mprsas_target *
 mprsas_find_target_by_handle(struct mprsas_softc *sassc, int start,
@@ -230,7 +226,7 @@ mprsas_startup_decrement(struct mprsas_softc *sassc)
 	}
 }
 
-/* LSI's firmware requires us to stop sending commands when we're doing task
+/* The firmware requires us to stop sending commands when we're doing task
  * management, so refcount the TMs and keep the simq frozen when any are in
  * use.
  */
@@ -241,35 +237,34 @@ mprsas_alloc_tm(struct mpr_softc *sc)
 
 	MPR_FUNCTRACE(sc);
 	tm = mpr_alloc_high_priority_command(sc);
-	if (tm != NULL) {
-		if (sc->sassc->tm_count++ == 0) {
-			mpr_dprint(sc, MPR_RECOVERY,
-			    "%s freezing simq\n", __func__);
-			xpt_freeze_simq(sc->sassc->sim, 1);
-		}
-		mpr_dprint(sc, MPR_RECOVERY, "%s tm_count %u\n", __func__,
-		    sc->sassc->tm_count);
-	}
 	return tm;
 }
 
 void
 mprsas_free_tm(struct mpr_softc *sc, struct mpr_command *tm)
 {
-	mpr_dprint(sc, MPR_TRACE, "%s", __func__);
+	int target_id = 0xFFFFFFFF;
+
+	MPR_FUNCTRACE(sc);
 	if (tm == NULL)
 		return;
 
-	/* if there are no TMs in use, we can release the simq.  We use our
-	 * own refcount so that it's easier for a diag reset to cleanup and
-	 * release the simq.
+	/*
+	 * For TM's the devq is frozen for the device.  Unfreeze it here and
+	 * free the resources used for freezing the devq.  Must clear the
+	 * INRESET flag as well or scsi I/O will not work.
 	 */
-	if (--sc->sassc->tm_count == 0) {
-		mpr_dprint(sc, MPR_RECOVERY, "%s releasing simq\n", __func__);
-		xpt_release_simq(sc->sassc->sim, 1);
+	if (tm->cm_targ != NULL) {
+		tm->cm_targ->flags &= ~MPRSAS_TARGET_INRESET;
+		target_id = tm->cm_targ->tid;
 	}
-	mpr_dprint(sc, MPR_RECOVERY, "%s tm_count %u\n", __func__,
-	    sc->sassc->tm_count);
+	if (tm->cm_ccb) {
+		mpr_dprint(sc, MPR_INFO, "Unfreezing devq for target ID %d\n",
+		    target_id);
+		xpt_release_devq(tm->cm_ccb->ccb_h.path, 1, TRUE);
+		xpt_free_path(tm->cm_ccb->ccb_h.path);
+		xpt_free_ccb(tm->cm_ccb);
+	}
 
 	mpr_free_high_priority_command(sc, tm);
 }
@@ -298,8 +293,8 @@ mprsas_rescan_target(struct mpr_softc *sc, struct mprsas_target *targ)
 		return;
 	}
 
-	if (xpt_create_path(&ccb->ccb_h.path, NULL, pathid,
-	    targetid, CAM_LUN_WILDCARD) != CAM_REQ_CMP) {
+	if (xpt_create_path(&ccb->ccb_h.path, NULL, pathid, targetid,
+	    CAM_LUN_WILDCARD) != CAM_REQ_CMP) {
 		mpr_dprint(sc, MPR_ERROR, "unable to create path for rescan\n");
 		xpt_free_ccb(ccb);
 		return;
@@ -380,15 +375,14 @@ mprsas_remove_volume(struct mpr_softc *sc, struct mpr_command *tm)
 		return;
 	}
 
-	if (reply->IOCStatus != MPI2_IOCSTATUS_SUCCESS) {
-		mpr_dprint(sc, MPR_FAULT, "IOCStatus = 0x%x while resetting "
-		    "device 0x%x\n", reply->IOCStatus, handle);
-		mprsas_free_tm(sc, tm);
-		return;
+	if ((le16toh(reply->IOCStatus) & MPI2_IOCSTATUS_MASK) !=
+	    MPI2_IOCSTATUS_SUCCESS) {
+		mpr_dprint(sc, MPR_ERROR, "IOCStatus = 0x%x while resetting "
+		    "device 0x%x\n", le16toh(reply->IOCStatus), handle);
 	}
 
 	mpr_dprint(sc, MPR_XINFO, "Reset aborted %u commands\n",
-	    reply->TerminationCount);
+	    le32toh(reply->TerminationCount));
 	mpr_free_reply(sc, tm->cm_reply_data);
 	tm->cm_reply = NULL;	/* Ensures the reply won't get re-freed */
 
@@ -401,7 +395,8 @@ mprsas_remove_volume(struct mpr_softc *sc, struct mpr_command *tm)
 	 * this target id if possible, and so we can assign the same target id
 	 * to this device if it comes back in the future.
 	 */
-	if (reply->IOCStatus == MPI2_IOCSTATUS_SUCCESS) {
+	if ((le16toh(reply->IOCStatus) & MPI2_IOCSTATUS_MASK) ==
+	    MPI2_IOCSTATUS_SUCCESS) {
 		targ = tm->cm_targ;
 		targ->handle = 0x0;
 		targ->encl_handle = 0x0;
@@ -473,11 +468,16 @@ mprsas_prepare_volume_remove(struct mprsas_softc *sassc, uint16_t handle)
 	    MPI2_REQ_DESCRIPT_FLAGS_HIGH_PRIORITY;
 	cm->cm_complete = mprsas_remove_volume;
 	cm->cm_complete_data = (void *)(uintptr_t)handle;
+
+	mpr_dprint(sc, MPR_INFO, "%s: Sending reset for target ID %d\n",
+	    __func__, targ->tid);
+	mprsas_prepare_for_tm(sc, cm, targ, CAM_LUN_WILDCARD);
+
 	mpr_map_command(sc, cm);
 }
 
 /*
- * The MPT2 firmware performs debounce on the link to avoid transient link
+ * The MPT3 firmware performs debounce on the link to avoid transient link
  * errors and false removals.  When it does decide that link has been lost
  * and a device needs to go away, it expects that the host will perform a
  * target reset and then an op remove.  The reset has the side-effect of
@@ -532,6 +532,11 @@ mprsas_prepare_remove(struct mprsas_softc *sassc, uint16_t handle)
 	    MPI2_REQ_DESCRIPT_FLAGS_HIGH_PRIORITY;
 	cm->cm_complete = mprsas_remove_device;
 	cm->cm_complete_data = (void *)(uintptr_t)handle;
+
+	mpr_dprint(sc, MPR_INFO, "%s: Sending reset for target ID %d\n",
+	    __func__, targ->tid);
+	mprsas_prepare_for_tm(sc, cm, targ, CAM_LUN_WILDCARD);
+
 	mpr_map_command(sc, cm);
 }
 
@@ -559,8 +564,6 @@ mprsas_remove_device(struct mpr_softc *sc, struct mpr_command *tm)
 		mpr_dprint(sc, MPR_ERROR, "%s: cm_flags = %#x for remove of "
 		    "handle %#04x! This should not happen!\n", __func__,
 		    tm->cm_flags, handle);
-		mprsas_free_tm(sc, tm);
-		return;
 	}
 
 	if (reply == NULL) {
@@ -571,11 +574,10 @@ mprsas_remove_device(struct mpr_softc *sc, struct mpr_command *tm)
 		return;
 	}
 
-	if (le16toh(reply->IOCStatus) != MPI2_IOCSTATUS_SUCCESS) {
-		mpr_dprint(sc, MPR_FAULT, "IOCStatus = 0x%x while resetting "
+	if ((le16toh(reply->IOCStatus) & MPI2_IOCSTATUS_MASK) !=
+	    MPI2_IOCSTATUS_SUCCESS) {
+		mpr_dprint(sc, MPR_ERROR, "IOCStatus = 0x%x while resetting "
 		    "device 0x%x\n", le16toh(reply->IOCStatus), handle);
-		mprsas_free_tm(sc, tm);
-		return;
 	}
 
 	mpr_dprint(sc, MPR_XINFO, "Reset aborted %u commands\n",
@@ -596,10 +598,10 @@ mprsas_remove_device(struct mpr_softc *sc, struct mpr_command *tm)
 
 	mpr_map_command(sc, tm);
 
-	mpr_dprint(sc, MPR_XINFO, "clearing target %u handle 0x%04x\n",
+	mpr_dprint(sc, MPR_INFO, "clearing target %u handle 0x%04x\n",
 	    targ->tid, handle);
 	if (targ->encl_level_valid) {
-		mpr_dprint(sc, MPR_XINFO, "At enclosure level %d, slot %d, "
+		mpr_dprint(sc, MPR_INFO, "At enclosure level %d, slot %d, "
 		    "connector name (%4s)\n", targ->encl_level, targ->encl_slot,
 		    targ->connector_name);
 	}
@@ -608,7 +610,7 @@ mprsas_remove_device(struct mpr_softc *sc, struct mpr_command *tm)
 
 		mpr_dprint(sc, MPR_XINFO, "Completing missed command %p\n", tm);
 		ccb = tm->cm_complete_data;
-		ccb->ccb_h.status = CAM_DEV_NOT_THERE;
+		mprsas_set_ccbstatus(ccb, CAM_DEV_NOT_THERE);
 		mprsas_scsiio_complete(sc, tm);
 	}
 }
@@ -656,7 +658,8 @@ mprsas_remove_complete(struct mpr_softc *sc, struct mpr_command *tm)
 	 * this target id if possible, and so we can assign the same target id
 	 * to this device if it comes back in the future.
 	 */
-	if (le16toh(reply->IOCStatus) == MPI2_IOCSTATUS_SUCCESS) {
+	if ((le16toh(reply->IOCStatus) & MPI2_IOCSTATUS_MASK) ==
+	    MPI2_IOCSTATUS_SUCCESS) {
 		targ = tm->cm_targ;
 		targ->handle = 0x0;
 		targ->encl_handle = 0x0;
@@ -702,6 +705,7 @@ mprsas_register_events(struct mpr_softc *sc)
 	setbit(events, MPI2_EVENT_IR_PHYSICAL_DISK);
 	setbit(events, MPI2_EVENT_IR_OPERATION_STATUS);
 	setbit(events, MPI2_EVENT_TEMP_THRESHOLD);
+	setbit(events, MPI2_EVENT_ACTIVE_CABLE_EXCEPTION);
 
 	mpr_register_events(sc, events, mprsas_evt_handler, NULL,
 	    &sc->sassc->mprsas_eh);
@@ -726,7 +730,7 @@ mpr_attach_sas(struct mpr_softc *sc)
 	}
 
 	/*
-	 * XXX MaxTargets could change during a reinit.  since we don't
+	 * XXX MaxTargets could change during a reinit.  Since we don't
 	 * resize the targets[] array during such an event, cache the value
 	 * of MaxTargets here so that we don't get into trouble later.  This
 	 * should move into the reinit logic.
@@ -782,7 +786,7 @@ mpr_attach_sas(struct mpr_softc *sc)
 	}
 
 	/*
-	 * Assume that discovery events will start right away.  Freezing
+	 * Assume that discovery events will start right away.
 	 *
 	 * Hold off boot until discovery is complete.
 	 */
@@ -790,9 +794,7 @@ mpr_attach_sas(struct mpr_softc *sc)
 	sc->sassc->startup_refcount = 0;
 	mprsas_startup_increment(sassc);
 
-	callout_init(&sassc->discovery_callout, 1 /*mprafe*/);
-
-	sassc->tm_count = 0;
+	callout_init(&sassc->discovery_callout, 1 /*mpsafe*/);
 
 	/*
 	 * Register for async events so we can determine the EEDP
@@ -923,7 +925,6 @@ mpr_detach_sas(struct mpr_softc *sc)
 		cam_sim_free(sassc->sim, FALSE);
 	}
 
-	sassc->flags |= MPRSAS_SHUTDOWN;
 	mpr_unlock(sc);
 
 	if (sassc->devq != NULL)
@@ -962,7 +963,7 @@ mprsas_action(struct cam_sim *sim, union ccb *ccb)
 	sassc = cam_sim_softc(sim);
 
 	MPR_FUNCTRACE(sassc->sc);
-	mpr_dprint(sassc->sc, MPR_TRACE, "%s func 0x%x\n", __func__, 
+	mpr_dprint(sassc->sc, MPR_TRACE, "ccb func_code 0x%x\n",
 	    ccb->ccb_h.func_code);
 	mtx_assert(&sassc->sc->mpr_mtx, MA_OWNED);
 
@@ -970,6 +971,8 @@ mprsas_action(struct cam_sim *sim, union ccb *ccb)
 	case XPT_PATH_INQ:
 	{
 		struct ccb_pathinq *cpi = &ccb->cpi;
+		struct mpr_softc *sc = sassc->sc;
+		uint8_t sges_per_frame;
 
 		cpi->version_num = 1;
 		cpi->hba_inquiry = PI_SDTR_ABLE|PI_TAG_ABLE|PI_WIDE_16;
@@ -985,7 +988,7 @@ mprsas_action(struct cam_sim *sim, union ccb *ccb)
 		cpi->max_lun = 255;
 		cpi->initiator_id = sassc->maxtargets - 1;
 		strncpy(cpi->sim_vid, "FreeBSD", SIM_IDLEN);
-		strncpy(cpi->hba_vid, "LSILogic", HBA_IDLEN);
+		strncpy(cpi->hba_vid, "Avago Tech (LSI)", HBA_IDLEN);
 		strncpy(cpi->dev_name, cam_sim_name(sim), DEV_IDLEN);
 		cpi->unit_number = cam_sim_unit(sim);
 		cpi->bus_id = cam_sim_bus(sim);
@@ -998,14 +1001,24 @@ mprsas_action(struct cam_sim *sim, union ccb *ccb)
 		cpi->transport_version = 0;
 		cpi->protocol = PROTO_SCSI;
 		cpi->protocol_version = SCSI_REV_SPC;
-#if __FreeBSD_version >= 800001
+
 		/*
-		 * XXXSLM-probably need to base this number on max SGL's and
-		 * page size.
+		 * Max IO Size is Page Size * the following:
+		 * ((SGEs per frame - 1 for chain element) *
+		 * Max Chain Depth) + 1 for no chain needed in last frame
+		 *
+		 * If user suggests a Max IO size to use, use the smaller of the
+		 * user's value and the calculated value as long as the user's
+		 * value is larger than 0. The user's value is in pages.
 		 */
-		cpi->maxio = 256 * 1024;
-#endif
-		cpi->ccb_h.status = CAM_REQ_CMP;
+		sges_per_frame = (sc->chain_frame_size /
+		    sizeof(MPI2_IEEE_SGE_SIMPLE64)) - 1;
+		cpi->maxio = (sges_per_frame * sc->facts->MaxChainDepth) + 1;
+		cpi->maxio *= PAGE_SIZE;
+		if ((sc->max_io_pages > 0) && (sc->max_io_pages * PAGE_SIZE <
+		    cpi->maxio))
+			cpi->maxio = sc->max_io_pages * PAGE_SIZE;
+		mprsas_set_ccbstatus(ccb, CAM_REQ_CMP);
 		break;
 	}
 	case XPT_GET_TRAN_SETTINGS:
@@ -1024,7 +1037,7 @@ mprsas_action(struct cam_sim *sim, union ccb *ccb)
 		    cts->ccb_h.target_id));
 		targ = &sassc->targets[cts->ccb_h.target_id];
 		if (targ->handle == 0x0) {
-			cts->ccb_h.status = CAM_DEV_NOT_THERE;
+			mprsas_set_ccbstatus(ccb, CAM_DEV_NOT_THERE);
 			break;
 		}
 
@@ -1043,6 +1056,9 @@ mprsas_action(struct cam_sim *sim, union ccb *ccb)
 		case 0x0a:
 			sas->bitrate = 600000;
 			break;
+		case 0x0b:
+			sas->bitrate = 1200000;
+			break;
 		default:
 			sas->valid = 0;
 		}
@@ -1051,24 +1067,24 @@ mprsas_action(struct cam_sim *sim, union ccb *ccb)
 		scsi->valid = CTS_SCSI_VALID_TQ;
 		scsi->flags = CTS_SCSI_FLAGS_TAG_ENB;
 
-		cts->ccb_h.status = CAM_REQ_CMP;
+		mprsas_set_ccbstatus(ccb, CAM_REQ_CMP);
 		break;
 	}
 	case XPT_CALC_GEOMETRY:
 		cam_calc_geometry(&ccb->ccg, /*extended*/1);
-		ccb->ccb_h.status = CAM_REQ_CMP;
+		mprsas_set_ccbstatus(ccb, CAM_REQ_CMP);
 		break;
 	case XPT_RESET_DEV:
-		mpr_dprint(sassc->sc, MPR_XINFO,
-		    "mprsas_action XPT_RESET_DEV\n");
+		mpr_dprint(sassc->sc, MPR_XINFO, "mprsas_action "
+		    "XPT_RESET_DEV\n");
 		mprsas_action_resetdev(sassc, ccb);
 		return;
 	case XPT_RESET_BUS:
 	case XPT_ABORT:
 	case XPT_TERM_IO:
-		mpr_dprint(sassc->sc, MPR_XINFO,
-		    "mprsas_action faking success for abort or reset\n");
-		ccb->ccb_h.status = CAM_REQ_CMP;
+		mpr_dprint(sassc->sc, MPR_XINFO, "mprsas_action faking success "
+		    "for abort or reset\n");
+		mprsas_set_ccbstatus(ccb, CAM_REQ_CMP);
 		break;
 	case XPT_SCSI_IO:
 		mprsas_action_scsiio(sassc, ccb);
@@ -1079,7 +1095,7 @@ mprsas_action(struct cam_sim *sim, union ccb *ccb)
 		return;
 #endif
 	default:
-		ccb->ccb_h.status = CAM_FUNC_NOTAVAIL;
+		mprsas_set_ccbstatus(ccb, CAM_FUNC_NOTAVAIL);
 		break;
 	}
 	xpt_done(ccb);
@@ -1099,7 +1115,7 @@ mprsas_announce_reset(struct mpr_softc *sc, uint32_t ac_code,
 	if (xpt_create_path(&path, NULL, 
 		path_id, target_id, lun_id) != CAM_REQ_CMP) {
 		mpr_dprint(sc, MPR_ERROR, "unable to create path for reset "
-			   "notification\n");
+		    "notification\n");
 		return;
 	}
 
@@ -1142,6 +1158,14 @@ mprsas_complete_all_commands(struct mpr_softc *sc)
 			completed = 1;
 		}
 
+		if (cm->cm_sc->io_cmds_active != 0) {
+			cm->cm_sc->io_cmds_active--;
+		} else {
+			mpr_dprint(cm->cm_sc, MPR_INFO, "Warning: "
+			    "io_cmds_active is out of sync - resynching to "
+			    "0\n");
+		}
+		
 		if ((completed == 0) && (cm->cm_state != MPR_CM_STATE_FREE)) {
 			/* this should never happen, but if it does, log */
 			mprsas_log_command(cm, MPR_RECOVERY,
@@ -1177,9 +1201,8 @@ mprsas_handle_reinit(struct mpr_softc *sc)
 	/* complete and cleanup after all outstanding commands */
 	mprsas_complete_all_commands(sc);
 
-	mpr_dprint(sc, MPR_INIT, "%s startup %u tm %u after command "
-	    "completion\n", __func__, sc->sassc->startup_refcount,
-	    sc->sassc->tm_count);
+	mpr_dprint(sc, MPR_INIT, "%s startup %u after command completion\n",
+	    __func__, sc->sassc->startup_refcount);
 
 	/* zero all the target handles, since they may change after the
 	 * reset, and we have to rediscover all the targets and use the new
@@ -1203,14 +1226,13 @@ mprsas_tm_timeout(void *data)
 
 	mtx_assert(&sc->mpr_mtx, MA_OWNED);
 
-	mprsas_log_command(tm, MPR_INFO|MPR_RECOVERY,
-	    "task mgmt %p timed out\n", tm);
+	mprsas_log_command(tm, MPR_INFO|MPR_RECOVERY, "task mgmt %p timed "
+	    "out\n", tm);
 	mpr_reinit(sc);
 }
 
 static void
-mprsas_logical_unit_reset_complete(struct mpr_softc *sc,
-    struct mpr_command *tm)
+mprsas_logical_unit_reset_complete(struct mpr_softc *sc, struct mpr_command *tm)
 {
 	MPI2_SCSI_TASK_MANAGE_REPLY *reply;
 	MPI2_SCSI_TASK_MANAGE_REQUEST *req;
@@ -1237,11 +1259,10 @@ mprsas_logical_unit_reset_complete(struct mpr_softc *sc,
 	}
 
 	if (reply == NULL) {
-		mprsas_log_command(tm, MPR_RECOVERY,
-		    "NULL reset reply for tm %p\n", tm);
+		mprsas_log_command(tm, MPR_RECOVERY, "NULL reset reply for tm "
+		    "%p\n", tm);
 		if ((sc->mpr_flags & MPR_FLAGS_DIAGRESET) != 0) {
 			/* this completion was due to a reset, just cleanup */
-			targ->flags &= ~MPRSAS_TARGET_INRESET;
 			targ->tm = NULL;
 			mprsas_free_tm(sc, tm);
 		}
@@ -1319,18 +1340,17 @@ mprsas_target_reset_complete(struct mpr_softc *sc, struct mpr_command *tm)
 	 * task management commands don't have S/G lists.
 	 */
 	if ((tm->cm_flags & MPR_CM_FLAGS_ERROR_MASK) != 0) {
-		mpr_dprint(sc, MPR_ERROR,"%s: cm_flags = %#x for target reset! "
-		    "This should not happen!\n", __func__, tm->cm_flags);
+		mpr_dprint(sc, MPR_ERROR, "%s: cm_flags = %#x for target "
+		    "reset! This should not happen!\n", __func__, tm->cm_flags);
 		mprsas_free_tm(sc, tm);
 		return;
 	}
 
 	if (reply == NULL) {
-		mprsas_log_command(tm, MPR_RECOVERY,
-		    "NULL reset reply for tm %p\n", tm);
+		mprsas_log_command(tm, MPR_RECOVERY, "NULL reset reply for tm "
+		    "%p\n", tm);
 		if ((sc->mpr_flags & MPR_FLAGS_DIAGRESET) != 0) {
 			/* this completion was due to a reset, just cleanup */
-			targ->flags &= ~MPRSAS_TARGET_INRESET;
 			targ->tm = NULL;
 			mprsas_free_tm(sc, tm);
 		}
@@ -1345,8 +1365,6 @@ mprsas_target_reset_complete(struct mpr_softc *sc, struct mpr_command *tm)
 	    "target reset status 0x%x code 0x%x count %u\n",
 	    le16toh(reply->IOCStatus), le32toh(reply->ResponseCode),
 	    le32toh(reply->TerminationCount));
-
-	targ->flags &= ~MPRSAS_TARGET_INRESET;
 
 	if (targ->outstanding == 0) {
 		/* we've finished recovery for this target and all
@@ -1375,7 +1393,7 @@ mprsas_target_reset_complete(struct mpr_softc *sc, struct mpr_command *tm)
 
 #define MPR_RESET_TIMEOUT 30
 
-static int
+int
 mprsas_send_reset(struct mpr_softc *sc, struct mpr_command *tm, uint8_t type)
 {
 	MPI2_SCSI_TASK_MANAGE_REQUEST *req;
@@ -1384,8 +1402,8 @@ mprsas_send_reset(struct mpr_softc *sc, struct mpr_command *tm, uint8_t type)
 
 	target = tm->cm_targ;
 	if (target->handle == 0) {
-		mpr_dprint(sc, MPR_ERROR,"%s null devhandle for target_id %d\n",
-		    __func__, target->tid);
+		mpr_dprint(sc, MPR_ERROR, "%s null devhandle for target_id "
+		    "%d\n", __func__, target->tid);
 		return -1;
 	}
 
@@ -1401,6 +1419,7 @@ mprsas_send_reset(struct mpr_softc *sc, struct mpr_command *tm, uint8_t type)
 		mprsas_log_command(tm, MPR_RECOVERY|MPR_INFO,
 		    "sending logical unit reset\n");
 		tm->cm_complete = mprsas_logical_unit_reset_complete;
+		mprsas_prepare_for_tm(sc, tm, target, tm->cm_lun);
 	}
 	else if (type == MPI2_SCSITASKMGMT_TASKTYPE_TARGET_RESET) {
 		/*
@@ -1409,20 +1428,20 @@ mprsas_send_reset(struct mpr_softc *sc, struct mpr_command *tm, uint8_t type)
 		 */
 		req->MsgFlags = MPI2_SCSITASKMGMT_MSGFLAGS_LINK_RESET;
 		tm->cm_targ->target_resets++;
-		tm->cm_targ->flags |= MPRSAS_TARGET_INRESET;
 		mprsas_log_command(tm, MPR_RECOVERY|MPR_INFO,
 		    "sending target reset\n");
 		tm->cm_complete = mprsas_target_reset_complete;
+		mprsas_prepare_for_tm(sc, tm, target, CAM_LUN_WILDCARD);
 	}
 	else {
 		mpr_dprint(sc, MPR_ERROR, "unexpected reset type 0x%x\n", type);
 		return -1;
 	}
 
-	mpr_dprint(sc, MPR_XINFO, "to target %u handle 0x%04x\n", target->tid,
+	mpr_dprint(sc, MPR_INFO, "to target %u handle 0x%04x\n", target->tid,
 	    target->handle);
 	if (target->encl_level_valid) {
-		mpr_dprint(sc, MPR_XINFO, "At enclosure level %d, slot %d, "
+		mpr_dprint(sc, MPR_INFO, "At enclosure level %d, slot %d, "
 		    "connector name (%4s)\n", target->encl_level,
 		    target->encl_slot, target->connector_name);
 	}
@@ -1438,8 +1457,7 @@ mprsas_send_reset(struct mpr_softc *sc, struct mpr_command *tm, uint8_t type)
 	err = mpr_map_command(sc, tm);
 	if (err)
 		mprsas_log_command(tm, MPR_RECOVERY,
-		    "error %d sending reset type %u\n",
-		    err, type);
+		    "error %d sending reset type %u\n", err, type);
 
 	return err;
 }
@@ -1570,6 +1588,10 @@ mprsas_send_abort(struct mpr_softc *sc, struct mpr_command *tm,
 
 	targ->aborts++;
 
+	mpr_dprint(sc, MPR_INFO, "Sending reset from %s for target ID %d\n",
+	    __func__, targ->tid);
+	mprsas_prepare_for_tm(sc, tm, targ, tm->cm_lun);
+
 	err = mpr_map_command(sc, tm);
 	if (err)
 		mprsas_log_command(tm, MPR_RECOVERY,
@@ -1577,7 +1599,6 @@ mprsas_send_abort(struct mpr_softc *sc, struct mpr_command *tm,
 		    err, cm, req->TaskMID);
 	return err;
 }
-
 
 static void
 mprsas_scsiio_timeout(void *data)
@@ -1614,11 +1635,10 @@ mprsas_scsiio_timeout(void *data)
 	targ = cm->cm_targ;
 	targ->timeouts++;
 
-	mprsas_log_command(cm, MPR_XINFO, "command timeout cm %p ccb %p "
-	    "target %u, handle(0x%04x)\n", cm, cm->cm_ccb, targ->tid,
-	    targ->handle);
+	mprsas_log_command(cm, MPR_ERROR, "command timeout cm %p ccb %p target "
+	    "%u, handle(0x%04x)\n", cm, cm->cm_ccb, targ->tid, targ->handle);
 	if (targ->encl_level_valid) {
-		mpr_dprint(sc, MPR_XINFO, "At enclosure level %d, slot %d, "
+		mpr_dprint(sc, MPR_ERROR, "At enclosure level %d, slot %d, "
 		    "connector name (%4s)\n", targ->encl_level, targ->encl_slot,
 		    targ->connector_name);
 	}
@@ -1626,8 +1646,7 @@ mprsas_scsiio_timeout(void *data)
 	/* XXX first, check the firmware state, to see if it's still
 	 * operational.  if not, do a diag reset.
 	 */
-
-	cm->cm_ccb->ccb_h.status = CAM_CMD_TIMEOUT;
+	mprsas_set_ccbstatus(cm->cm_ccb, CAM_CMD_TIMEOUT);
 	cm->cm_state = MPR_CM_STATE_TIMEDOUT;
 	TAILQ_INSERT_TAIL(&targ->timedout_commands, cm, cm_recovery);
 
@@ -1655,8 +1674,8 @@ mprsas_scsiio_timeout(void *data)
 		 * more credits than disks in an enclosure, and limit
 		 * ourselves to one TM per target for recovery.
 		 */
-		mpr_dprint(sc, MPR_RECOVERY,
-		    "timedout cm %p failed to allocate a tm\n", cm);
+		mpr_dprint(sc, MPR_RECOVERY, "timedout cm %p failed to "
+		    "allocate a tm\n", cm);
 	}
 }
 
@@ -1678,19 +1697,22 @@ mprsas_action_scsiio(struct mprsas_softc *sassc, union ccb *ccb)
 	mtx_assert(&sc->mpr_mtx, MA_OWNED);
 
 	csio = &ccb->csio;
+	KASSERT(csio->ccb_h.target_id < sassc->maxtargets,
+	    ("Target %d out of bounds in XPT_SCSI_IO\n",
+	     csio->ccb_h.target_id));
 	targ = &sassc->targets[csio->ccb_h.target_id];
 	mpr_dprint(sc, MPR_TRACE, "ccb %p target flag %x\n", ccb, targ->flags);
 	if (targ->handle == 0x0) {
 		mpr_dprint(sc, MPR_ERROR, "%s NULL handle for target %u\n", 
 		    __func__, csio->ccb_h.target_id);
-		csio->ccb_h.status = CAM_DEV_NOT_THERE;
+		mprsas_set_ccbstatus(ccb, CAM_DEV_NOT_THERE);
 		xpt_done(ccb);
 		return;
 	}
 	if (targ->flags & MPR_TARGET_FLAGS_RAID_COMPONENT) {
-		mpr_dprint(sc, MPR_TRACE, "%s Raid component no SCSI IO "
+		mpr_dprint(sc, MPR_ERROR, "%s Raid component no SCSI IO "
 		    "supported %u\n", __func__, csio->ccb_h.target_id);
-		csio->ccb_h.status = CAM_DEV_NOT_THERE;
+		mprsas_set_ccbstatus(ccb, CAM_DEV_NOT_THERE);
 		xpt_done(ccb);
 		return;
 	}
@@ -1699,7 +1721,7 @@ mprsas_action_scsiio(struct mprsas_softc *sassc, union ccb *ccb)
 	 * Progress" and was actually aborted by the upper layer.  Check for
 	 * this here and complete the command without error.
 	 */
-	if (ccb->ccb_h.status != CAM_REQ_INPROG) {
+	if (mprsas_get_ccbstatus(ccb) != CAM_REQ_INPROG) {
 		mpr_dprint(sc, MPR_TRACE, "%s Command is not in progress for "
 		    "target %u\n", __func__, csio->ccb_h.target_id);
 		xpt_done(ccb);
@@ -1712,16 +1734,29 @@ mprsas_action_scsiio(struct mprsas_softc *sassc, union ccb *ccb)
 	 */
 	if (targ->flags & MPRSAS_TARGET_INREMOVAL) {
 		if (targ->devinfo == 0)
-			csio->ccb_h.status = CAM_REQ_CMP;
+			mprsas_set_ccbstatus(ccb, CAM_REQ_CMP);
 		else
-			csio->ccb_h.status = CAM_SEL_TIMEOUT;
+			mprsas_set_ccbstatus(ccb, CAM_SEL_TIMEOUT);
 		xpt_done(ccb);
 		return;
 	}
 
 	if ((sc->mpr_flags & MPR_FLAGS_SHUTDOWN) != 0) {
-		mpr_dprint(sc, MPR_TRACE, "%s shutting down\n", __func__);
-		csio->ccb_h.status = CAM_DEV_NOT_THERE;
+		mpr_dprint(sc, MPR_INFO, "%s shutting down\n", __func__);
+		mprsas_set_ccbstatus(ccb, CAM_DEV_NOT_THERE);
+		xpt_done(ccb);
+		return;
+	}
+
+	/*
+	 * If target has a reset in progress, freeze the devq and return.  The
+	 * devq will be released when the TM reset is finished.
+	 */
+	if (targ->flags & MPRSAS_TARGET_INRESET) {
+		ccb->ccb_h.status = CAM_BUSY | CAM_DEV_QFRZN;
+		mpr_dprint(sc, MPR_INFO, "%s: Freezing devq for target ID %d\n",
+		    __func__, targ->tid);
+		xpt_freeze_devq(ccb->ccb_h.path, 1);
 		xpt_done(ccb);
 		return;
 	}
@@ -1804,7 +1839,7 @@ mprsas_action_scsiio(struct mprsas_softc *sassc, union ccb *ccb)
 
 	if (MPR_SET_LUN(req->LUN, csio->ccb_h.target_lun) != 0) {
 		mpr_free_command(sc, cm);
-		ccb->ccb_h.status = CAM_LUN_INVALID;
+		mprsas_set_ccbstatus(ccb, CAM_LUN_INVALID);
 		xpt_done(ccb);
 		return;
 	}
@@ -1900,8 +1935,13 @@ mprsas_action_scsiio(struct mprsas_softc *sassc, union ccb *ccb)
 		cm->cm_desc.SCSIIO.DevHandle = htole16(targ->handle);
 	}
 
+#if __FreeBSD_version >= 1000029
+	callout_reset_sbt(&cm->cm_callout, SBT_1MS * ccb->ccb_h.timeout, 0,
+	    mprsas_scsiio_timeout, cm, 0);
+#else //__FreeBSD_version < 1000029
 	callout_reset(&cm->cm_callout, (ccb->ccb_h.timeout * hz) / 1000,
-	   mprsas_scsiio_timeout, cm);
+	    mprsas_scsiio_timeout, cm);
+#endif //__FreeBSD_version >= 1000029
 
 	targ->issued++;
 	targ->outstanding++;
@@ -2026,6 +2066,9 @@ mpr_sc_failed_io_info(struct mpr_softc *sc, struct ccb_scsiio *csio,
 	case MPI2_IOCSTATUS_EEDP_APP_TAG_ERROR:
 		desc_ioc_state = "eedp app tag error";
 		break;
+	case MPI2_IOCSTATUS_INSUFFICIENT_POWER:
+		desc_ioc_state = "insufficient power";
+		break;
 	default:
 		desc_ioc_state = "unknown";
 		break;
@@ -2099,7 +2142,7 @@ mpr_sc_failed_io_info(struct mpr_softc *sc, struct ccb_scsiio *csio,
 	    desc_scsi_state, scsi_state);
 
 	if (sc->mpr_debug & MPR_XINFO &&
-		scsi_state & MPI2_SCSI_STATE_AUTOSENSE_VALID) {
+	    scsi_state & MPI2_SCSI_STATE_AUTOSENSE_VALID) {
 		mpr_dprint(sc, MPR_XINFO, "-> Sense Buffer Data : Start :\n");
 		scsi_sense_print(csio);
 		mpr_dprint(sc, MPR_XINFO, "-> Sense Buffer Data : End :\n");
@@ -2123,6 +2166,8 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 	u8 *TLR_bits, TLR_on;
 	int dir = 0, i;
 	u16 alloc_len;
+	struct mprsas_target *target;
+	target_id_t target_id;
 
 	MPR_FUNCTRACE(sc);
 	mpr_dprint(sc, MPR_TRACE,
@@ -2136,6 +2181,7 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 	sassc = sc->sassc;
 	ccb = cm->cm_complete_data;
 	csio = &ccb->csio;
+	target_id = csio->ccb_h.target_id;
 	rep = (MPI2_SCSI_IO_REPLY *)cm->cm_reply;
 	/*
 	 * XXX KDM if the chain allocation fails, does it matter if we do
@@ -2194,7 +2240,7 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 		 * because there can be no reply when we haven't actually
 		 * gone out to the hardware.
 		 */
-		ccb->ccb_h.status = CAM_REQUEUE_REQ;
+		mprsas_set_ccbstatus(ccb, CAM_REQUEUE_REQ);
 
 		/*
 		 * Currently the only error included in the mask is
@@ -2211,7 +2257,7 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 			xpt_freeze_simq(sassc->sim, 1);
 			sassc->flags |= MPRSAS_QUEUE_FROZEN;
 			mpr_dprint(sc, MPR_INFO, "Error sending command, "
-				   "freezing SIM queue\n");
+			    "freezing SIM queue\n");
 		}
 	}
 
@@ -2221,7 +2267,7 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 	 * commands that were sent.  All SSU commands should be completed before
 	 * shutdown completes, meaning SSU_refcount will be 0 after SSU_started
 	 * is TRUE.
-	 */ 
+	 */
 	if (sc->SSU_started && (csio->cdb_io.cdb_bytes[0] == START_STOP_UNIT)) {
 		mpr_dprint(sc, MPR_INFO, "Decrementing SSU count.\n");
 		sc->SSU_refcount--;
@@ -2229,12 +2275,12 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 
 	/* Take the fast path to completion */
 	if (cm->cm_reply == NULL) {
-		if ((ccb->ccb_h.status & CAM_STATUS_MASK) == CAM_REQ_INPROG) {
+		if (mprsas_get_ccbstatus(ccb) == CAM_REQ_INPROG) {
 			if ((sc->mpr_flags & MPR_FLAGS_DIAGRESET) != 0)
-				ccb->ccb_h.status = CAM_SCSI_BUS_RESET;
+				mprsas_set_ccbstatus(ccb, CAM_SCSI_BUS_RESET);
 			else {
-				ccb->ccb_h.status = CAM_REQ_CMP;
-				ccb->csio.scsi_status = SCSI_STATUS_OK;
+				mprsas_set_ccbstatus(ccb, CAM_REQ_CMP);
+				csio->scsi_status = SCSI_STATUS_OK;
 			}
 			if (sassc->flags & MPRSAS_QUEUE_FROZEN) {
 				ccb->ccb_h.status |= CAM_RELEASE_SIMQ;
@@ -2249,10 +2295,10 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 		 * CAM_REQ_CMP.  The first is if MPR_CM_FLAGS_ERROR_MASK is
 		 * set, the second is in the MPR_FLAGS_DIAGRESET above.
 		 */
-		if ((ccb->ccb_h.status & CAM_STATUS_MASK) != CAM_REQ_CMP) {
+		if (mprsas_get_ccbstatus(ccb) != CAM_REQ_CMP) {
 			/*
 			 * Freeze the dev queue so that commands are
-			 * executed in the correct order with after error
+			 * executed in the correct order after error
 			 * recovery.
 			 */
 			ccb->ccb_h.status |= CAM_DEV_QFRZN;
@@ -2282,7 +2328,7 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 		/* Completion failed at the transport level. */
 		if (rep->SCSIState & (MPI2_SCSI_STATE_NO_SCSI_STATUS |
 		    MPI2_SCSI_STATE_TERMINATED)) {
-			ccb->ccb_h.status = CAM_REQ_CMP_ERR;
+			mprsas_set_ccbstatus(ccb, CAM_REQ_CMP_ERR);
 			break;
 		}
 
@@ -2291,7 +2337,7 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 		 * recover the command.
 		 */
 		if (rep->SCSIState & MPI2_SCSI_STATE_AUTOSENSE_FAILED) {
-			ccb->ccb_h.status = CAM_AUTOSENSE_FAIL;
+			mprsas_set_ccbstatus(ccb, CAM_AUTOSENSE_FAIL);
 			break;
 		}
 
@@ -2303,7 +2349,7 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 		if ((rep->SCSIState & MPI2_SCSI_STATE_RESPONSE_INFO_VALID) &&
 		    ((le32toh(rep->ResponseInfo) & MPI2_SCSI_RI_MASK_REASONCODE)
 		    == MPR_SCSI_RI_INVALID_FRAME)) {
-			sc->mapping_table[csio->ccb_h.target_id].TLR_bits =
+			sc->mapping_table[target_id].TLR_bits =
 			    (u8)MPI2_SCSIIO_CONTROL_NO_TLR;
 		}
 
@@ -2315,16 +2361,16 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 		 */
 		if ((rep->SCSIStatus == MPI2_SCSI_STATUS_COMMAND_TERMINATED) ||
 		    (rep->SCSIStatus == MPI2_SCSI_STATUS_TASK_ABORTED)) {
-			ccb->ccb_h.status = CAM_REQ_ABORTED;
+			mprsas_set_ccbstatus(ccb, CAM_REQ_ABORTED);
 			break;
 		}
 
 		/* Handle normal status and sense */
 		csio->scsi_status = rep->SCSIStatus;
 		if (rep->SCSIStatus == MPI2_SCSI_STATUS_GOOD)
-			ccb->ccb_h.status = CAM_REQ_CMP;
+			mprsas_set_ccbstatus(ccb, CAM_REQ_CMP);
 		else
-			ccb->ccb_h.status = CAM_SCSI_STATUS_ERROR;
+			mprsas_set_ccbstatus(ccb, CAM_SCSI_STATUS_ERROR);
 
 		if (rep->SCSIState & MPI2_SCSI_STATE_AUTOSENSE_VALID) {
 			int sense_len, returned_sense_len;
@@ -2359,12 +2405,11 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 		    (csio->data_ptr != NULL) &&
 		    ((csio->data_ptr[0] & 0x1f) == T_SEQUENTIAL) &&
 		    (sc->control_TLR) &&
-		    (sc->mapping_table[csio->ccb_h.target_id].device_info &
+		    (sc->mapping_table[target_id].device_info &
 		    MPI2_SAS_DEVICE_INFO_SSP_TARGET)) {
 			vpd_list = (struct scsi_vpd_supported_page_list *)
 			    csio->data_ptr;
-			TLR_bits = &sc->mapping_table[csio->ccb_h.target_id].
-			    TLR_bits;
+			TLR_bits = &sc->mapping_table[target_id].TLR_bits;
 			*TLR_bits = (u8)MPI2_SCSIIO_CONTROL_NO_TLR;
 			TLR_on = (u8)MPI2_SCSIIO_CONTROL_TLR_ON;
 			alloc_len = ((u16)csio->cdb_io.cdb_bytes[3] << 8) +
@@ -2377,6 +2422,24 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 				}
 			}
 		}
+
+		/*
+		 * If this is a SATA direct-access end device, mark it so that
+		 * a SCSI StartStopUnit command will be sent to it when the
+		 * driver is being shutdown.
+		 */
+		if ((csio->cdb_io.cdb_bytes[0] == INQUIRY) &&
+		    ((csio->data_ptr[0] & 0x1f) == T_DIRECT) &&
+		    (sc->mapping_table[target_id].device_info &
+		    MPI2_SAS_DEVICE_INFO_SATA_DEVICE) &&
+		    ((sc->mapping_table[target_id].device_info &
+		    MPI2_SAS_DEVICE_INFO_MASK_DEVICE_TYPE) ==
+		    MPI2_SAS_DEVICE_INFO_END_DEVICE)) {
+			target = &sassc->targets[target_id];
+			target->supports_SSU = TRUE;
+			mpr_dprint(sc, MPR_XINFO, "Target %d supports SSU\n",
+			    target_id);
+		}
 		break;
 	case MPI2_IOCSTATUS_SCSI_INVALID_DEVHANDLE:
 	case MPI2_IOCSTATUS_SCSI_DEVICE_NOT_THERE:
@@ -2387,13 +2450,13 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 		 * failed.
 		 */
 		if (cm->cm_targ->devinfo == 0)
-			ccb->ccb_h.status = CAM_REQ_CMP;
+			mprsas_set_ccbstatus(ccb, CAM_REQ_CMP);
 		else
-			ccb->ccb_h.status = CAM_DEV_NOT_THERE;
+			mprsas_set_ccbstatus(ccb, CAM_DEV_NOT_THERE);
 		break;
 	case MPI2_IOCSTATUS_INVALID_SGL:
 		mpr_print_scsiio_cmd(sc, cm);
-		ccb->ccb_h.status = CAM_UNREC_HBA_ERROR;
+		mprsas_set_ccbstatus(ccb, CAM_UNREC_HBA_ERROR);
 		break;
 	case MPI2_IOCSTATUS_SCSI_TASK_TERMINATED:
 		/*
@@ -2406,23 +2469,32 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 		 * on the console.
 		 */
 		if (cm->cm_state == MPR_CM_STATE_TIMEDOUT)
-			ccb->ccb_h.status = CAM_CMD_TIMEOUT;
+			mprsas_set_ccbstatus(ccb, CAM_CMD_TIMEOUT);
 		else
-			ccb->ccb_h.status = CAM_REQ_ABORTED;
+			mprsas_set_ccbstatus(ccb, CAM_REQ_ABORTED);
 		break;
 	case MPI2_IOCSTATUS_SCSI_DATA_OVERRUN:
 		/* resid is ignored for this condition */
 		csio->resid = 0;
-		ccb->ccb_h.status = CAM_DATA_RUN_ERR;
+		mprsas_set_ccbstatus(ccb, CAM_DATA_RUN_ERR);
 		break;
 	case MPI2_IOCSTATUS_SCSI_IOC_TERMINATED:
 	case MPI2_IOCSTATUS_SCSI_EXT_TERMINATED:
 		/*
-		 * Since these are generally external (i.e. hopefully
-		 * transient transport-related) errors, retry these without
-		 * decrementing the retry count.
+		 * These can sometimes be transient transport-related
+		 * errors, and sometimes persistent drive-related errors.
+		 * We used to retry these without decrementing the retry
+		 * count by returning CAM_REQUEUE_REQ.  Unfortunately, if
+		 * we hit a persistent drive problem that returns one of
+		 * these error codes, we would retry indefinitely.  So,
+		 * return CAM_REQ_CMP_ERROR so that we decrement the retry
+		 * count and avoid infinite retries.  We're taking the
+		 * potential risk of flagging false failures in the event
+		 * of a topology-related error (e.g. a SAS expander problem
+		 * causes a command addressed to a drive to fail), but
+		 * avoiding getting into an infinite retry loop.
 		 */
-		ccb->ccb_h.status = CAM_REQUEUE_REQ;
+		mprsas_set_ccbstatus(ccb, CAM_REQ_CMP_ERR);
 		mprsas_log_command(cm, MPR_INFO,
 		    "terminated ioc %x scsi %x state %x xfer %u\n",
 		    le16toh(rep->IOCStatus), rep->SCSIStatus, rep->SCSIState,
@@ -2444,7 +2516,7 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 		    le16toh(rep->IOCStatus), rep->SCSIStatus, rep->SCSIState,
 		    le32toh(rep->TransferCount));
 		csio->resid = cm->cm_length;
-		ccb->ccb_h.status = CAM_REQ_CMP_ERR;
+		mprsas_set_ccbstatus(ccb, CAM_REQ_CMP_ERR);
 		break;
 	}
 	
@@ -2457,7 +2529,7 @@ mprsas_scsiio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 		    "queue\n");
 	}
 
-	if ((ccb->ccb_h.status & CAM_STATUS_MASK) != CAM_REQ_CMP) {
+	if (mprsas_get_ccbstatus(ccb) != CAM_REQ_CMP) {
 		ccb->ccb_h.status |= CAM_DEV_QFRZN;
 		xpt_freeze_devq(ccb->ccb_h.path, /*count*/ 1);
 	}
@@ -2484,16 +2556,16 @@ mprsas_smpio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 	 * in the standard request size.
 	 */
 	if ((cm->cm_flags & MPR_CM_FLAGS_ERROR_MASK) != 0) {
-		mpr_dprint(sc, MPR_ERROR,"%s: cm_flags = %#x on SMP request!\n",
-		    __func__, cm->cm_flags);
-		ccb->ccb_h.status = CAM_REQ_CMP_ERR;
+		mpr_dprint(sc, MPR_ERROR, "%s: cm_flags = %#x on SMP "
+		    "request!\n", __func__, cm->cm_flags);
+		mprsas_set_ccbstatus(ccb, CAM_REQ_CMP_ERR);
 		goto bailout;
         }
 
 	rpl = (MPI2_SMP_PASSTHROUGH_REPLY *)cm->cm_reply;
 	if (rpl == NULL) {
 		mpr_dprint(sc, MPR_ERROR, "%s: NULL cm_reply!\n", __func__);
-		ccb->ccb_h.status = CAM_REQ_CMP_ERR;
+		mprsas_set_ccbstatus(ccb, CAM_REQ_CMP_ERR);
 		goto bailout;
 	}
 
@@ -2506,17 +2578,17 @@ mprsas_smpio_complete(struct mpr_softc *sc, struct mpr_command *cm)
 	    rpl->SASStatus != MPI2_SASSTATUS_SUCCESS) {
 		mpr_dprint(sc, MPR_XINFO, "%s: IOCStatus %04x SASStatus %02x\n",
 		    __func__, le16toh(rpl->IOCStatus), rpl->SASStatus);
-		ccb->ccb_h.status = CAM_REQ_CMP_ERR;
+		mprsas_set_ccbstatus(ccb, CAM_REQ_CMP_ERR);
 		goto bailout;
 	}
 
-	mpr_dprint(sc, MPR_XINFO, "%s: SMP request to SAS address "
-	    "%#jx completed successfully\n", __func__, (uintmax_t)sasaddr);
+	mpr_dprint(sc, MPR_XINFO, "%s: SMP request to SAS address %#jx "
+	    "completed successfully\n", __func__, (uintmax_t)sasaddr);
 
 	if (ccb->smpio.smp_response[2] == SMP_FR_ACCEPTED)
-		ccb->ccb_h.status = CAM_REQ_CMP;
+		mprsas_set_ccbstatus(ccb, CAM_REQ_CMP);
 	else
-		ccb->ccb_h.status = CAM_SMP_STATUS_ERROR;
+		mprsas_set_ccbstatus(ccb, CAM_SMP_STATUS_ERROR);
 
 bailout:
 	/*
@@ -2531,8 +2603,7 @@ bailout:
 }
 
 static void
-mprsas_send_smpcmd(struct mprsas_softc *sassc, union ccb *ccb,
-    uint64_t sasaddr)
+mprsas_send_smpcmd(struct mprsas_softc *sassc, union ccb *ccb, uint64_t sasaddr)
 {
 	struct mpr_command *cm;
 	uint8_t *request, *response;
@@ -2555,7 +2626,7 @@ mprsas_send_smpcmd(struct mprsas_softc *sassc, union ccb *ccb,
 		 */
 		mpr_dprint(sc, MPR_ERROR, "%s: physical addresses not "
 		    "supported\n", __func__);
-		ccb->ccb_h.status = CAM_REQ_INVALID;
+		mprsas_set_ccbstatus(ccb, CAM_REQ_INVALID);
 		xpt_done(ccb);
 		return;
 	case CAM_DATA_SG:
@@ -2565,10 +2636,10 @@ mprsas_send_smpcmd(struct mprsas_softc *sassc, union ccb *ccb,
 		 */
 		if ((ccb->smpio.smp_request_sglist_cnt > 1)
 		    || (ccb->smpio.smp_response_sglist_cnt > 1)) {
-			mpr_dprint(sc, MPR_ERROR,
-			    "%s: multiple request or response buffer segments "
-			    "not supported for SMP\n", __func__);
-			ccb->ccb_h.status = CAM_REQ_INVALID;
+			mpr_dprint(sc, MPR_ERROR, "%s: multiple request or "
+			    "response buffer segments not supported for SMP\n",
+			    __func__);
+			mprsas_set_ccbstatus(ccb, CAM_REQ_INVALID);
 			xpt_done(ccb);
 			return;
 		}
@@ -2602,7 +2673,7 @@ mprsas_send_smpcmd(struct mprsas_softc *sassc, union ccb *ccb,
 		response = ccb->smpio.smp_response;
 		break;
 	default:
-		ccb->ccb_h.status = CAM_REQ_INVALID;
+		mprsas_set_ccbstatus(ccb, CAM_REQ_INVALID);
 		xpt_done(ccb);
 		return;
 	}
@@ -2611,9 +2682,9 @@ mprsas_send_smpcmd(struct mprsas_softc *sassc, union ccb *ccb,
 	 * XXX We don't yet support physical addresses here.
 	 */
 	if (ccb->ccb_h.flags & (CAM_DATA_PHYS|CAM_SG_LIST_PHYS)) {
-		mpr_printf(sc, "%s: physical addresses not supported\n",
-			   __func__);
-		ccb->ccb_h.status = CAM_REQ_INVALID;
+		mpr_dprint(sc, MPR_ERROR, "%s: physical addresses not "
+		    "supported\n", __func__);
+		mprsas_set_ccbstatus(ccb, CAM_REQ_INVALID);
 		xpt_done(ccb);
 		return;
 	}
@@ -2632,7 +2703,7 @@ mprsas_send_smpcmd(struct mprsas_softc *sassc, union ccb *ccb,
 			mpr_dprint(sc, MPR_ERROR, "%s: multiple request or "
 			    "response buffer segments not supported for SMP\n",
 			    __func__);
-			ccb->ccb_h.status = CAM_REQ_INVALID;
+			mprsas_set_ccbstatus(ccb, CAM_REQ_INVALID);
 			xpt_done(ccb);
 			return;
 		}
@@ -2668,9 +2739,9 @@ mprsas_send_smpcmd(struct mprsas_softc *sassc, union ccb *ccb,
 
 	cm = mpr_alloc_command(sc);
 	if (cm == NULL) {
-		mpr_dprint(sc, MPR_ERROR,
-		    "%s: cannot allocate command\n", __func__);
-		ccb->ccb_h.status = CAM_RESRC_UNAVAIL;
+		mpr_dprint(sc, MPR_ERROR, "%s: cannot allocate command\n",
+		    __func__);
+		mprsas_set_ccbstatus(ccb, CAM_RESRC_UNAVAIL);
 		xpt_done(ccb);
 		return;
 	}
@@ -2757,7 +2828,7 @@ mprsas_send_smpcmd(struct mprsas_softc *sassc, union ccb *ccb,
 
 bailout_error:
 	mpr_free_command(sc, cm);
-	ccb->ccb_h.status = CAM_RESRC_UNAVAIL;
+	mprsas_set_ccbstatus(ccb, CAM_RESRC_UNAVAIL);
 	xpt_done(ccb);
 	return;
 }
@@ -2780,7 +2851,7 @@ mprsas_action_smpio(struct mprsas_softc *sassc, union ccb *ccb)
 	if (targ->handle == 0x0) {
 		mpr_dprint(sc, MPR_ERROR, "%s: target %d does not exist!\n",
 		    __func__, ccb->ccb_h.target_id);
-		ccb->ccb_h.status = CAM_SEL_TIMEOUT;
+		mprsas_set_ccbstatus(ccb, CAM_SEL_TIMEOUT);
 		xpt_done(ccb);
 		return;
 	}
@@ -2828,7 +2899,7 @@ mprsas_action_smpio(struct mprsas_softc *sassc, union ccb *ccb)
 		if (targ->parent_handle == 0x0) {
 			mpr_dprint(sc, MPR_ERROR, "%s: handle %d does not have "
 			    "a valid parent handle!\n", __func__, targ->handle);
-			ccb->ccb_h.status = CAM_DEV_NOT_THERE;
+			mprsas_set_ccbstatus(ccb, CAM_DEV_NOT_THERE);
 			goto bailout;
 		}
 #ifdef OLD_MPR_PROBE
@@ -2838,7 +2909,7 @@ mprsas_action_smpio(struct mprsas_softc *sassc, union ccb *ccb)
 		if (parent_target == NULL) {
 			mpr_dprint(sc, MPR_ERROR, "%s: handle %d does not have "
 			    "a valid parent target!\n", __func__, targ->handle);
-			ccb->ccb_h.status = CAM_DEV_NOT_THERE;
+			mprsas_set_ccbstatus(ccb, CAM_DEV_NOT_THERE);
 			goto bailout;
 		}
 
@@ -2847,9 +2918,8 @@ mprsas_action_smpio(struct mprsas_softc *sassc, union ccb *ccb)
 			mpr_dprint(sc, MPR_ERROR, "%s: handle %d parent %d "
 			    "does not have an SMP target!\n", __func__,
 			    targ->handle, parent_target->handle);
-			ccb->ccb_h.status = CAM_DEV_NOT_THERE;
+			mprsas_set_ccbstatus(ccb, CAM_DEV_NOT_THERE);
 			goto bailout;
-
 		}
 
 		sasaddr = parent_target->sasaddr;
@@ -2859,7 +2929,7 @@ mprsas_action_smpio(struct mprsas_softc *sassc, union ccb *ccb)
 			mpr_dprint(sc, MPR_ERROR, "%s: handle %d parent %d "
 			    "does not have an SMP target!\n", __func__,
 			    targ->handle, targ->parent_handle);
-			ccb->ccb_h.status = CAM_DEV_NOT_THERE;
+			mprsas_set_ccbstatus(ccb, CAM_DEV_NOT_THERE);
 			goto bailout;
 
 		}
@@ -2867,7 +2937,7 @@ mprsas_action_smpio(struct mprsas_softc *sassc, union ccb *ccb)
 			mpr_dprint(sc, MPR_ERROR, "%s: handle %d parent handle "
 			    "%d does not have a valid SAS address!\n", __func__,
 			    targ->handle, targ->parent_handle);
-			ccb->ccb_h.status = CAM_DEV_NOT_THERE;
+			mprsas_set_ccbstatus(ccb, CAM_DEV_NOT_THERE);
 			goto bailout;
 		}
 
@@ -2879,7 +2949,7 @@ mprsas_action_smpio(struct mprsas_softc *sassc, union ccb *ccb)
 	if (sasaddr == 0) {
 		mpr_dprint(sc, MPR_INFO, "%s: unable to find SAS address for "
 		    "handle %d\n", __func__, targ->handle);
-		ccb->ccb_h.status = CAM_DEV_NOT_THERE;
+		mprsas_set_ccbstatus(ccb, CAM_DEV_NOT_THERE);
 		goto bailout;
 	}
 	mprsas_send_smpcmd(sassc, ccb, sasaddr);
@@ -2903,15 +2973,14 @@ mprsas_action_resetdev(struct mprsas_softc *sassc, union ccb *ccb)
 	MPR_FUNCTRACE(sassc->sc);
 	mtx_assert(&sassc->sc->mpr_mtx, MA_OWNED);
 
-	KASSERT(ccb->ccb_h.target_id < sassc->maxtargets,
-	    ("Target %d out of bounds in XPT_RESET_DEV\n",
-	    ccb->ccb_h.target_id));
+	KASSERT(ccb->ccb_h.target_id < sassc->maxtargets, ("Target %d out of "
+	    "bounds in XPT_RESET_DEV\n", ccb->ccb_h.target_id));
 	sc = sassc->sc;
 	tm = mpr_alloc_command(sc);
 	if (tm == NULL) {
-		mpr_dprint(sc, MPR_ERROR,
-		    "command alloc failure in mprsas_action_resetdev\n");
-		ccb->ccb_h.status = CAM_RESRC_UNAVAIL;
+		mpr_dprint(sc, MPR_ERROR, "command alloc failure in "
+		    "mprsas_action_resetdev\n");
+		mprsas_set_ccbstatus(ccb, CAM_RESRC_UNAVAIL);
 		xpt_done(ccb);
 		return;
 	}
@@ -2930,7 +2999,12 @@ mprsas_action_resetdev(struct mprsas_softc *sassc, union ccb *ccb)
 	    MPI2_REQ_DESCRIPT_FLAGS_HIGH_PRIORITY;
 	tm->cm_complete = mprsas_resetdev_complete;
 	tm->cm_complete_data = ccb;
+
+	mpr_dprint(sc, MPR_INFO, "%s: Sending reset for target ID %d\n",
+	    __func__, targ->tid);
 	tm->cm_targ = targ;
+	targ->flags |= MPRSAS_TARGET_INRESET;
+
 	mpr_map_command(sc, tm);
 }
 
@@ -2959,21 +3033,20 @@ mprsas_resetdev_complete(struct mpr_softc *sc, struct mpr_command *tm)
 		mpr_dprint(sc, MPR_ERROR, "%s: cm_flags = %#x for reset of "
 		    "handle %#04x! This should not happen!\n", __func__,
 		    tm->cm_flags, req->DevHandle);
-		ccb->ccb_h.status = CAM_REQ_CMP_ERR;
+		mprsas_set_ccbstatus(ccb, CAM_REQ_CMP_ERR);
 		goto bailout;
 	}
 
-	mpr_dprint(sc, MPR_XINFO,
-	    "%s: IOCStatus = 0x%x ResponseCode = 0x%x\n", __func__,
-	    le16toh(resp->IOCStatus), le32toh(resp->ResponseCode));
+	mpr_dprint(sc, MPR_XINFO, "%s: IOCStatus = 0x%x ResponseCode = 0x%x\n",
+	    __func__, le16toh(resp->IOCStatus), le32toh(resp->ResponseCode));
 
 	if (le32toh(resp->ResponseCode) == MPI2_SCSITASKMGMT_RSP_TM_COMPLETE) {
-		ccb->ccb_h.status = CAM_REQ_CMP;
+		mprsas_set_ccbstatus(ccb, CAM_REQ_CMP);
 		mprsas_announce_reset(sc, AC_SENT_BDR, tm->cm_targ->tid,
 		    CAM_LUN_WILDCARD);
 	}
 	else
-		ccb->ccb_h.status = CAM_REQ_CMP_ERR;
+		mprsas_set_ccbstatus(ccb, CAM_REQ_CMP_ERR);
 
 bailout:
 
@@ -2992,7 +3065,8 @@ mprsas_poll(struct cam_sim *sim)
 		/* frequent debug messages during a panic just slow
 		 * everything down too much.
 		 */
-		mpr_printf(sassc->sc, "%s clearing MPR_TRACE\n", __func__);
+		mpr_dprint(sassc->sc, MPR_XINFO, "%s clearing MPR_TRACE\n",
+		    __func__);
 		sassc->sc->mpr_debug &= ~MPR_TRACE;
 	}
 
@@ -3079,14 +3153,19 @@ mprsas_async(void *callback_arg, uint32_t code, struct cam_path *path,
 		cdai.ccb_h.func_code = XPT_DEV_ADVINFO;
 		cdai.ccb_h.flags = CAM_DIR_IN;
 		cdai.buftype = CDAI_TYPE_RCAPLONG;
+#if (__FreeBSD_version >= 1100061) || \
+    ((__FreeBSD_version >= 1001510) && (__FreeBSD_version < 1100000))
+		cdai.flags = CDAI_FLAG_NONE;
+#else
 		cdai.flags = 0;
+#endif
 		cdai.bufsiz = sizeof(rcap_buf);
 		cdai.buf = (uint8_t *)&rcap_buf;
 		xpt_action((union ccb *)&cdai);
 		if ((cdai.ccb_h.status & CAM_DEV_QFRZN) != 0)
 			cam_release_devq(cdai.ccb_h.path, 0, 0, 0, FALSE);
 
-		if (((cdai.ccb_h.status & CAM_STATUS_MASK) == CAM_REQ_CMP)
+		if ((mprsas_get_ccbstatus((union ccb *)&cdai) == CAM_REQ_CMP)
 		    && (rcap_buf.prot & SRC16_PROT_EN)) {
 			lun->eedp_formatted = TRUE;
 			lun->eedp_block_size = scsi_4btoul(rcap_buf.length);
@@ -3113,8 +3192,6 @@ mprsas_async(void *callback_arg, uint32_t code, struct cam_path *path,
 #endif
 
 		cgd = arg;
-		mprsas_prepare_ssu(sc, path, cgd);
-
 #if (__FreeBSD_version < 901503) || \
     ((__FreeBSD_version >= 1000000) && (__FreeBSD_version < 1000006))
 		mprsas_check_eedp(sc, path, cgd);
@@ -3123,64 +3200,6 @@ mprsas_async(void *callback_arg, uint32_t code, struct cam_path *path,
 	}
 	default:
 		break;
-	}
-}
-
-static void
-mprsas_prepare_ssu(struct mpr_softc *sc, struct cam_path *path,
-    struct ccb_getdev *cgd)
-{
-	struct mprsas_softc *sassc = sc->sassc;
-	path_id_t pathid;
-	target_id_t targetid;
-	lun_id_t lunid;
-	struct mprsas_target *target;
-	struct mprsas_lun *lun;
-	uint8_t	found_lun;
-
-	sassc = sc->sassc;
-	pathid = cam_sim_path(sassc->sim);
-	targetid = xpt_path_target_id(path);
-	lunid = xpt_path_lun_id(path);
-
-	KASSERT(targetid < sassc->maxtargets,
-	    ("Target %d out of bounds in mprsas_prepare_ssu\n", targetid));
-	target = &sassc->targets[targetid];
-	if (target->handle == 0x0)
-		return;
-
-	/*
-	 * If LUN is already in list, don't create a new one.
-	 */
-	found_lun = FALSE;
-	SLIST_FOREACH(lun, &target->luns, lun_link) {
-		if (lun->lun_id == lunid) {
-			found_lun = TRUE;
-			break;
-		}
-	}
-	if (!found_lun) {
-		lun = malloc(sizeof(struct mprsas_lun), M_MPR,
-		    M_NOWAIT | M_ZERO);
-		if (lun == NULL) {
-			mpr_dprint(sc, MPR_ERROR, "Unable to alloc LUN for "
-			    "preparing SSU.\n");
-			return;
-		}
-		lun->lun_id = lunid;
-		SLIST_INSERT_HEAD(&target->luns, lun, lun_link);
-	}
-
-	/*
-	 * If this is a SATA direct-access end device, mark it so that a SCSI
-	 * StartStopUnit command will be sent to it when the driver is being
-	 * shutdown.
-	 */
-	if (((cgd->inq_data.device & 0x1F) == T_DIRECT) &&
-	    (target->devinfo & MPI2_SAS_DEVICE_INFO_SATA_DEVICE) &&
-	    ((target->devinfo & MPI2_SAS_DEVICE_INFO_MASK_DEVICE_TYPE) ==
-	    MPI2_SAS_DEVICE_INFO_END_DEVICE)) {
-		lun->stop_at_shutdown = TRUE;
 	}
 }
 
@@ -3204,13 +3223,12 @@ mprsas_check_eedp(struct mpr_softc *sc, struct cam_path *path,
 	uint8_t	found_lun;
 	char path_str[64];
 
-	sassc = sc->sassc;
 	pathid = cam_sim_path(sassc->sim);
 	targetid = xpt_path_target_id(path);
 	lunid = xpt_path_lun_id(path);
 
-	KASSERT(targetid < sassc->maxtargets,
-	    ("Target %d out of bounds in mprsas_check_eedp\n", targetid));
+	KASSERT(targetid < sassc->maxtargets, ("Target %d out of bounds in "
+	    "mprsas_check_eedp\n", targetid));
 	target = &sassc->targets[targetid];
 	if (target->handle == 0x0)
 		return;
@@ -3220,7 +3238,7 @@ mprsas_check_eedp(struct mpr_softc *sc, struct cam_path *path,
 	 *
 	 * If this flag is set in the inquiry data, the device supports
 	 * protection information, and must support the 16 byte read capacity
-	 * command, otherwise continue without sending read cap 16
+	 * command, otherwise continue without sending read cap 16.
 	 */
 	if ((cgd->inq_data.spc3_flags & SPC3_SID_PROTECT) == 0)
 		return;
@@ -3236,10 +3254,10 @@ mprsas_check_eedp(struct mpr_softc *sc, struct cam_path *path,
 		return;
 	}
 
-	if (xpt_create_path(&local_path, xpt_periph, pathid, targetid, lunid)
-	    != CAM_REQ_CMP) {
+	if (xpt_create_path(&local_path, xpt_periph, pathid, targetid, lunid) !=
+	    CAM_REQ_CMP) {
 		mpr_dprint(sc, MPR_ERROR, "Unable to create path for EEDP "
-		    "support\n");
+		    "support.\n");
 		xpt_free_ccb(ccb);
 		return;
 	}
@@ -3280,7 +3298,7 @@ mprsas_check_eedp(struct mpr_softc *sc, struct cam_path *path,
 	rcap_buf = malloc(sizeof(struct scsi_read_capacity_eedp), M_MPR,
 	    M_NOWAIT | M_ZERO);
 	if (rcap_buf == NULL) {
-		mpr_dprint(sc, MPR_FAULT, "Unable to alloc read capacity "
+		mpr_dprint(sc, MPR_ERROR, "Unable to alloc read capacity "
 		    "buffer for EEDP support.\n");
 		xpt_free_path(ccb->ccb_h.path);
 		xpt_free_ccb(ccb);
@@ -3333,7 +3351,7 @@ mprsas_read_cap_done(struct cam_periph *periph, union ccb *done_ccb)
 		xpt_release_devq(done_ccb->ccb_h.path,
 			       	/*count*/ 1, /*run_queue*/TRUE);
 	}
-	
+
 	rcap_buf = (struct scsi_read_capacity_eedp *)done_ccb->csio.data_ptr;
 
 	/*
@@ -3341,9 +3359,8 @@ mprsas_read_cap_done(struct cam_periph *periph, union ccb *done_ccb)
 	 * target.
 	 */
 	sassc = (struct mprsas_softc *)done_ccb->ccb_h.ppriv_ptr1;
-	KASSERT(done_ccb->ccb_h.target_id < sassc->maxtargets,
-	    ("Target %d out of bounds in mprsas_read_cap_done\n",
-	    done_ccb->ccb_h.target_id));
+	KASSERT(done_ccb->ccb_h.target_id < sassc->maxtargets, ("Target %d out "
+	    "of bounds in mprsas_read_cap_done\n", done_ccb->ccb_h.target_id));
 	target = &sassc->targets[done_ccb->ccb_h.target_id];
 	SLIST_FOREACH(lun, &target->luns, lun_link) {
 		if (lun->lun_id != done_ccb->ccb_h.target_lun)
@@ -3351,21 +3368,21 @@ mprsas_read_cap_done(struct cam_periph *periph, union ccb *done_ccb)
 
 		/*
 		 * Got the LUN in the target's LUN list.  Fill it in with EEDP
-		 * info.  If the READ CAP 16 command had some SCSI error (common
+		 * info. If the READ CAP 16 command had some SCSI error (common
 		 * if command is not supported), mark the lun as not supporting
 		 * EEDP and set the block size to 0.
 		 */
-		if (((done_ccb->ccb_h.status & CAM_STATUS_MASK) != CAM_REQ_CMP)
-		    || (done_ccb->csio.scsi_status != SCSI_STATUS_OK)) {
+		if ((mprsas_get_ccbstatus(done_ccb) != CAM_REQ_CMP) ||
+		    (done_ccb->csio.scsi_status != SCSI_STATUS_OK)) {
 			lun->eedp_formatted = FALSE;
 			lun->eedp_block_size = 0;
 			break;
 		}
 
 		if (rcap_buf->protect & 0x01) {
-			mpr_dprint(sassc->sc, MPR_INFO, "LUN %d for "
-			    "target ID %d is formatted for EEDP "
-			    "support.\n", done_ccb->ccb_h.target_lun,
+			mpr_dprint(sassc->sc, MPR_INFO, "LUN %d for target ID "
+			    "%d is formatted for EEDP support.\n",
+			    done_ccb->ccb_h.target_lun,
 			    done_ccb->ccb_h.target_id);
 			lun->eedp_formatted = TRUE;
 			lun->eedp_block_size = scsi_4btoul(rcap_buf->length);
@@ -3380,6 +3397,34 @@ mprsas_read_cap_done(struct cam_periph *periph, union ccb *done_ccb)
 }
 #endif /* (__FreeBSD_version < 901503) || \
           ((__FreeBSD_version >= 1000000) && (__FreeBSD_version < 1000006)) */
+
+void
+mprsas_prepare_for_tm(struct mpr_softc *sc, struct mpr_command *tm,
+    struct mprsas_target *target, lun_id_t lun_id)
+{
+	union ccb *ccb;
+	path_id_t path_id;
+
+	/*
+	 * Set the INRESET flag for this target so that no I/O will be sent to
+	 * the target until the reset has completed.  If an I/O request does
+	 * happen, the devq will be frozen.  The CCB holds the path which is
+	 * used to release the devq.  The devq is released and the CCB is freed
+	 * when the TM completes.
+	 */
+	ccb = xpt_alloc_ccb_nowait();
+	if (ccb) {
+		path_id = cam_sim_path(sc->sassc->sim);
+		if (xpt_create_path(&ccb->ccb_h.path, xpt_periph, path_id,
+		    target->tid, lun_id) != CAM_REQ_CMP) {
+			xpt_free_ccb(ccb);
+		} else {
+			tm->cm_ccb = ccb;
+			tm->cm_targ = target;
+			target->flags |= MPRSAS_TARGET_INRESET;
+		}
+	}
+}
 
 int
 mprsas_startup(struct mpr_softc *sc)
@@ -3480,4 +3525,34 @@ mprsas_check_id(struct mprsas_softc *sassc, int id)
 	}
 
 	return (0);
+}
+
+void
+mprsas_realloc_targets(struct mpr_softc *sc, int maxtargets)
+{
+	struct mprsas_softc *sassc;
+	struct mprsas_lun *lun, *lun_tmp;
+	struct mprsas_target *targ;
+	int i;
+
+	sassc = sc->sassc;
+	/*
+	 * The number of targets is based on IOC Facts, so free all of
+	 * the allocated LUNs for each target and then the target buffer
+	 * itself.
+	 */
+	for (i=0; i< maxtargets; i++) {
+		targ = &sassc->targets[i];
+		SLIST_FOREACH_SAFE(lun, &targ->luns, lun_link, lun_tmp) {
+			free(lun, M_MPR);
+		}
+	}
+	free(sassc->targets, M_MPR);
+
+	sassc->targets = malloc(sizeof(struct mprsas_target) * maxtargets,
+	    M_MPR, M_WAITOK|M_ZERO);
+	if (!sassc->targets) {
+		panic("%s failed to alloc targets with error %d\n",
+		    __func__, ENOMEM);
+	}
 }

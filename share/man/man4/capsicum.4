@@ -26,7 +26,7 @@
 .\"
 .\" $FreeBSD$
 .\"
-.Dd October 19, 2013
+.Dd July 5, 2016
 .Dt CAPSICUM 4
 .Os
 .Sh NAME
@@ -104,9 +104,8 @@ associated with file descriptors; described in greater detail in
 .Xr shm_open 2 ,
 .Xr write 2 ,
 .Xr cap_rights_get 3 ,
-.Xr libcapsicum 3 ,
-.Xr procdesc 4 ,
-.Xr casperd 8
+.Xr libcasper 3 ,
+.Xr procdesc 4
 .Sh HISTORY
 .Nm
 first appeared in
@@ -125,7 +124,3 @@ and
 .An Kris Kennaway Aq Mt kris@FreeBSD.org
 at Google, Inc., and
 .An Pawel Jakub Dawidek Aq Mt pawel@dawidek.net .
-.Sh BUGS
-.Nm
-is considered experimental in
-.Fx .

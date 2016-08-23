@@ -372,8 +372,6 @@ void	resettodr(void);
 
 extern volatile time_t	time_second;
 extern volatile time_t	time_uptime;
-extern struct bintime boottimebin;
-extern struct timeval boottime;
 extern struct bintime tc_tick_bt;
 extern sbintime_t tc_tick_sbt;
 extern struct bintime tick_bt;
@@ -398,7 +396,7 @@ extern sbintime_t sbt_tickthreshold;
  * Functions containing "up" returns time relative to boot and
  * should be used for calculating time intervals.
  *
- * Functions without "up" returns GMT time.
+ * Functions without "up" returns UTC time.
  *
  * Functions with the "get" prefix returns a less precise result
  * much faster than the functions without "get" prefix and should
@@ -439,6 +437,9 @@ getsbinuptime(void)
 void	getbintime(struct bintime *bt);
 void	getnanotime(struct timespec *tsp);
 void	getmicrotime(struct timeval *tvp);
+
+void	getboottime(struct timeval *boottime);
+void	getboottimebin(struct bintime *boottimebin);
 
 /* Other functions */
 int	itimerdecr(struct itimerval *itp, int usec);

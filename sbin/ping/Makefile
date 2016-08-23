@@ -3,24 +3,23 @@
 
 .include <src.opts.mk>
 
+PACKAGE=runtime
 PROG=	ping
 MAN=	ping.8
 BINOWN=	root
 BINMODE=4555
-WARNS?=	2
-DPADD=	${LIBM}
-LDADD=	-lm
+WARNS?=	3
+LIBADD=	m
 
 .if ${MK_CASPER} != "no" && !defined(RESCUE)
-DPADD+=	${LIBCAPSICUM} ${LIBNV}
-LDADD+=	-lcapsicum -lnv
-CFLAGS+=-DHAVE_LIBCAPSICUM
+LIBADD+=	casper
+LIBADD+=	cap_dns
+CFLAGS+=-DHAVE_LIBCASPER
 .endif
 
 .if !defined(RELEASE_CRUNCH)
 CFLAGS+=-DIPSEC
-DPADD+=	${LIBIPSEC}
-LDADD+=	-lipsec
+LIBADD+=	ipsec
 .endif
 
 .include <bsd.prog.mk>

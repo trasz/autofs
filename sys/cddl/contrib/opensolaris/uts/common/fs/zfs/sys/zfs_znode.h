@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright (c) 2014 Integros [integros.com]
  */
 
 #ifndef	_SYS_FS_ZFS_ZNODE_H
@@ -133,8 +134,6 @@ extern "C" {
 #define	ZFS_SHARES_DIR		"SHARES"
 #define	ZFS_SA_ATTRS		"SA_ATTRS"
 
-#define	ZFS_MAX_BLOCKSIZE	(SPA_MAXBLOCKSIZE)
-
 /*
  * Path component length
  *
@@ -182,10 +181,12 @@ typedef struct znode {
 	struct zfsvfs	*z_zfsvfs;
 	vnode_t		*z_vnode;
 	uint64_t	z_id;		/* object ID for this znode */
+#ifdef illumos
 	kmutex_t	z_lock;		/* znode modification lock */
 	krwlock_t	z_parent_lock;	/* parent lock for directories */
 	krwlock_t	z_name_lock;	/* "master" lock for dirent locks */
 	zfs_dirlock_t	*z_dirlocks;	/* directory entry lock list */
+#endif
 	kmutex_t	z_range_lock;	/* protects changes to z_range_avl */
 	avl_tree_t	z_range_avl;	/* avl tree of file range locks */
 	uint8_t		z_unlinked;	/* file has been unlinked */
@@ -262,10 +263,6 @@ VTOZ(vnode_t *vp)
 			return (EIO); \
 		} \
 	}
-
-/* Called on entry to each ZFS vnode and vfs operation that can not return EIO */
-#define	ZFS_ENTER_NOERROR(zfsvfs) \
-	rrm_enter(&(zfsvfs)->z_teardown_lock, RW_READER, FTAG)
 
 /* Must be called before exiting the vop */
 #define	ZFS_EXIT(zfsvfs) rrm_exit(&(zfsvfs)->z_teardown_lock, FTAG)

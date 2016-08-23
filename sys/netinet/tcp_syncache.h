@@ -41,12 +41,11 @@ void	syncache_destroy(void);
 void	 syncache_unreach(struct in_conninfo *, struct tcphdr *);
 int	 syncache_expand(struct in_conninfo *, struct tcpopt *,
 	     struct tcphdr *, struct socket **, struct mbuf *);
-void	 syncache_add(struct in_conninfo *, struct tcpopt *,
+int	 syncache_add(struct in_conninfo *, struct tcpopt *,
 	     struct tcphdr *, struct inpcb *, struct socket **, struct mbuf *,
 	     void *, void *);
 void	 syncache_chkrst(struct in_conninfo *, struct tcphdr *);
 void	 syncache_badack(struct in_conninfo *);
-int	 syncache_pcbcount(void);
 int	 syncache_pcblist(struct sysctl_req *req, int max_pcbs, int *pcbs_exported);
 
 struct syncache {
@@ -74,7 +73,9 @@ struct syncache {
 #endif
 	struct label	*sc_label;		/* MAC label reference */
 	struct ucred	*sc_cred;		/* cred cache for jail checks */
-
+#ifdef TCP_RFC7413
+	void		*sc_tfo_cookie;		/* for TCP Fast Open response */
+#endif
 	void		*sc_pspare;		/* TCP_SIGNATURE */
 	u_int32_t	sc_spare[2];		/* UTO */
 };
@@ -118,7 +119,7 @@ struct tcp_syncache {
 	u_int	bucket_limit;
 	u_int	cache_limit;
 	u_int	rexmt_limit;
-	u_int	hash_secret;
+	uint32_t hash_secret;
 	struct vnet *vnet;
 	struct syncookie_secret secret;
 };

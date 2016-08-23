@@ -85,7 +85,7 @@ static struct ae_dev {
 	{ VENDORID_ATTANSIC, DEVICEID_ATTANSIC_L2,
 		"Attansic Technology Corp, L2 FastEthernet" },
 };
-#define	AE_DEVS_COUNT (sizeof(ae_devs) / sizeof(*ae_devs))
+#define	AE_DEVS_COUNT nitems(ae_devs)
 
 static struct resource_spec ae_res_spec_mem[] = {
 	{ SYS_RES_MEMORY,       PCIR_BAR(0),    RF_ACTIVE },
@@ -1660,7 +1660,7 @@ ae_stop_rxmac(ae_softc_t *sc)
 	/*
 	 * Wait for IDLE state.
 	 */
-	for (i = 0; i < AE_IDLE_TIMEOUT; i--) {
+	for (i = 0; i < AE_IDLE_TIMEOUT; i++) {
 		val = AE_READ_4(sc, AE_IDLE_REG);
 		if ((val & (AE_IDLE_RXMAC | AE_IDLE_DMAWRITE)) == 0)
 			break;
@@ -1852,9 +1852,9 @@ ae_tx_intr(ae_softc_t *sc)
 		    sizeof(ae_txs_t) + 3) & ~3) % AE_TXD_BUFSIZE_DEFAULT;
 
 		if ((flags & AE_TXS_SUCCESS) != 0)
-			ifp->if_opackets++;
+			if_inc_counter(ifp, IFCOUNTER_OPACKETS, 1);
 		else
-			ifp->if_oerrors++;
+			if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 
 		sc->tx_inproc--;
 	}
@@ -1897,13 +1897,13 @@ ae_rxeof(ae_softc_t *sc, ae_rxd_t *rxd)
 	size = le16toh(rxd->len) - ETHER_CRC_LEN;
 	if (size < (ETHER_MIN_LEN - ETHER_CRC_LEN - ETHER_VLAN_ENCAP_LEN)) {
 		if_printf(ifp, "Runt frame received.");
-		ifp->if_ierrors++;
+		if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 		return;
 	}
 
 	m = m_devget(&rxd->data[0], size, ETHER_ALIGN, ifp, NULL);
 	if (m == NULL) {
-		ifp->if_iqdrops++;
+		if_inc_counter(ifp, IFCOUNTER_IQDROPS, 1);
 		return;
 	}
 
@@ -1913,7 +1913,7 @@ ae_rxeof(ae_softc_t *sc, ae_rxd_t *rxd)
 		m->m_flags |= M_VLANTAG;
 	}
 
-	ifp->if_ipackets++;
+	if_inc_counter(ifp, IFCOUNTER_IPACKETS, 1);
 	/*
 	 * Pass it through.
 	 */
@@ -1959,7 +1959,7 @@ ae_rx_intr(ae_softc_t *sc)
 		if ((flags & AE_RXD_SUCCESS) != 0)
 			ae_rxeof(sc, rxd);
 		else
-			ifp->if_ierrors++;
+			if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 	}
 
 	if (count > 0) {
@@ -1989,7 +1989,7 @@ ae_watchdog(ae_softc_t *sc)
 	else
 		if_printf(ifp, "watchdog timeout - resetting.\n");
 
-	ifp->if_oerrors++;
+	if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 	ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
 	ae_init_locked(sc);
 	if (!IFQ_DRV_IS_EMPTY(&ifp->if_snd))

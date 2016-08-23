@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014 Qlogic Corporation
+ * Copyright (c) 2013-2016 Qlogic Corporation
  * All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -52,6 +52,7 @@ extern void ql_dump_buf32(qla_host_t *ha, const char *str, void *dbuf,
 #define INJCT_MBX_CMD_FAILURE		0x00008
 #define INJCT_HEARTBEAT_FAILURE		0x00009
 #define INJCT_TEMPERATURE_FAILURE	0x0000A
+#define INJCT_M_GETCL_M_GETJCL_FAILURE	0x0000B
 
 #ifdef QL_DBG
 

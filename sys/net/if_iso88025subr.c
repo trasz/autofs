@@ -212,13 +212,10 @@ iso88025_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 	struct iso88025_header gen_th;
 	struct sockaddr_dl *sdl = NULL;
 	struct rtentry *rt0 = NULL;
-#if defined(INET) || defined(INET6)
-	struct llentry *lle;
-#endif
+	int is_gw = 0;
 
 	if (ro != NULL)
-		rt0 = ro->ro_rt;
-
+		is_gw = (ro->ro_flags & RT_HAS_GW) != 0;
 #ifdef MAC
 	error = mac_ifnet_check_transmit(ifp, m);
 	if (error)
@@ -257,7 +254,7 @@ iso88025_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 	switch (dst->sa_family) {
 #ifdef INET
 	case AF_INET:
-		error = arpresolve(ifp, rt0, m, dst, edst, &lle);
+		error = arpresolve(ifp, is_gw, m, dst, edst, NULL, NULL);
 		if (error)
 			return (error == EWOULDBLOCK ? 0 : error);
 		snap_type = ETHERTYPE_IP;
@@ -292,9 +289,9 @@ iso88025_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 #endif	/* INET */
 #ifdef INET6
 	case AF_INET6:
-		error = nd6_storelladdr(ifp, m, dst, (u_char *)edst, &lle);
+		error = nd6_resolve(ifp, is_gw, m, dst, edst, NULL, NULL);
 		if (error)
-			return (error);
+			return (error == EWOULDBLOCK ? 0 : error);
 		snap_type = ETHERTYPE_IPV6;
 		break;
 #endif	/* INET6 */
@@ -331,7 +328,7 @@ iso88025_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 	if (snap_type != 0) {
         	struct llc *l;
 		M_PREPEND(m, LLC_SNAPFRAMELEN, M_NOWAIT);
-		if (m == 0)
+		if (m == NULL)
 			senderr(ENOBUFS);
 		l = mtod(m, struct llc *);
 		l->llc_control = LLC_UI;
@@ -347,7 +344,7 @@ iso88025_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 	 * allocate another.
 	 */
 	M_PREPEND(m, ISO88025_HDR_LEN + rif_len, M_NOWAIT);
-	if (m == 0)
+	if (m == NULL)
 		senderr(ENOBUFS);
 	th = mtod(m, struct iso88025_header *);
 	bcopy((caddr_t)edst, (caddr_t)&gen_th.iso88025_dhost, ISO88025_ADDR_LEN);
@@ -381,12 +378,12 @@ iso88025_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 	IFQ_HANDOFF_ADJ(ifp, m, ISO88025_HDR_LEN + LLC_SNAPFRAMELEN, error);
 	if (error) {
 		printf("iso88025_output: packet dropped QFULL.\n");
-		ifp->if_oerrors++;
+		if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 	}
 	return (error);
 
 bad:
-	ifp->if_oerrors++;
+	if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 	if (m)
 		m_freem(m);
 	return (error);
@@ -411,20 +408,20 @@ iso88025_input(ifp, m)
 	 */
 	if ((m->m_flags & M_PKTHDR) == 0) {
 		if_printf(ifp, "discard frame w/o packet header\n");
-		ifp->if_ierrors++;
+		if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 		m_freem(m);
 		return;
 	}
 	if (m->m_pkthdr.rcvif == NULL) {
 		if_printf(ifp, "discard frame w/o interface pointer\n");
-		ifp->if_ierrors++;
+		if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
  		m_freem(m);
 		return;
 	}
 
 	m = m_pullup(m, ISO88025_HDR_LEN);
 	if (m == NULL) {
-		ifp->if_ierrors++;
+		if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 		goto dropanyway;
 	}
 	th = mtod(m, struct iso88025_header *);
@@ -456,7 +453,7 @@ iso88025_input(ifp, m)
 	/*
 	 * Update interface statistics.
 	 */
-	ifp->if_ibytes += m->m_pkthdr.len;
+	if_inc_counter(ifp, IFCOUNTER_IBYTES, m->m_pkthdr.len);
 	getmicrotime(&ifp->if_lastchange);
 
 	/*
@@ -478,7 +475,7 @@ iso88025_input(ifp, m)
 			m->m_flags |= M_BCAST;
 		else
 			m->m_flags |= M_MCAST;
-		ifp->if_imcasts++;
+		if_inc_counter(ifp, IFCOUNTER_IMCASTS, 1);
 	}
 
 	mac_hdr_len = ISO88025_HDR_LEN;
@@ -491,7 +488,7 @@ iso88025_input(ifp, m)
 
 	m = m_pullup(m, LLC_SNAPFRAMELEN);
 	if (m == 0) {
-		ifp->if_ierrors++;
+		if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 		goto dropanyway;
 	}
 	l = mtod(m, struct llc *);
@@ -501,14 +498,14 @@ iso88025_input(ifp, m)
 		u_int16_t type;
 		if ((l->llc_control != LLC_UI) ||
 		    (l->llc_ssap != LLC_SNAP_LSAP)) {
-			ifp->if_noproto++;
+			if_inc_counter(ifp, IFCOUNTER_NOPROTO, 1);
 			goto dropanyway;
 		}
 
 		if (l->llc_snap.org_code[0] != 0 ||
 		    l->llc_snap.org_code[1] != 0 ||
 		    l->llc_snap.org_code[2] != 0) {
-			ifp->if_noproto++;
+			if_inc_counter(ifp, IFCOUNTER_NOPROTO, 1);
 			goto dropanyway;
 		}
 
@@ -518,8 +515,6 @@ iso88025_input(ifp, m)
 #ifdef INET
 		case ETHERTYPE_IP:
 			th->iso88025_shost[0] &= ~(TR_RII); 
-			if ((m = ip_fastforward(m)) == NULL)
-				return;
 			isr = NETISR_IP;
 			break;
 
@@ -537,7 +532,7 @@ iso88025_input(ifp, m)
 #endif	/* INET6 */
 		default:
 			printf("iso88025_input: unexpected llc_snap ether_type  0x%02x\n", type);
-			ifp->if_noproto++;
+			if_inc_counter(ifp, IFCOUNTER_NOPROTO, 1);
 			goto dropanyway;
 		}
 		break;
@@ -546,7 +541,7 @@ iso88025_input(ifp, m)
 	case LLC_ISO_LSAP:
 		switch (l->llc_control) {
 		case LLC_UI:
-			ifp->if_noproto++;
+			if_inc_counter(ifp, IFCOUNTER_NOPROTO, 1);
 			goto dropanyway;
 			break;
                 case LLC_XID:
@@ -562,7 +557,6 @@ iso88025_input(ifp, m)
 		case LLC_TEST_P:
 		{
 			struct sockaddr sa;
-			struct arpcom *ac;
 			struct iso88025_sockaddr_data *th2;
 			int i;
 			u_char c;
@@ -595,7 +589,7 @@ iso88025_input(ifp, m)
 		}
 		default:
 			printf("iso88025_input: unexpected llc control 0x%02x\n", l->llc_control);
-			ifp->if_noproto++;
+			if_inc_counter(ifp, IFCOUNTER_NOPROTO, 1);
 			goto dropanyway;
 			break;
 		}
@@ -603,7 +597,7 @@ iso88025_input(ifp, m)
 #endif	/* ISO */
 	default:
 		printf("iso88025_input: unknown dsap 0x%x\n", l->llc_dsap);
-		ifp->if_noproto++;
+		if_inc_counter(ifp, IFCOUNTER_NOPROTO, 1);
 		goto dropanyway;
 		break;
 	}
@@ -613,7 +607,7 @@ iso88025_input(ifp, m)
 	return;
 
 dropanyway:
-	ifp->if_iqdrops++;
+	if_inc_counter(ifp, IFCOUNTER_IQDROPS, 1);
 	if (m)
 		m_freem(m);
 	return;
@@ -644,7 +638,7 @@ iso88025_resolvemulti (ifp, llsa, sa)
 		if ((e_addr[0] & 1) != 1) {
 			return (EADDRNOTAVAIL);
 		}
-		*llsa = 0;
+		*llsa = NULL;
 		return (0);
 
 #ifdef INET
@@ -670,7 +664,7 @@ iso88025_resolvemulti (ifp, llsa, sa)
 			 * (This is used for multicast routers.)
 			 */
 			ifp->if_flags |= IFF_ALLMULTI;
-			*llsa = 0;
+			*llsa = NULL;
 			return (0);
 		}
 		if (!IN6_IS_ADDR_MULTICAST(&sin6->sin6_addr)) {
@@ -695,49 +689,8 @@ iso88025_resolvemulti (ifp, llsa, sa)
 	return (0);
 }
 
-static MALLOC_DEFINE(M_ISO88025, "arpcom", "802.5 interface internals");
-
-static void*
-iso88025_alloc(u_char type, struct ifnet *ifp)
-{
-	struct arpcom	*ac;
- 
-        ac = malloc(sizeof(struct arpcom), M_ISO88025, M_WAITOK | M_ZERO);
-	ac->ac_ifp = ifp;
-
-	return (ac);
-} 
-
-static void
-iso88025_free(void *com, u_char type)
-{
- 
-        free(com, M_ISO88025);
-}
- 
-static int
-iso88025_modevent(module_t mod, int type, void *data)
-{
-  
-        switch (type) {
-        case MOD_LOAD:
-                if_register_com_alloc(IFT_ISO88025, iso88025_alloc,
-                    iso88025_free);
-                break;
-        case MOD_UNLOAD:
-                if_deregister_com_alloc(IFT_ISO88025);
-                break;
-        default:
-                return EOPNOTSUPP;
-        }
-
-        return (0);
-}
-
 static moduledata_t iso88025_mod = {
-	"iso88025",
-	iso88025_modevent,
-	0
+	.name = "iso88025",
 };
 
 DECLARE_MODULE(iso88025, iso88025_mod, SI_SUB_PSEUDO, SI_ORDER_ANY);

@@ -2,9 +2,10 @@
 
 .PATH:		${.CURDIR}/../boot2 ${.CURDIR}/../gptboot \
 		${.CURDIR}/../zfsboot ${.CURDIR}/../common \
-		${.CURDIR}/../../common
+		${.CURDIR}/../../common ${.CURDIR}/../../../crypto/skein
 
 FILES=		gptzfsboot
+MAN=		gptzfsboot.8
 
 NM?=		nm
 
@@ -26,13 +27,22 @@ CFLAGS=	-DBOOTPROG=\"gptzfsboot\" \
 	-I${.CURDIR}/../common \
 	-I${.CURDIR}/../../zfs \
 	-I${.CURDIR}/../../../cddl/boot/zfs \
+	-I${.CURDIR}/../../../crypto/skein \
 	-I${.CURDIR}/../btx/lib -I. \
 	-I${.CURDIR}/../boot2 \
 	-I${.CURDIR}/../../.. \
-	-Wall -Waggregate-return -Wbad-function-cast -Wcast-align \
+	-Wall -Waggregate-return -Wbad-function-cast -Wno-cast-align \
 	-Wmissing-declarations -Wmissing-prototypes -Wnested-externs \
 	-Wpointer-arith -Wshadow -Wstrict-prototypes -Wwrite-strings \
-	-Winline
+	-Winline -Wno-tentative-definition-incomplete-type -Wno-pointer-sign
+
+.if !defined(LOADER_NO_GELI_SUPPORT)
+CFLAGS+=	-DLOADER_GELI_SUPPORT
+CFLAGS+=	-I${.CURDIR}/../../geli
+LIBGELIBOOT=	${.OBJDIR}/../../geli/libgeliboot.a
+.PATH:		${.CURDIR}/../../../opencrypto
+OPENCRYPTO_XTS=	xform_aes_xts.o
+.endif
 
 CFLAGS.gcc+=	--param max-inline-insns-single=100
 
@@ -52,26 +62,27 @@ gptzfsboot: gptldr.bin gptzfsboot.bin ${BTXKERN}
 CLEANFILES+=	gptldr.bin gptldr.out gptldr.o
 
 gptldr.bin: gptldr.out
-	objcopy -S -O binary gptldr.out ${.TARGET}
+	${OBJCOPY} -S -O binary gptldr.out ${.TARGET}
 
 gptldr.out: gptldr.o
 	${LD} ${LD_FLAGS} -e start -Ttext ${ORG1} -o ${.TARGET} gptldr.o
 
 CLEANFILES+=	gptzfsboot.bin gptzfsboot.out zfsboot.o sio.o cons.o \
-		drv.o gpt.o util.o
+		drv.o gpt.o util.o skein.o skein_block.o ${OPENCRYPTO_XTS}
 
 gptzfsboot.bin: gptzfsboot.out
-	objcopy -S -O binary gptzfsboot.out ${.TARGET}
+	${OBJCOPY} -S -O binary gptzfsboot.out ${.TARGET}
 
-gptzfsboot.out: ${BTXCRT} zfsboot.o sio.o gpt.o drv.o cons.o util.o
-	${LD} ${LD_FLAGS} -Ttext ${ORG2} -o ${.TARGET} ${.ALLSRC} ${LIBSTAND}
+gptzfsboot.out: ${BTXCRT} zfsboot.o sio.o gpt.o drv.o cons.o util.o \
+	skein.o skein_block.o ${OPENCRYPTO_XTS}
+	${LD} ${LD_FLAGS} -Ttext ${ORG2} -o ${.TARGET} ${.ALLSRC} ${LIBSTAND} ${LIBGELIBOOT}
 
 zfsboot.o: ${.CURDIR}/../../zfs/zfsimpl.c
 
 .if ${MACHINE_CPUARCH} == "amd64"
 beforedepend zfsboot.o: machine
 CLEANFILES+=	machine
-machine:
+machine: .NOMETA
 	ln -sf ${.CURDIR}/../../../i386/include machine
 .endif
 
@@ -79,4 +90,3 @@ machine:
 
 # XXX: clang integrated-as doesn't grok .codeNN directives yet
 CFLAGS.gptldr.S=	${CLANG_NO_IAS}
-CFLAGS+=		${CFLAGS.${.IMPSRC:T}}

@@ -298,7 +298,7 @@ ahbattach(device_t dev)
 				/* highaddr	*/ BUS_SPACE_MAXADDR,
 				/* filter	*/ NULL,
 				/* filterarg	*/ NULL,
-				/* maxsize	*/ MAXBSIZE,
+				/* maxsize	*/ DFLTPHYS,
 				/* nsegments	*/ AHB_NSEG,
 				/* maxsegsz	*/ BUS_SPACE_MAXSIZE_32BIT,
 				/* flags	*/ BUS_DMA_ALLOCNOW,
@@ -616,9 +616,9 @@ ahbhandleimmed(struct ahb_softc *ahb, u_int32_t mbox, u_int intstat)
 			xpt_done(ccb);
 		} else if (ahb->immed_ecb != NULL) {
 			/* Re-instate timeout */
-			callout_reset(&pending_ecb->timer, 
-			    (ccb->ccb_h.timeout * hz) / 1000,
-			    ahbtimeout, pending_ecb);
+			callout_reset_sbt(&pending_ecb->timer,
+			    SBT_1MS * ccb->ccb_h.timeout, 0, ahbtimeout,
+			    pending_ecb, 0);
 		}
 	}
 
@@ -885,7 +885,7 @@ ahbintr_locked(struct ahb_softc *ahb)
 				xpt_async(AC_BUS_RESET, ahb->path, NULL);
 				break;
 			}
-			printf("Unsupported initiator selection AEN occured\n");
+			printf("Unsupported initiator selection AEN occurred\n");
 			break;
 		case INTSTAT_IMMED_OK:
 		case INTSTAT_IMMED_ERR:
@@ -985,8 +985,8 @@ ahbexecuteecb(void *arg, bus_dma_segment_t *dm_segs, int nseg, int error)
 	/* Tell the adapter about this command */
 	ahbqueuembox(ahb, ecb_paddr, ATTN_STARTECB|ccb->ccb_h.target_id);
 
-	callout_reset(&ecb->timer, (ccb->ccb_h.timeout * hz) / 1000, ahbtimeout,
-	    ecb);
+	callout_reset_sbt(&ecb->timer, SBT_1MS * ccb->ccb_h.timeout, 0,
+	    ahbtimeout, ecb, 0);
 }
 
 static void
@@ -1235,7 +1235,7 @@ ahbtimeout(void *arg)
 	 * means that the driver attempts to clear only one error
 	 * condition at a time.  In general, timeouts that occur
 	 * close together are related anyway, so there is no benefit
-	 * in attempting to handle errors in parrallel.  Timeouts will
+	 * in attempting to handle errors in parallel.  Timeouts will
 	 * be reinstated when the recovery process ends.
 	 */
 	if ((ecb->state & ECB_DEVICE_RESET) == 0) {

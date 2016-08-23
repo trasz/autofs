@@ -90,7 +90,7 @@ int
 ext2_htree_has_idx(struct inode *ip)
 {
 	if (EXT2_HAS_COMPAT_FEATURE(ip->i_e2fs, EXT2F_COMPAT_DIRHASHINDEX) &&
-	    ip->i_flag & IN_E4INDEX)
+	    ip->i_flag & IN_E3INDEX)
 		return (1);
 	else
 		return (0);
@@ -191,7 +191,7 @@ ext2_htree_set_limit(struct ext2fs_htree_entry *ep, uint16_t limit)
 static void
 ext2_htree_release(struct ext2fs_htree_lookup_info *info)
 {
-	int i;
+	u_int i;
 
 	for (i = 0; i < info->h_levels_num; i++) {
 		struct buf *bp = info->h_levels[i].h_bp;
@@ -395,7 +395,7 @@ ext2_htree_append_block(struct vnode *vp, char *data,
 	int error;
 
 	cursize = roundup(dp->i_size, blksize);
-	newsize = roundup(dp->i_size, blksize) + blksize;
+	newsize = cursize + blksize;
 
 	auio.uio_offset = cursize;
 	auio.uio_resid = blksize;
@@ -579,18 +579,17 @@ ext2_htree_split_dirblock(char *block1, char *block2, uint32_t blksize,
 
 	/* Shrink directory entries in block 1. */
 	last = (struct ext2fs_direct_2 *)block1;
-	entry_len = EXT2_DIR_REC_LEN(last->e2d_namlen);
-	for (offset = last->e2d_reclen; offset < blksize; ) {
+	entry_len = 0;
+	for (offset = 0; offset < blksize; ) {
 		ep = (struct ext2fs_direct_2 *)(block1 + offset);
 		offset += ep->e2d_reclen;
-		if (last->e2d_ino) {
-			/* Trim the existing slot */
-			last->e2d_reclen = entry_len;
+		if (ep->e2d_ino) {
 			last = (struct ext2fs_direct_2 *)
 			   ((char *)last + entry_len);
+			entry_len = EXT2_DIR_REC_LEN(ep->e2d_namlen);
+			memcpy((void *)last, (void *)ep, entry_len);
+			last->e2d_reclen = entry_len;
 		}
-		entry_len = EXT2_DIR_REC_LEN(ep->e2d_namlen);
-		memcpy((void *)last, (void *)ep, entry_len);
 	}
 
 	if (entry_hash >= *split_hash) {
@@ -654,7 +653,7 @@ ext2_htree_create_index(struct vnode *vp, struct componentname *cnp,
 		    ((char *)ep + ep->e2d_reclen);
 	ep->e2d_reclen = buf1 + blksize - (char *)ep;
 
-	dp->i_flag |= IN_E4INDEX;
+	dp->i_flag |= IN_E3INDEX;
 
 	/*
 	 * Initialize index root.
@@ -771,7 +770,7 @@ ext2_htree_add_entry(struct vnode *dvp, struct ext2fs_direct_2 *entry,
 		dst_node->h_fake_dirent.e2d_reclen = blksize;
 
 		cursize = roundup(ip->i_size, blksize);
-		dirsize = roundup(ip->i_size, blksize) + blksize;
+		dirsize = cursize + blksize;
 		blknum = dirsize / blksize - 1;
 
 		error = ext2_htree_append_block(dvp, newidxblock,
@@ -847,6 +846,7 @@ ext2_htree_add_entry(struct vnode *dvp, struct ext2fs_direct_2 *entry,
 			info.h_levels[1].h_entry = info.h_levels[0].h_entry -
 			    info.h_levels[0].h_entries + dst_entries;
 			info.h_levels[1].h_bp = dst_bp;
+			dst_bp = NULL;
 		}
 	}
 
@@ -861,7 +861,7 @@ ext2_htree_add_entry(struct vnode *dvp, struct ext2fs_direct_2 *entry,
 	ext2_htree_split_dirblock((char *)bp->b_data, newdirblock, blksize,
 	    fs->e3fs_hash_seed, hash_version, &split_hash, entry);
 	cursize = roundup(ip->i_size, blksize);
-	dirsize = roundup(ip->i_size, blksize) + blksize;
+	dirsize = cursize + blksize;
 	blknum = dirsize / blksize - 1;
 
 	/* Add index entry for the new directory block */

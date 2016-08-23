@@ -74,6 +74,7 @@ void	callback_register(callback_func *, void *);
 #define	DEF_CMD_ARG2(name, func)	{ name, NEXTARG2, { .c_func2 = func }, 0, NULL }
 #define	DEF_CLONE_CMD(name, param, func) { name, param, { .c_func = func }, 1, NULL }
 #define	DEF_CLONE_CMD_ARG(name, func)	{ name, NEXTARG, { .c_func = func }, 1, NULL }
+#define	DEF_CLONE_CMD_ARG2(name, func)	{ name, NEXTARG2, { .c_func2 = func }, 1, NULL }
 
 struct ifaddrs;
 struct addrinfo;
@@ -132,6 +133,7 @@ extern	int supmedia;
 extern	int printkeys;
 extern	int newaddr;
 extern	int verbose;
+extern	int printifname;
 
 void	setifcap(const char *, int value, int s, const struct afswtch *);
 

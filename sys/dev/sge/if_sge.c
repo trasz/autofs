@@ -276,9 +276,8 @@ sge_get_mac_addr_apc(struct sge_softc *sc, uint8_t *dest)
 		{ SIS_VENDORID, 0x0968 }
 	};
 	uint8_t reg;
-	int busnum, cnt, i, j, numkids;
+	int busnum, i, j, numkids;
 
-	cnt = sizeof(apc_tbls) / sizeof(apc_tbls[0]);
 	pci = devclass_find("pci");
 	for (busnum = 0; busnum < devclass_get_maxunit(pci); busnum++) {
 		bus = devclass_get_device(pci, busnum);
@@ -291,7 +290,7 @@ sge_get_mac_addr_apc(struct sge_softc *sc, uint8_t *dest)
 			if (pci_get_class(dev) == PCIC_BRIDGE &&
 			    pci_get_subclass(dev) == PCIS_BRIDGE_ISA) {
 				tp = apc_tbls;
-				for (j = 0; j < cnt; j++) {
+				for (j = 0; j < nitems(apc_tbls); j++) {
 					if (pci_get_vendor(dev) == tp->vid &&
 					    pci_get_device(dev) == tp->did) {
 						free(kids, M_TEMP);
@@ -1171,13 +1170,13 @@ sge_rxeof(struct sge_softc *sc)
 			    RX_ERR_BITS);
 #endif
 			sge_discard_rxbuf(sc, cons);
-			ifp->if_ierrors++;
+			if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 			continue;
 		}
 		m = cd->sge_rxdesc[cons].rx_m;
 		if (sge_newbuf(sc, cons) != 0) {
 			sge_discard_rxbuf(sc, cons);
-			ifp->if_iqdrops++;
+			if_inc_counter(ifp, IFCOUNTER_IQDROPS, 1);
 			continue;
 		}
 		if ((ifp->if_capenable & IFCAP_RXCSUM) != 0) {
@@ -1210,7 +1209,7 @@ sge_rxeof(struct sge_softc *sc)
 		m->m_pkthdr.len = m->m_len = SGE_RX_BYTES(rxstat) -
 		    SGE_RX_PAD_BYTES;
 		m->m_pkthdr.rcvif = ifp;
-		ifp->if_ipackets++;
+		if_inc_counter(ifp, IFCOUNTER_IPACKETS, 1);
 		SGE_UNLOCK(sc);
 		(*ifp->if_input)(ifp, m);
 		SGE_LOCK(sc);
@@ -1265,12 +1264,12 @@ sge_txeof(struct sge_softc *sc)
 			device_printf(sc->sge_dev, "Tx error : 0x%b\n",
 			    txstat, TX_ERR_BITS);
 #endif
-			ifp->if_oerrors++;
+			if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 		} else {
 #ifdef notyet
-			ifp->if_collisions += (txstat & 0xFFFF) - 1;
+			if_inc_counter(ifp, IFCOUNTER_COLLISIONS, (txstat & 0xFFFF) - 1);
 #endif
-			ifp->if_opackets++;
+			if_inc_counter(ifp, IFCOUNTER_OPACKETS, 1);
 		}
 		txd = &cd->sge_txdesc[cons];
 		for (nsegs = 0; nsegs < txd->tx_ndesc; nsegs++) {
@@ -1856,13 +1855,13 @@ sge_watchdog(struct sge_softc *sc)
 		if (1 || bootverbose)
 			device_printf(sc->sge_dev,
 			    "watchdog timeout (lost link)\n");
-		ifp->if_oerrors++;
+		if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 		ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
 		sge_init_locked(sc);
 		return;
 	}
 	device_printf(sc->sge_dev, "watchdog timeout\n");
-	ifp->if_oerrors++;
+	if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 
 	ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
 	sge_init_locked(sc);

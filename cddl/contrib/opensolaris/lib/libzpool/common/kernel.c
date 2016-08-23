@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc.  All rights reserved.
  */
 
@@ -45,7 +45,9 @@
  * Emulation of kernel services in userland.
  */
 
+#ifndef __FreeBSD__
 int aok;
+#endif
 uint64_t physmem;
 vnode_t *rootdir = (vnode_t *)0xabcd1234;
 char hw_serial[HW_HOSTID_LEN];
@@ -364,10 +366,13 @@ cv_timedwait_hires(kcondvar_t *cv, kmutex_t *mp, hrtime_t tim, hrtime_t res,
 	timestruc_t ts;
 	hrtime_t delta;
 
-	ASSERT(flag == 0);
+	ASSERT(flag == 0 || flag == CALLOUT_FLAG_ABSOLUTE);
 
 top:
-	delta = tim - gethrtime();
+	delta = tim;
+	if (flag & CALLOUT_FLAG_ABSOLUTE)
+		delta -= gethrtime();
+
 	if (delta <= 0)
 		return (-1);
 
@@ -521,7 +526,7 @@ vn_openat(char *path, int x1, int flags, int mode, vnode_t **vpp, int x2,
 /*ARGSUSED*/
 int
 vn_rdwr(int uio, vnode_t *vp, void *addr, ssize_t len, offset_t offset,
-	int x1, int x2, rlim64_t x3, void *x4, ssize_t *residp)
+    int x1, int x2, rlim64_t x3, void *x4, ssize_t *residp)
 {
 	ssize_t iolen, split;
 
@@ -650,6 +655,9 @@ dprintf_setup(int *argc, char **argv)
 	 */
 	if (dprintf_find_string("on"))
 		dprintf_print_all = 1;
+
+	if (dprintf_string != NULL)
+		zfs_flags |= ZFS_DEBUG_DPRINTF;
 }
 
 int

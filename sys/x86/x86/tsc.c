@@ -47,6 +47,8 @@ __FBSDID("$FreeBSD$");
 #include <machine/cputypes.h>
 #include <machine/md_var.h>
 #include <machine/specialreg.h>
+#include <x86/vmware.h>
+#include <dev/acpica/acpi_hpet.h>
 
 #include "cpufreq_if.h"
 
@@ -92,82 +94,29 @@ static unsigned tsc_get_timecount_low_lfence(struct timecounter *tc);
 static unsigned tsc_get_timecount_mfence(struct timecounter *tc);
 static unsigned tsc_get_timecount_low_mfence(struct timecounter *tc);
 static void tsc_levels_changed(void *arg, int unit);
+static uint32_t x86_tsc_vdso_timehands(struct vdso_timehands *vdso_th,
+    struct timecounter *tc);
+#ifdef COMPAT_FREEBSD32
+static uint32_t x86_tsc_vdso_timehands32(struct vdso_timehands32 *vdso_th32,
+    struct timecounter *tc);
+#endif
 
 static struct timecounter tsc_timecounter = {
-	tsc_get_timecount,	/* get_timecount */
-	0,			/* no poll_pps */
-	~0u,			/* counter_mask */
-	0,			/* frequency */
-	"TSC",			/* name */
-	800,			/* quality (adjusted in code) */
+	.tc_get_timecount =		tsc_get_timecount,
+	.tc_counter_mask =		~0u,
+	.tc_name =			"TSC",
+	.tc_quality =			800,	/* adjusted in code */
+	.tc_fill_vdso_timehands = 	x86_tsc_vdso_timehands,
+#ifdef COMPAT_FREEBSD32
+	.tc_fill_vdso_timehands32 = 	x86_tsc_vdso_timehands32,
+#endif
 };
 
-#define	VMW_HVMAGIC		0x564d5868
-#define	VMW_HVPORT		0x5658
-#define	VMW_HVCMD_GETVERSION	10
-#define	VMW_HVCMD_GETHZ		45
-
-static __inline void
-vmware_hvcall(u_int cmd, u_int *p)
-{
-
-	__asm __volatile("inl %w3, %0"
-	: "=a" (p[0]), "=b" (p[1]), "=c" (p[2]), "=d" (p[3])
-	: "0" (VMW_HVMAGIC), "1" (UINT_MAX), "2" (cmd), "3" (VMW_HVPORT)
-	: "memory");
-}
-
-static int
+static void
 tsc_freq_vmware(void)
 {
-	char hv_sig[13];
 	u_int regs[4];
-	char *p;
-	u_int hv_high;
-	int i;
 
-	/*
-	 * [RFC] CPUID usage for interaction between Hypervisors and Linux.
-	 * http://lkml.org/lkml/2008/10/1/246
-	 *
-	 * KB1009458: Mechanisms to determine if software is running in
-	 * a VMware virtual machine
-	 * http://kb.vmware.com/kb/1009458
-	 */
-	hv_high = 0;
-	if ((cpu_feature2 & CPUID2_HV) != 0) {
-		do_cpuid(0x40000000, regs);
-		hv_high = regs[0];
-		for (i = 1, p = hv_sig; i < 4; i++, p += sizeof(regs) / 4)
-			memcpy(p, &regs[i], sizeof(regs[i]));
-		*p = '\0';
-		if (bootverbose) {
-			/*
-			 * HV vendor	ID string
-			 * ------------+--------------
-			 * KVM		"KVMKVMKVM"
-			 * Microsoft	"Microsoft Hv"
-			 * VMware	"VMwareVMware"
-			 * Xen		"XenVMMXenVMM"
-			 */
-			printf("Hypervisor: Origin = \"%s\"\n", hv_sig);
-		}
-		if (strncmp(hv_sig, "VMwareVMware", 12) != 0)
-			return (0);
-	} else {
-		p = getenv("smbios.system.serial");
-		if (p == NULL)
-			return (0);
-		if (strncmp(p, "VMware-", 7) != 0 &&
-		    strncmp(p, "VMW", 3) != 0) {
-			freeenv(p);
-			return (0);
-		}
-		freeenv(p);
-		vmware_hvcall(VMW_HVCMD_GETVERSION, regs);
-		if (regs[1] != VMW_HVMAGIC)
-			return (0);
-	}
 	if (hv_high >= 0x40000010) {
 		do_cpuid(0x40000010, regs);
 		tsc_freq = regs[0] * 1000;
@@ -177,7 +126,6 @@ tsc_freq_vmware(void)
 			tsc_freq = regs[0] | ((uint64_t)regs[1] << 32);
 	}
 	tsc_is_invariant = 1;
-	return (1);
 }
 
 static void
@@ -261,8 +209,10 @@ probe_tsc_freq(void)
 		}
 	}
 
-	if (tsc_freq_vmware())
+	if (vm_guest == VM_GUEST_VMWARE) {
+		tsc_freq_vmware();
 		return;
+	}
 
 	switch (cpu_vendor_id) {
 	case CPU_VENDOR_AMD:
@@ -324,6 +274,39 @@ init_TSC(void)
 	if ((cpu_feature & CPUID_TSC) == 0 || tsc_disabled)
 		return;
 
+#ifdef __i386__
+	/* The TSC is known to be broken on certain CPUs. */
+	switch (cpu_vendor_id) {
+	case CPU_VENDOR_AMD:
+		switch (cpu_id & 0xFF0) {
+		case 0x500:
+			/* K5 Model 0 */
+			return;
+		}
+		break;
+	case CPU_VENDOR_CENTAUR:
+		switch (cpu_id & 0xff0) {
+		case 0x540:
+			/*
+			 * http://www.centtech.com/c6_data_sheet.pdf
+			 *
+			 * I-12 RDTSC may return incoherent values in EDX:EAX
+			 * I-13 RDTSC hangs when certain event counters are used
+			 */
+			return;
+		}
+		break;
+	case CPU_VENDOR_NSC:
+		switch (cpu_id & 0xff0) {
+		case 0x540:
+			if ((cpu_id & CPUID_STEPPING) == 0)
+				return;
+			break;
+		}
+		break;
+	}
+#endif
+		
 	probe_tsc_freq();
 
 	/*
@@ -548,17 +531,22 @@ init_TSC_tc(void)
 	}
 
 	/*
-	 * We cannot use the TSC if it stops incrementing in deep sleep.
-	 * Currently only Intel CPUs are known for this problem unless
-	 * the invariant TSC bit is set.
+	 * Intel CPUs without a C-state invariant TSC can stop the TSC
+	 * in either C2 or C3.  Disable use of C2 and C3 while using
+	 * the TSC as the timecounter.  The timecounter can be changed
+	 * to enable C2 and C3.
+	 *
+	 * Note that the TSC is used as the cputicker for computing
+	 * thread runtime regardless of the timecounter setting, so
+	 * using an alternate timecounter and enabling C2 or C3 can
+	 * result incorrect runtimes for kernel idle threads (but not
+	 * for any non-idle threads).
 	 */
-	if (cpu_can_deep_sleep && cpu_vendor_id == CPU_VENDOR_INTEL &&
+	if (cpu_deepest_sleep >= 2 && cpu_vendor_id == CPU_VENDOR_INTEL &&
 	    (amd_pminfo & AMDPM_TSC_INVARIANT) == 0) {
-		tsc_timecounter.tc_quality = -1000;
-		tsc_timecounter.tc_flags |= TC_FLAGS_C3STOP;
+		tsc_timecounter.tc_flags |= TC_FLAGS_C2STOP;
 		if (bootverbose)
-			printf("TSC timecounter disabled: C3 enabled.\n");
-		goto init;
+			printf("TSC timecounter disables C2 and C3.\n");
 	}
 
 	/*
@@ -745,22 +733,27 @@ tsc_get_timecount_low_mfence(struct timecounter *tc)
 	return (tsc_get_timecount_low(tc));
 }
 
-uint32_t
-cpu_fill_vdso_timehands(struct vdso_timehands *vdso_th)
+static uint32_t
+x86_tsc_vdso_timehands(struct vdso_timehands *vdso_th, struct timecounter *tc)
 {
 
-	vdso_th->th_x86_shift = (int)(intptr_t)timecounter->tc_priv;
+	vdso_th->th_algo = VDSO_TH_ALGO_X86_TSC;
+	vdso_th->th_x86_shift = (int)(intptr_t)tc->tc_priv;
+	vdso_th->th_x86_hpet_idx = 0xffffffff;
 	bzero(vdso_th->th_res, sizeof(vdso_th->th_res));
-	return (timecounter == &tsc_timecounter);
+	return (1);
 }
 
 #ifdef COMPAT_FREEBSD32
-uint32_t
-cpu_fill_vdso_timehands32(struct vdso_timehands32 *vdso_th32)
+static uint32_t
+x86_tsc_vdso_timehands32(struct vdso_timehands32 *vdso_th32,
+    struct timecounter *tc)
 {
 
-	vdso_th32->th_x86_shift = (int)(intptr_t)timecounter->tc_priv;
+	vdso_th32->th_algo = VDSO_TH_ALGO_X86_TSC;
+	vdso_th32->th_x86_shift = (int)(intptr_t)tc->tc_priv;
+	vdso_th32->th_x86_hpet_idx = 0xffffffff;
 	bzero(vdso_th32->th_res, sizeof(vdso_th32->th_res));
-	return (timecounter == &tsc_timecounter);
+	return (1);
 }
 #endif

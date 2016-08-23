@@ -237,7 +237,9 @@ imx_ehci_attach(device_t dev)
 	esc->sc_bus.parent = dev;
 	esc->sc_bus.devices = esc->sc_devices;
 	esc->sc_bus.devices_max = EHCI_MAX_DEVICES;
+	esc->sc_bus.dma_bits = 32;
 
+	/* allocate all DMA memory */
 	if (usb_bus_mem_alloc_all(&esc->sc_bus, USB_GET_DMA_TAG(dev),
 	    &ehci_iterate_hw_softc) != 0) {
 		device_printf(dev, "usb_bus_mem_alloc_all() failed\n");
@@ -259,8 +261,8 @@ imx_ehci_attach(device_t dev)
 	}
 
 	/* Setup interrupt handler. */
-	err = bus_setup_intr(dev, sc->ehci_irq_res, INTR_TYPE_BIO, NULL, 
-	    (driver_intr_t *)ehci_interrupt, esc, &esc->sc_intr_hdl);
+	err = bus_setup_intr(dev, sc->ehci_irq_res, INTR_TYPE_BIO | INTR_MPSAFE,
+	    NULL, (driver_intr_t *)ehci_interrupt, esc, &esc->sc_intr_hdl);
 	if (err != 0) {
 		device_printf(dev, "Could not setup IRQ\n");
 		goto out;

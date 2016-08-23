@@ -373,7 +373,7 @@ machine_init(struct statics *statics, char do_unames)
 	size = sizeof(long) * maxcpu * CPUSTATES;
 	times = malloc(size);
 	if (times == NULL)
-		err(1, "malloc %zd bytes", size);
+		err(1, "malloc %zu bytes", size);
 	if (sysctlbyname("kern.cp_times", times, &size, NULL, 0) == -1)
 		err(1, "sysctlbyname kern.cp_times");
 	pcpu_cp_time = calloc(1, size);
@@ -941,7 +941,7 @@ format_next_process(caddr_t handle, char *(*get_userid)(int), int flags)
 	/* generate "STATE" field */
 	switch (state = pp->ki_stat) {
 	case SRUN:
-		if (smpmode && pp->ki_oncpu != 0xff)
+		if (smpmode && pp->ki_oncpu != NOCPU)
 			sprintf(status, "CPU%d", pp->ki_oncpu);
 		else
 			strcpy(status, "RUN");
@@ -1004,7 +1004,7 @@ format_next_process(caddr_t handle, char *(*get_userid)(int), int flags)
 			argbuflen = cmdlen * 4;
 			argbuf = (char *)malloc(argbuflen + 1);
 			if (argbuf == NULL) {
-				warn("malloc(%zd)", argbuflen + 1);
+				warn("malloc(%zu)", argbuflen + 1);
 				free(cmdbuf);
 				return NULL;
 			}
@@ -1023,7 +1023,7 @@ format_next_process(caddr_t handle, char *(*get_userid)(int), int flags)
 					continue;
 				len = (argbuflen - (dst - argbuf) - 1) / 4;
 				strvisx(dst, src,
-				    strlen(src) < len ? strlen(src) : len,
+				    MIN(strlen(src), len),
 				    VIS_NL | VIS_CSTYLE);
 				while (*dst != '\0')
 					dst++;
@@ -1100,7 +1100,7 @@ format_next_process(caddr_t handle, char *(*get_userid)(int), int flags)
 
 	/* format this entry */
 	if (smpmode) {
-		if (state == SRUN && pp->ki_oncpu != 0xff)
+		if (state == SRUN && pp->ki_oncpu != NOCPU)
 			cpu = pp->ki_oncpu;
 		else
 			cpu = pp->ki_lastcpu;
@@ -1155,12 +1155,12 @@ getsysctl(const char *name, void *ptr, size_t len)
 static const char *
 format_nice(const struct kinfo_proc *pp)
 {
-	const char *fifo, *kthread;
+	const char *fifo, *kproc;
 	int rtpri;
 	static char nicebuf[4 + 1];
 
 	fifo = PRI_NEED_RR(pp->ki_pri.pri_class) ? "" : "F";
-	kthread = (pp->ki_flag & P_KTHREAD) ? "k" : "";
+	kproc = (pp->ki_flag & P_KPROC) ? "k" : "";
 	switch (PRI_BASE(pp->ki_pri.pri_class)) {
 	case PRI_ITHD:
 		return ("-");
@@ -1185,22 +1185,22 @@ format_nice(const struct kinfo_proc *pp)
 		 * values like "kr31F", but such values shouldn't occur,
 		 * and if they do then the tailing "F" is not displayed.
 		 */
-		rtpri = ((pp->ki_flag & P_KTHREAD) ? pp->ki_pri.pri_native :
+		rtpri = ((pp->ki_flag & P_KPROC) ? pp->ki_pri.pri_native :
 		    pp->ki_pri.pri_user) - PRI_MIN_REALTIME;
 		snprintf(nicebuf, sizeof(nicebuf), "%sr%d%s",
-		    kthread, rtpri, fifo);
+		    kproc, rtpri, fifo);
 		break;
 	case PRI_TIMESHARE:
-		if (pp->ki_flag & P_KTHREAD)
+		if (pp->ki_flag & P_KPROC)
 			return ("-");
 		snprintf(nicebuf, sizeof(nicebuf), "%d", pp->ki_nice - NZERO);
 		break;
 	case PRI_IDLE:
 		/* XXX: as above. */
-		rtpri = ((pp->ki_flag & P_KTHREAD) ? pp->ki_pri.pri_native :
+		rtpri = ((pp->ki_flag & P_KPROC) ? pp->ki_pri.pri_native :
 		    pp->ki_pri.pri_user) - PRI_MIN_IDLE;
 		snprintf(nicebuf, sizeof(nicebuf), "%si%d%s",
-		    kthread, rtpri, fifo);
+		    kproc, rtpri, fifo);
 		break;
 	default:
 		return ("?");

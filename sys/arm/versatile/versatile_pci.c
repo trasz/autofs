@@ -35,6 +35,10 @@ __FBSDID("$FreeBSD$");
 #include <sys/malloc.h>
 #include <sys/rman.h>
 #include <sys/watchdog.h>
+
+#include <vm/vm.h>
+#include <vm/pmap.h>
+
 #include <machine/bus.h>
 #include <machine/cpu.h>
 #include <machine/intr.h>
@@ -52,8 +56,6 @@ __FBSDID("$FreeBSD$");
 
 #include <machine/bus.h>
 #include <machine/fdt.h>
-
-#include <arm/versatile/versatile_pci_bus_space.h>
 
 #define	MEM_SYS		0
 #define	MEM_CORE	1
@@ -264,7 +266,7 @@ versatile_pci_attach(device_t dev)
 		versatile_pci_conf_write_4((slot << 11) + PCIR_COMMAND, val);
 	}
 
-	device_add_child(dev, "pci", 0);
+	device_add_child(dev, "pci", -1);
 	return (bus_generic_attach(dev));
 }
 
@@ -303,7 +305,7 @@ versatile_pci_write_ivar(device_t dev, device_t child, int which,
 
 static struct resource *
 versatile_pci_alloc_resource(device_t bus, device_t child, int type, int *rid,
-    u_long start, u_long end, u_long count, u_int flags)
+    rman_res_t start, rman_res_t end, rman_res_t count, u_int flags)
 {
 
 	struct versatile_pci_softc *sc = device_get_softc(bus);
@@ -355,7 +357,7 @@ versatile_pci_activate_resource(device_t bus, device_t child, int type, int rid,
 		vaddr = (vm_offset_t)pmap_mapdev(rman_get_start(r),
 				rman_get_size(r));
 		rman_set_bushandle(r, vaddr);
-		rman_set_bustag(r, versatile_bus_space_pcimem);
+		rman_set_bustag(r, fdtbus_bs_tag);
 		res = rman_activate_resource(r);
 		break;
 	case SYS_RES_IRQ:

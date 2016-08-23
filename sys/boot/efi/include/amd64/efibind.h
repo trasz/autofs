@@ -39,7 +39,7 @@ Revision History
 
     // No ANSI C 1999/2000 stdint.h integer width declarations 
 
-    #if _MSC_EXTENSIONS
+    #ifdef _MSC_EXTENSIONS
 
         // Use Microsoft C compiler integer width declarations 
 
@@ -85,6 +85,9 @@ Revision History
 // Basic EFI types of various widths
 //
 
+#ifndef ACPI_THREAD_ID		/* ACPI's definitions are fine */
+#define ACPI_USE_SYSTEM_INTTYPES 1	/* Tell ACPI we've defined types */
+
 typedef uint64_t   UINT64;
 typedef int64_t    INT64;
 
@@ -98,6 +101,7 @@ typedef int16_t    INT16;
 typedef uint8_t    UINT8;
 typedef int8_t     INT8;
 
+#endif
 
 #undef VOID
 #define VOID    void
@@ -160,7 +164,7 @@ typedef uint64_t   UINTN;
 #endif
 
 #ifndef EFIAPI                  // Forces EFI calling conventions reguardless of compiler options 
-    #if _MSC_EXTENSIONS
+    #ifdef _MSC_EXTENSIONS
         #define EFIAPI __cdecl  // Force C calling convention for Microsoft C compiler 
     #else
         #define EFIAPI          // Substitute expresion to force C calling convention 
@@ -234,7 +238,7 @@ typedef uint64_t   UINTN;
 #else // EFI_NT_EMULATOR 
 
 //
-// When build similiar to FW, then link everything together as
+// When building similar to FW, link everything together as
 // one big module.
 //
 
@@ -261,7 +265,7 @@ typedef uint64_t   UINTN;
 #endif
 #endif	/* __FreeBSD__ */
 
-#if _MSC_EXTENSIONS
+#ifdef _MSC_EXTENSIONS
 #pragma warning ( disable : 4731 )  // Suppress warnings about modification of EBP
 #endif
 

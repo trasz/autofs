@@ -52,7 +52,6 @@ struct sctp_sysctl {
 	uint32_t sctp_nrsack_enable;
 	uint32_t sctp_pktdrop_enable;
 	uint32_t sctp_fr_max_burst_default;
-	uint32_t sctp_strict_sacks;
 	uint32_t sctp_peer_chunk_oh;
 	uint32_t sctp_max_burst_default;
 	uint32_t sctp_max_chunks_on_queue;
@@ -89,7 +88,6 @@ struct sctp_sysctl {
 	uint32_t sctp_do_drain;
 	uint32_t sctp_hb_maxburst;
 	uint32_t sctp_abort_if_one_2_one_hits_limit;
-	uint32_t sctp_strict_data_order;
 	uint32_t sctp_min_residual;
 	uint32_t sctp_max_retran_chunk;
 	uint32_t sctp_logging_level;
@@ -143,7 +141,7 @@ struct sctp_sysctl {
 #define SCTPCTL_AUTOASCONF_DESC		"Enable SCTP Auto-ASCONF"
 #define SCTPCTL_AUTOASCONF_MIN		0
 #define SCTPCTL_AUTOASCONF_MAX		1
-#define SCTPCTL_AUTOASCONF_DEFAULT	SCTP_DEFAULT_AUTO_ASCONF
+#define SCTPCTL_AUTOASCONF_DEFAULT	1
 
 /* autoasconf: Enable SCTP Auto-ASCONF */
 #define SCTPCTL_MULTIPLEASCONFS_DESC	"Enable SCTP Muliple-ASCONFs"
@@ -192,12 +190,6 @@ struct sctp_sysctl {
 #define SCTPCTL_PKTDROP_ENABLE_MIN	0
 #define SCTPCTL_PKTDROP_ENABLE_MAX	1
 #define SCTPCTL_PKTDROP_ENABLE_DEFAULT	0
-
-/* strict_sacks: Enable SCTP Strict SACK checking */
-#define SCTPCTL_STRICT_SACKS_DESC	"Enable SCTP Strict SACK checking"
-#define SCTPCTL_STRICT_SACKS_MIN	0
-#define SCTPCTL_STRICT_SACKS_MAX	1
-#define SCTPCTL_STRICT_SACKS_DEFAULT	1
 
 /* loopback_nocsum: Enable NO Csum on packets sent on loopback */
 #define SCTPCTL_LOOPBACK_NOCSUM_DESC	"Enable NO Csum on packets sent on loopback"
@@ -291,10 +283,10 @@ struct sctp_sysctl {
 #define SCTPCTL_PMTU_RAISE_TIME_DEFAULT	SCTP_DEF_PMTU_RAISE_SEC
 
 /* shutdown_guard_time: Default shutdown guard timer in seconds */
-#define SCTPCTL_SHUTDOWN_GUARD_TIME_DESC	"Default shutdown guard timer in seconds"
+#define SCTPCTL_SHUTDOWN_GUARD_TIME_DESC	"Shutdown guard timer in seconds (0 means 5 times RTO.Max)"
 #define SCTPCTL_SHUTDOWN_GUARD_TIME_MIN		0
 #define SCTPCTL_SHUTDOWN_GUARD_TIME_MAX		0xFFFFFFFF
-#define SCTPCTL_SHUTDOWN_GUARD_TIME_DEFAULT	SCTP_DEF_MAX_SHUTDOWN_SEC
+#define SCTPCTL_SHUTDOWN_GUARD_TIME_DEFAULT	0
 
 /* secret_lifetime: Default secret lifetime in seconds */
 #define SCTPCTL_SECRET_LIFETIME_DESC	"Default secret lifetime in seconds"
@@ -428,12 +420,6 @@ struct sctp_sysctl {
 #define SCTPCTL_ABORT_AT_LIMIT_MAX	1
 #define SCTPCTL_ABORT_AT_LIMIT_DEFAULT	0
 
-/* strict_data_order: Enforce strict data ordering, abort if control inside data */
-#define SCTPCTL_STRICT_DATA_ORDER_DESC	"Enforce strict data ordering, abort if control inside data"
-#define SCTPCTL_STRICT_DATA_ORDER_MIN	0
-#define SCTPCTL_STRICT_DATA_ORDER_MAX	1
-#define SCTPCTL_STRICT_DATA_ORDER_DEFAULT	0
-
 /* min_residual: min residual in a data fragment leftover */
 #define SCTPCTL_MIN_RESIDUAL_DESC	"Minimum residual data chunk in second part of split"
 #define SCTPCTL_MIN_RESIDUAL_MIN	20
@@ -474,13 +460,13 @@ struct sctp_sysctl {
 #define SCTPCTL_MOBILITY_BASE_DESC	"Enable SCTP base mobility"
 #define SCTPCTL_MOBILITY_BASE_MIN	0
 #define SCTPCTL_MOBILITY_BASE_MAX	1
-#define SCTPCTL_MOBILITY_BASE_DEFAULT	SCTP_DEFAULT_MOBILITY_BASE
+#define SCTPCTL_MOBILITY_BASE_DEFAULT	0
 
 /* mobility_fasthandoff: Enable SCTP fast handoff support */
 #define SCTPCTL_MOBILITY_FASTHANDOFF_DESC	"Enable SCTP fast handoff"
 #define SCTPCTL_MOBILITY_FASTHANDOFF_MIN	0
 #define SCTPCTL_MOBILITY_FASTHANDOFF_MAX	1
-#define SCTPCTL_MOBILITY_FASTHANDOFF_DEFAULT	SCTP_DEFAULT_MOBILITY_FASTHANDOFF
+#define SCTPCTL_MOBILITY_FASTHANDOFF_DEFAULT	0
 
 /* Enable SCTP/UDP tunneling port */
 #define SCTPCTL_UDP_TUNNELING_PORT_DESC		"Set the SCTP/UDP tunneling port"
@@ -492,7 +478,7 @@ struct sctp_sysctl {
 #define SCTPCTL_SACK_IMMEDIATELY_ENABLE_DESC	"Enable sending of the SACK-IMMEDIATELY-bit."
 #define SCTPCTL_SACK_IMMEDIATELY_ENABLE_MIN	0
 #define SCTPCTL_SACK_IMMEDIATELY_ENABLE_MAX	1
-#define SCTPCTL_SACK_IMMEDIATELY_ENABLE_DEFAULT	SCTPCTL_SACK_IMMEDIATELY_ENABLE_MIN
+#define SCTPCTL_SACK_IMMEDIATELY_ENABLE_DEFAULT	SCTPCTL_SACK_IMMEDIATELY_ENABLE_MAX
 
 /* Enable sending of the NAT-FRIENDLY message */
 #define SCTPCTL_NAT_FRIENDLY_INITS_DESC	"Enable sending of the nat-friendly SCTP option on INITs."
@@ -545,7 +531,7 @@ struct sctp_sysctl {
 #define SCTPCTL_RTTVAR_DCCCECN_MAX	1
 #define SCTPCTL_RTTVAR_DCCCECN_DEFAULT	1	/* 0 means disable feature */
 
-#define SCTPCTL_BLACKHOLE_DESC		"Enable SCTP blackholing"
+#define SCTPCTL_BLACKHOLE_DESC		"Enable SCTP blackholing. See blackhole(4) for more details."
 #define SCTPCTL_BLACKHOLE_MIN		0
 #define SCTPCTL_BLACKHOLE_MAX		2
 #define SCTPCTL_BLACKHOLE_DEFAULT	SCTPCTL_BLACKHOLE_MIN

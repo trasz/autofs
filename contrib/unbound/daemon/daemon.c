@@ -84,7 +84,7 @@
 #include "util/random.h"
 #include "util/tube.h"
 #include "util/net_help.h"
-#include "ldns/keyraw.h"
+#include "sldns/keyraw.h"
 #include <signal.h>
 
 /** How many quit requests happened. */
@@ -109,8 +109,9 @@ int ub_c_lex_destroy(void);
 static RETSIGTYPE record_sigh(int sig)
 {
 #ifdef LIBEVENT_SIGNAL_PROBLEM
-	verbose(VERB_OPS, "quit on signal, no cleanup and statistics, "
-		"because installed libevent version is not threadsafe");
+	/* cannot log, verbose here because locks may be held */
+	/* quit on signal, no cleanup and statistics, 
+	   because installed libevent version is not threadsafe */
 	exit(0);
 #endif 
 	switch(sig)
@@ -135,7 +136,8 @@ static RETSIGTYPE record_sigh(int sig)
 			break;
 #endif
 		default:
-			log_err("ignoring signal %d", sig);
+			/* ignoring signal */
+			break;
 	}
 }
 
@@ -256,8 +258,8 @@ daemon_open_shared_ports(struct daemon* daemon)
 	log_assert(daemon);
 	if(daemon->cfg->port != daemon->listening_port) {
 		size_t i;
-		int reuseport = 0;
 		struct listen_port* p0;
+		daemon->reuseport = 0;
 		/* free and close old ports */
 		if(daemon->ports != NULL) {
 			for(i=0; i<daemon->num_ports; i++)
@@ -266,17 +268,17 @@ daemon_open_shared_ports(struct daemon* daemon)
 			daemon->ports = NULL;
 		}
 		/* see if we want to reuseport */
-#if defined(__linux__) && defined(SO_REUSEPORT)
+#ifdef SO_REUSEPORT
 		if(daemon->cfg->so_reuseport && daemon->cfg->num_threads > 0)
-			reuseport = 1;
+			daemon->reuseport = 1;
 #endif
 		/* try to use reuseport */
-		p0 = listening_ports_open(daemon->cfg, &reuseport);
+		p0 = listening_ports_open(daemon->cfg, &daemon->reuseport);
 		if(!p0) {
 			listening_ports_free(p0);
 			return 0;
 		}
-		if(reuseport) {
+		if(daemon->reuseport) {
 			/* reuseport was successful, allocate for it */
 			daemon->num_ports = (size_t)daemon->cfg->num_threads;
 		} else {
@@ -290,12 +292,13 @@ daemon_open_shared_ports(struct daemon* daemon)
 			return 0;
 		}
 		daemon->ports[0] = p0;
-		if(reuseport) {
+		if(daemon->reuseport) {
 			/* continue to use reuseport */
 			for(i=1; i<daemon->num_ports; i++) {
 				if(!(daemon->ports[i]=
 					listening_ports_open(daemon->cfg,
-						&reuseport)) || !reuseport ) {
+						&daemon->reuseport))
+					|| !daemon->reuseport ) {
 					for(i=0; i<daemon->num_ports; i++)
 						listening_ports_free(daemon->ports[i]);
 					free(daemon->ports);
@@ -396,8 +399,25 @@ daemon_create_workers(struct daemon* daemon)
 	verbose(VERB_ALGO, "total of %d outgoing ports available", numport);
 	
 	daemon->num = (daemon->cfg->num_threads?daemon->cfg->num_threads:1);
+	if(daemon->reuseport && (int)daemon->num < (int)daemon->num_ports) {
+		log_warn("cannot reduce num-threads to %d because so-reuseport "
+			"so continuing with %d threads.", (int)daemon->num,
+			(int)daemon->num_ports);
+		daemon->num = (int)daemon->num_ports;
+	}
 	daemon->workers = (struct worker**)calloc((size_t)daemon->num, 
 		sizeof(struct worker*));
+	if(daemon->cfg->dnstap) {
+#ifdef USE_DNSTAP
+		daemon->dtenv = dt_create(daemon->cfg->dnstap_socket_path,
+			(unsigned int)daemon->num);
+		if (!daemon->dtenv)
+			fatal_exit("dt_create failed");
+		dt_apply_cfg(daemon->dtenv, daemon->cfg);
+#else
+		fatal_exit("dnstap enabled in config but not built with dnstap support");
+#endif
+	}
 	for(i=0; i<daemon->num; i++) {
 		if(!(daemon->workers[i] = worker_create(daemon, i,
 			shufport+numport*i/daemon->num, 
@@ -448,9 +468,9 @@ thread_start(void* arg)
 	tube_close_write(worker->cmd);
 	close_other_pipes(worker->daemon, worker->thread_num);
 #endif
-#if defined(__linux__) && defined(SO_REUSEPORT)
+#ifdef SO_REUSEPORT
 	if(worker->daemon->cfg->so_reuseport)
-		port_num = worker->thread_num;
+		port_num = worker->thread_num % worker->daemon->num_ports;
 	else
 		port_num = 0;
 #endif
@@ -582,6 +602,9 @@ daemon_cleanup(struct daemon* daemon)
 	free(daemon->workers);
 	daemon->workers = NULL;
 	daemon->num = 0;
+#ifdef USE_DNSTAP
+	dt_delete(daemon->dtenv);
+#endif
 	daemon->cfg = NULL;
 }
 

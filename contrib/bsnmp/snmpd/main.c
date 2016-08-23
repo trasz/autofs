@@ -119,26 +119,30 @@ static struct lmodules modules_start = TAILQ_HEAD_INITIALIZER(modules_start);
 struct community_list community_list = TAILQ_HEAD_INITIALIZER(community_list);
 
 /* list of all known USM users */
-struct usm_userlist usm_userlist = SLIST_HEAD_INITIALIZER(usm_userlist);
+static struct usm_userlist usm_userlist = SLIST_HEAD_INITIALIZER(usm_userlist);
 
 /* A list of all VACM users configured, including v1, v2c and v3 */
-struct vacm_userlist vacm_userlist = SLIST_HEAD_INITIALIZER(vacm_userlist);
+static struct vacm_userlist vacm_userlist =
+    SLIST_HEAD_INITIALIZER(vacm_userlist);
 
 /* A list of all VACM groups */
-struct vacm_grouplist vacm_grouplist = SLIST_HEAD_INITIALIZER(vacm_grouplist);
+static struct vacm_grouplist vacm_grouplist =
+    SLIST_HEAD_INITIALIZER(vacm_grouplist);
 
 static struct vacm_group vacm_default_group = {
 	.groupname = "",
 };
 
 /* The list of configured access entries */
-struct vacm_accesslist vacm_accesslist = TAILQ_HEAD_INITIALIZER(vacm_accesslist);
+static struct vacm_accesslist vacm_accesslist =
+    TAILQ_HEAD_INITIALIZER(vacm_accesslist);
 
 /* The list of configured views */
-struct vacm_viewlist vacm_viewlist = SLIST_HEAD_INITIALIZER(vacm_viewlist);
+static struct vacm_viewlist vacm_viewlist =
+    SLIST_HEAD_INITIALIZER(vacm_viewlist);
 
 /* The list of configured contexts */
-struct vacm_contextlist vacm_contextlist =
+static struct vacm_contextlist vacm_contextlist =
     SLIST_HEAD_INITIALIZER(vacm_contextlist);
 
 /* list of all installed object resources */
@@ -644,11 +648,11 @@ decoded:
 	} else if (usm_user->suser.auth_proto != SNMP_AUTH_NOAUTH &&
 	     (pdu->engine.engine_boots == 0 || pdu->engine.engine_time == 0)) {
 		snmpd_usmstats.not_in_time_windows++;
-		ret = SNMP_CODE_FAILED;
+		ret = SNMPD_INPUT_FAILED;
 	}
 
 	if ((code = snmp_pdu_auth_access(pdu, ip)) != SNMP_CODE_OK)
-		ret = SNMP_CODE_FAILED;
+		ret = SNMPD_INPUT_FAILED;
 
 	return (ret);
 }
@@ -2809,7 +2813,7 @@ usm_new_user(uint8_t *eid, uint32_t elen, char *uname)
 	if ((uuser = (struct usm_user *)malloc(sizeof(*uuser))) == NULL)
 		return (NULL);
 
-	memset(uuser, 0, sizeof(struct usm_user));
+	memset(uuser, 0, sizeof(*uuser));
 	strlcpy(uuser->suser.sec_name, uname, SNMP_ADM_STR32_SIZ);
 	memcpy(uuser->user_engine_id, eid, elen);
 	uuser->user_engine_len = elen;

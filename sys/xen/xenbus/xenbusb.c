@@ -330,7 +330,7 @@ xenbusb_device_sysctl_handler(SYSCTL_HANDLER_ARGS)
 	default:
 		return (EINVAL);
 	}
-	return (SYSCTL_OUT(req, value, strlen(value)));
+	return (SYSCTL_OUT_STR(req, value));
 }
 
 /**
@@ -561,7 +561,6 @@ xenbusb_devices_changed(struct xs_watch *watch, const char **vec,
 	struct xenbusb_softc *xbs;
 	device_t dev;
 	char *node;
-	char *bus;
 	char *type;
 	char *id;
 	char *p;
@@ -580,7 +579,6 @@ xenbusb_devices_changed(struct xs_watch *watch, const char **vec,
 	p = strchr(node, '/');
 	if (p == NULL)
 		goto out;
-	bus = node;
 	*p = 0;
 	type = p + 1;
 

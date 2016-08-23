@@ -33,6 +33,8 @@
 
 #ifndef _KERNEL
 
+#define	_DTRACE_VERSION	1
+
 #define	DTRACE_PROBE(prov, name) {				\
 	extern void __dtrace_##prov##___##name(void);		\
 	__dtrace_##prov##___##name();				\
@@ -159,7 +161,7 @@ SET_DECLARE(sdt_argtypes_set, struct sdt_argtype);
 	extern struct sdt_probe sdt_##prov##_##mod##_##func##_##name[1]
 
 #define SDT_PROBE(prov, mod, func, name, arg0, arg1, arg2, arg3, arg4)	do {	\
-	if (sdt_##prov##_##mod##_##func##_##name->id)				\
+	if (__predict_false(sdt_##prov##_##mod##_##func##_##name->id))		\
 		(*sdt_probe_func)(sdt_##prov##_##mod##_##func##_##name->id,	\
 		    (uintptr_t) arg0, (uintptr_t) arg1, (uintptr_t) arg2,	\
 		    (uintptr_t) arg3, (uintptr_t) arg4);			\
@@ -396,7 +398,7 @@ struct sdt_probe {
 	struct sdt_provider *prov;	/* Ptr to the provider structure. */
 	TAILQ_ENTRY(sdt_probe)
 			probe_entry;	/* SDT probe list entry. */
-	TAILQ_HEAD(argtype_list_head, sdt_argtype) argtype_list;
+	TAILQ_HEAD(, sdt_argtype) argtype_list;
 	const char	*mod;
 	const char	*func;
 	const char	*name;

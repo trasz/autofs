@@ -35,6 +35,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/kernel.h>
 #include <sys/malloc.h>
 #include <sys/module.h>
+#include <sys/devmap.h>
 
 #include <vm/vm.h>
 #include <vm/vm_kern.h>
@@ -42,9 +43,9 @@ __FBSDID("$FreeBSD$");
 #include <vm/vm_page.h>
 #include <vm/vm_extern.h>
 
+#include <machine/armreg.h>
 #define	_ARM32_BUS_DMA_PRIVATE
 #include <machine/bus.h>
-#include <machine/devmap.h>
 #include <machine/intr.h>
 
 #include <arm/at91/at91var.h>
@@ -52,59 +53,6 @@ __FBSDID("$FreeBSD$");
 #include <arm/at91/at91_aicreg.h>
 
 uint32_t at91_master_clock;
-
-static int
-at91_bs_map(void *t, bus_addr_t bpa, bus_size_t size, int flags,
-    bus_space_handle_t *bshp)
-{
-	vm_paddr_t pa, endpa;
-
-	pa = trunc_page(bpa);
-	if (pa >= AT91_PA_BASE + 0xff00000) {
-		*bshp = bpa - AT91_PA_BASE + AT91_BASE;
-		return (0);
-	}
-	if (pa >= AT91_BASE + 0xff00000) {
-		*bshp = bpa;
-		return (0);
-	}
-	endpa = round_page(bpa + size);
-
-	*bshp = (vm_offset_t)pmap_mapdev(pa, endpa - pa) + (bpa - pa);
-
-	return (0);
-}
-
-static void
-at91_bs_unmap(void *t, bus_space_handle_t h, bus_size_t size)
-{
-	vm_offset_t va, endva;
-
-	if (t == 0)
-		return;
-	va = trunc_page((vm_offset_t)t);
-	if (va >= AT91_BASE && va <= AT91_BASE + 0xff00000)
-		return;
-	endva = round_page((vm_offset_t)t + size);
-
-	/* Free the kernel virtual mapping. */
-	kva_free(va, endva - va);
-}
-
-static int
-at91_bs_subregion(void *t, bus_space_handle_t bsh, bus_size_t offset,
-    bus_size_t size, bus_space_handle_t *nbshp)
-{
-
-	*nbshp = bsh + offset;
-	return (0);
-}
-
-static void
-at91_barrier(void *t, bus_space_handle_t bsh, bus_size_t size, bus_size_t b,
-    int a)
-{
-}
 
 struct arm32_dma_range *
 bus_dma_get_range(void)
@@ -118,116 +66,6 @@ bus_dma_get_range_nb(void)
 {
 	return (0);
 }
-
-bs_protos(generic);
-bs_protos(generic_armv4);
-
-struct bus_space at91_bs_tag = {
-	/* cookie */
-	(void *) 0,
-
-	/* mapping/unmapping */
-	at91_bs_map,
-	at91_bs_unmap,
-	at91_bs_subregion,
-
-	/* allocation/deallocation */
-	NULL,
-	NULL,
-
-	/* barrier */
-	at91_barrier,
-
-	/* read (single) */
-	generic_bs_r_1,
-	generic_armv4_bs_r_2,
-	generic_bs_r_4,
-	NULL,
-
-	/* read multiple */
-	generic_bs_rm_1,
-	generic_armv4_bs_rm_2,
-	generic_bs_rm_4,
-	NULL,
-
-	/* read region */
-	generic_bs_rr_1,
-	generic_armv4_bs_rr_2,
-	generic_bs_rr_4,
-	NULL,
-
-	/* write (single) */
-	generic_bs_w_1,
-	generic_armv4_bs_w_2,
-	generic_bs_w_4,
-	NULL,
-
-	/* write multiple */
-	generic_bs_wm_1,
-	generic_armv4_bs_wm_2,
-	generic_bs_wm_4,
-	NULL,
-
-	/* write region */
-	NULL,
-	generic_armv4_bs_wr_2,
-	generic_bs_wr_4,
-	NULL,
-
-	/* set multiple */
-	NULL,
-	NULL,
-	NULL,
-	NULL,
-
-	/* set region */
-	NULL,
-	generic_armv4_bs_sr_2,
-	generic_bs_sr_4,
-	NULL,
-
-	/* copy */
-	NULL,
-	generic_armv4_bs_c_2,
-	NULL,
-	NULL,
-
-	/* read (single) stream */
-	generic_bs_r_1,
-	generic_armv4_bs_r_2,
-	generic_bs_r_4,
-	NULL,
-
-	/* read multiple stream */
-	generic_bs_rm_1,
-	generic_armv4_bs_rm_2,
-	generic_bs_rm_4,
-	NULL,
-
-	/* read region stream */
-	generic_bs_rr_1,
-	generic_armv4_bs_rr_2,
-	generic_bs_rr_4,
-	NULL,
-
-	/* write (single) stream */
-	generic_bs_w_1,
-	generic_armv4_bs_w_2,
-	generic_bs_w_4,
-	NULL,
-
-	/* write multiple stream */
-	generic_bs_wm_1,
-	generic_armv4_bs_wm_2,
-	generic_bs_wm_4,
-	NULL,
-
-	/* write region stream */
-	NULL,
-	generic_armv4_bs_wr_2,
-	generic_bs_wr_4,
-	NULL,
-};
 
 #ifndef FDT
 
@@ -270,7 +108,7 @@ at91_attach(device_t dev)
 	arm_post_filter = at91_eoi;
 
 	at91_softc = sc;
-	sc->sc_st = &at91_bs_tag;
+	sc->sc_st = arm_base_bs_tag;
 	sc->sc_sh = AT91_BASE;
 	sc->sc_aic_sh = AT91_BASE + AT91_SYS_BASE;
 	sc->dev = dev;
@@ -303,13 +141,13 @@ at91_attach(device_t dev)
 
 	bus_generic_probe(dev);
 	bus_generic_attach(dev);
-	enable_interrupts(I32_bit | F32_bit);
+	enable_interrupts(PSR_I | PSR_F);
 	return (0);
 }
 
 static struct resource *
 at91_alloc_resource(device_t dev, device_t child, int type, int *rid,
-    u_long start, u_long end, u_long count, u_int flags)
+    rman_res_t start, rman_res_t end, rman_res_t count, u_int flags)
 {
 	struct at91_softc *sc = device_get_softc(dev);
 	struct resource_list_entry *rle;
@@ -326,7 +164,7 @@ at91_alloc_resource(device_t dev, device_t child, int type, int *rid,
 		return (NULL);
 	if (rle->res)
 		panic("Resource rid %d type %d already in use", *rid, type);
-	if (start == 0UL && end == ~0UL) {
+	if (RMAN_IS_DEFAULT_RANGE(start, end)) {
 		start = rle->start;
 		count = ulmax(count, rle->count);
 		end = ulmax(rle->end, start + count - 1);
@@ -341,9 +179,9 @@ at91_alloc_resource(device_t dev, device_t child, int type, int *rid,
 		rle->res = rman_reserve_resource(&sc->sc_mem_rman,
 		    start, end, count, flags, child);
 		if (rle->res != NULL) {
-			bus_space_map(&at91_bs_tag, start,
+			bus_space_map(arm_base_bs_tag, start,
 			    rman_get_size(rle->res), 0, &bsh);
-			rman_set_bustag(rle->res, &at91_bs_tag);
+			rman_set_bustag(rle->res, arm_base_bs_tag);
 			rman_set_bushandle(rle->res, bsh);
 		}
 		break;
@@ -417,7 +255,7 @@ at91_activate_resource(device_t bus, device_t child, int type, int rid,
     struct resource *r)
 {
 #if 0
-	u_long p;
+	rman_res_t p;
 	int error;
 	
 	if (type == SYS_RES_MEMORY) {
@@ -443,9 +281,9 @@ at91_print_child(device_t dev, device_t child)
 
 	retval += bus_print_child_header(dev, child);
 
-	retval += resource_list_print_type(rl, "port", SYS_RES_IOPORT, "%#lx");
-	retval += resource_list_print_type(rl, "mem", SYS_RES_MEMORY, "%#lx");
-	retval += resource_list_print_type(rl, "irq", SYS_RES_IRQ, "%ld");
+	retval += resource_list_print_type(rl, "port", SYS_RES_IOPORT, "%#jx");
+	retval += resource_list_print_type(rl, "mem", SYS_RES_MEMORY, "%#jx");
+	retval += resource_list_print_type(rl, "irq", SYS_RES_IRQ, "%jd");
 	if (device_get_flags(dev))
 		retval += printf(" flags %#x", device_get_flags(dev));
 

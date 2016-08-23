@@ -1,4 +1,4 @@
-/* $Id: main.c,v 1.51 2014/05/28 02:01:55 Tom.Shields Exp $ */
+/* $Id: main.c,v 1.56 2016/03/25 00:16:28 Jung-uk.Kim Exp $ */
 
 #include <signal.h>
 #ifndef _WIN32
@@ -410,32 +410,46 @@ alloc_file_name(size_t len, const char *suffix)
     return result;
 }
 
+static char *
+find_suffix(char *name, const char *suffix)
+{
+    size_t len = strlen(name);
+    size_t slen = strlen(suffix);
+    if (len >= slen)
+    {
+	name += len - slen;
+	if (strcmp(name, suffix) == 0)
+	    return name;
+    }
+    return NULL;
+}
+
 static void
 create_file_names(void)
 {
     size_t len;
     const char *defines_suffix;
     const char *externs_suffix;
-    char *prefix;
+    char *suffix;
 
-    prefix = NULL;
+    suffix = NULL;
     defines_suffix = DEFINES_SUFFIX;
     externs_suffix = EXTERNS_SUFFIX;
 
     /* compute the file_prefix from the user provided output_file_name */
     if (output_file_name != 0)
     {
-	if (!(prefix = strstr(output_file_name, OUTPUT_SUFFIX))
-	    && (prefix = strstr(output_file_name, ".c")))
+	if (!(suffix = find_suffix(output_file_name, OUTPUT_SUFFIX))
+	    && (suffix = find_suffix(output_file_name, ".c")))
 	{
 	    defines_suffix = ".h";
 	    externs_suffix = ".i";
 	}
     }
 
-    if (prefix != NULL)
+    if (suffix != NULL)
     {
-	len = (size_t) (prefix - output_file_name);
+	len = (size_t) (suffix - output_file_name);
 	file_prefix = TMALLOC(char, len + 1);
 	NO_SPACE(file_prefix);
 	strncpy(file_prefix, output_file_name, len)[len] = 0;
@@ -477,7 +491,7 @@ create_file_names(void)
 	CREATE_FILE_NAME(graph_file_name, GRAPH_SUFFIX);
     }
 
-    if (prefix != NULL)
+    if (suffix != NULL)
     {
 	FREE(file_prefix);
     }
@@ -491,8 +505,8 @@ close_tmpfiles(void)
     {
 	MY_TMPFILES *next = my_tmpfiles->next;
 
-	chmod(my_tmpfiles->name, 0644);
-	unlink(my_tmpfiles->name);
+	(void)chmod(my_tmpfiles->name, 0644);
+	(void)unlink(my_tmpfiles->name);
 
 	free(my_tmpfiles->name);
 	free(my_tmpfiles);
@@ -551,6 +565,7 @@ my_mkstemp(char *temp)
 static FILE *
 open_tmpfile(const char *label)
 {
+#define MY_FMT "%s/%.*sXXXXXX"
     FILE *result;
 #if USE_MKSTEMP
     int fd;
@@ -569,15 +584,21 @@ open_tmpfile(const char *label)
 	    tmpdir = ".";
     }
 
-    name = malloc(strlen(tmpdir) + 10 + strlen(label));
+    /* The size of the format is guaranteed to be longer than the result from
+     * printing empty strings with it; this calculation accounts for the
+     * string-lengths as well.
+     */
+    name = malloc(strlen(tmpdir) + sizeof(MY_FMT) + strlen(label));
 
     result = 0;
     if (name != 0)
     {
+	mode_t save_umask = umask(0177);
+
 	if ((mark = strrchr(label, '_')) == 0)
 	    mark = label + strlen(label);
 
-	sprintf(name, "%s/%.*sXXXXXX", tmpdir, (int)(mark - label), label);
+	sprintf(name, MY_FMT, tmpdir, (int)(mark - label), label);
 	fd = mkstemp(name);
 	if (fd >= 0)
 	{
@@ -601,6 +622,7 @@ open_tmpfile(const char *label)
 		my_tmpfiles = item;
 	    }
 	}
+	(void)umask(save_umask);
     }
 #else
     result = tmpfile();
@@ -609,6 +631,7 @@ open_tmpfile(const char *label)
     if (result == 0)
 	open_error(label);
     return result;
+#undef MY_FMT
 }
 
 static void

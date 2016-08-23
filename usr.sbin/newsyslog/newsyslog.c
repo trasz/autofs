@@ -280,6 +280,7 @@ static int age_old_log(const char *file);
 static void savelog(char *from, char *to);
 static void createdir(const struct conf_entry *ent, char *dirpart);
 static void createlog(const struct conf_entry *ent);
+static int parse_signal(const char *str);
 
 /*
  * All the following take a parameter of 'int', but expect values in the
@@ -332,13 +333,15 @@ main(int argc, char **argv)
 			printf("Signal all daemon process(es)...\n");
 		SLIST_FOREACH(stmp, &swhead, sw_nextp)
 			do_sigwork(stmp);
-		if (noaction)
-			printf("\tsleep 10\n");
-		else {
-			if (verbose)
-				printf("Pause 10 seconds to allow daemon(s)"
-				    " to close log file(s)\n");
-			sleep(10);
+		if (!(rotatereq && nosignal)) {
+			if (noaction)
+				printf("\tsleep 10\n");
+			else {
+				if (verbose)
+					printf("Pause 10 seconds to allow "
+					    "daemon(s) to close log file(s)\n");
+				sleep(10);
+			}
 		}
 	}
 	/*
@@ -1270,20 +1273,6 @@ no_trimat:
 				working->flags |= CE_BINARY;
 				break;
 			case 'c':
-				/*
-				 * XXX - 	Ick! Ugly! Remove ASAP!
-				 * We want `c' and `C' for "create".  But we
-				 * will temporarily treat `c' as `g', because
-				 * FreeBSD releases <= 4.8 have a typo of
-				 * checking  ('G' || 'c')  for CE_GLOB.
-				 */
-				if (*q == 'c') {
-					warnx("Assuming 'g' for 'c' in flags for line:\n%s",
-					    errline);
-					warnx("The 'c' flag will eventually mean 'CREATE'");
-					working->flags |= CE_GLOB;
-					break;
-				}
 				working->flags |= CE_CREATE;
 				break;
 			case 'd':
@@ -1338,12 +1327,13 @@ no_trimat:
 		if (q && *q) {
 			if (*q == '/')
 				working->pid_cmd_file = strdup(q);
-			else if (isdigit(*q))
+			else if (isalnum(*q))
 				goto got_sig;
-			else
+			else {
 				errx(1,
-			"illegal pid file or signal number in config file:\n%s",
+			"illegal pid file or signal in config file:\n%s",
 				    errline);
+			}
 		}
 		if (eol)
 			q = NULL;
@@ -1354,17 +1344,13 @@ no_trimat:
 
 		working->sig = SIGHUP;
 		if (q && *q) {
-			if (isdigit(*q)) {
-		got_sig:
-				working->sig = atoi(q);
-			} else {
-		err_sig:
+got_sig:
+			working->sig = parse_signal(q);
+			if (working->sig < 1 || working->sig >= sys_nsig) {
 				errx(1,
-				    "illegal signal number in config file:\n%s",
+				    "illegal signal in config file:\n%s",
 				    errline);
 			}
-			if (working->sig < 1 || working->sig >= NSIG)
-				goto err_sig;
 		}
 
 		/*
@@ -1915,7 +1901,7 @@ do_sigwork(struct sigwork_entry *swork)
 	/*
 	 * Compute the pause between consecutive signals.  Use a longer
 	 * sleep time if we will be sending two signals to the same
-	 * deamon or process-group.
+	 * daemon or process-group.
 	 */
 	secs = 0;
 	nextsig = SLIST_NEXT(swork, sw_nextp);
@@ -1968,8 +1954,8 @@ do_sigwork(struct sigwork_entry *swork)
 		 */
 		if (errno != ESRCH)
 			swork->sw_pidok = 0;
-		warn("can't notify %s, pid %d", swork->sw_pidtype,
-		    (int)swork->sw_pid);
+		warn("can't notify %s, pid %d = %s", swork->sw_pidtype,
+		    (int)swork->sw_pid, swork->sw_fname);
 	} else {
 		if (verbose)
 			printf("Notified %s pid %d = %s\n", swork->sw_pidtype,
@@ -2300,26 +2286,29 @@ mtime_old_timelog(const char *file)
 	time_t t;
 	struct dirent *dp;
 	DIR *dirp;
-	char *s, *logfname, *dir;
+	char *logfname, *logfnamebuf, *dir, *dirbuf;
 
 	t = -1;
 
-	if ((dir = dirname(file)) == NULL) {
-		warn("dirname() of '%s'", file);
+	if ((dirbuf = strdup(file)) == NULL) {
+		warn("strdup() of '%s'", file);
 		return (t);
 	}
-	if ((s = basename(file)) == NULL) {
-		warn("basename() of '%s'", file);
+	dir = dirname(dirbuf);
+	if ((logfnamebuf = strdup(file)) == NULL) {
+		warn("strdup() of '%s'", file);
+		free(dirbuf);
 		return (t);
-	} else if (s[0] == '/') {
-		warnx("Invalid log filename '%s'", s);
-		return (t);
-	} else if ((logfname = strdup(s)) == NULL)
-		err(1, "strdup()");
+	}
+	logfname = basename(logfnamebuf);
+	if (logfname[0] == '/') {
+		warnx("Invalid log filename '%s'", logfname);
+		goto out;
+	}
 
 	if ((dirp = opendir(dir)) == NULL) {
 		warn("Cannot open log directory '%s'", dir);
-		return (t);
+		goto out;
 	}
 	dir_fd = dirfd(dirp);
 	/* Open the archive dir and find the most recent archive of logfname. */
@@ -2336,6 +2325,9 @@ mtime_old_timelog(const char *file)
 	}
 	closedir(dirp);
 
+out:
+	free(dirbuf);
+	free(logfnamebuf);
 	return (t);
 }
 
@@ -2661,4 +2653,29 @@ change_attrs(const char *fname, const struct conf_entry *ent)
 		if (failed)
 			warn("can't chflags %s NODUMP", fname);
 	}
+}
+
+/*
+ * Parse a signal number or signal name. Returns the signal number parsed or -1
+ * on failure.
+ */
+static int
+parse_signal(const char *str)
+{
+	int sig, i;
+	const char *errstr;
+
+	sig = strtonum(str, 1, sys_nsig - 1, &errstr);
+
+	if (errstr == NULL)
+		return (sig);
+	if (strncasecmp(str, "SIG", 3) == 0)
+		str += 3;
+
+	for (i = 1; i < sys_nsig; i++) {
+		if (strcasecmp(str, sys_signame[i]) == 0)
+			return (i);
+	}
+
+	return (-1);
 }

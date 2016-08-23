@@ -87,12 +87,6 @@ SND_DECLARE_FILE("$FreeBSD$");
 #define AGG_DEFAULT_BUFSZ	0x4000 /* 0x1000, but gets underflows */
 
 
-/* compatibility */
-#if __FreeBSD_version < 500000
-# define critical_enter()	disable_intr()
-# define critical_exit()	enable_intr()
-#endif
-
 #ifndef PCIR_BAR
 #define PCIR_BAR(x)	(PCIR_MAPS + (x) * 4)
 #endif
@@ -1815,9 +1809,7 @@ agg_attach(device_t dev)
 			       /*filter*/ NULL, NULL,
 			       /*size  */ ess->bufsz, 1, 0x3ffff,
 			       /*flags */ 0,
-#if __FreeBSD_version >= 501102
 			       /*lock  */ busdma_lock_mutex, &Giant,
-#endif
 			       &ess->buf_dmat) != 0) {
 		device_printf(dev, "unable to create dma tag\n");
 		ret = ENOMEM;
@@ -1831,9 +1823,7 @@ agg_attach(device_t dev)
 			       /*filter*/ NULL, NULL,
 			       /*size  */ 3*ess->bufsz, 1, 0x3ffff,
 			       /*flags */ 0,
-#if __FreeBSD_version >= 501102
 			       /*lock  */ busdma_lock_mutex, &Giant,
-#endif
 			       &ess->stat_dmat) != 0) {
 		device_printf(dev, "unable to create dma tag\n");
 		ret = ENOMEM;
@@ -1927,7 +1917,7 @@ agg_attach(device_t dev)
 	adjust_pchbase(ess->pch, ess->playchns, ess->bufsz);
 
 	snprintf(status, SND_STATUSLEN,
-	    "port 0x%lx-0x%lx irq %ld at device %d.%d on pci%d",
+	    "port 0x%jx-0x%jx irq %jd at device %d.%d on pci%d",
 	    rman_get_start(reg), rman_get_end(reg), rman_get_start(irq),
 	    pci_get_slot(dev), pci_get_function(dev), pci_get_bus(dev));
 	pcm_setstatus(dev, status);

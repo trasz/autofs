@@ -3,6 +3,8 @@
 
 .include <src.opts.mk>
 
+PACKAGE=runtime-manuals
+
 MAN=	aac.4 \
 	aacraid.4 \
 	acpi.4 \
@@ -52,7 +54,6 @@ MAN=	aac.4 \
 	${_apic.4} \
 	arcmsr.4 \
 	${_asmc.4} \
-	asr.4 \
 	ata.4 \
 	ath.4 \
 	ath_ahb.4 \
@@ -70,9 +71,12 @@ MAN=	aac.4 \
 	axe.4 \
 	axge.4 \
 	bce.4 \
+	bcma.4 \
 	bfe.4 \
 	bge.4 \
 	${_bhyve.4} \
+	bhnd.4 \
+	bhndb.4 \
 	bktr.4 \
 	blackhole.4 \
 	bpf.4 \
@@ -87,15 +91,18 @@ MAN=	aac.4 \
 	cc_cdg.4 \
 	cc_chd.4 \
 	cc_cubic.4 \
+	cc_dctcp.4 \
 	cc_hd.4 \
 	cc_htcp.4 \
 	cc_newreno.4 \
 	cc_vegas.4 \
-	ccd.4 \
+	${_ccd.4} \
 	cd.4 \
 	cdce.4 \
+	cfi.4 \
 	ch.4 \
 	ciss.4 \
+	cloudabi.4 \
 	cm.4 \
 	cmx.4 \
 	${_coretemp.4} \
@@ -107,6 +114,7 @@ MAN=	aac.4 \
 	cxgb.4 \
 	cxgbe.4 \
 	cy.4 \
+	cyapa.4 \
 	da.4 \
 	dc.4 \
 	dcons.4 \
@@ -119,6 +127,14 @@ MAN=	aac.4 \
 	divert.4 \
 	${_dpms.4} \
 	dpt.4 \
+	ds1307.4 \
+	ds3231.4 \
+	${_dtrace_io.4} \
+	${_dtrace_ip.4} \
+	${_dtrace_proc.4} \
+	${_dtrace_sched.4} \
+	${_dtrace_tcp.4} \
+	${_dtrace_udp.4} \
 	dummynet.4 \
 	ed.4 \
 	edsc.4 \
@@ -130,9 +146,9 @@ MAN=	aac.4 \
 	esp.4 \
 	est.4 \
 	et.4 \
+	etherswitch.4 \
 	eventtimers.4 \
 	exca.4 \
-	faith.4 \
 	fatm.4 \
 	fd.4 \
 	fdc.4 \
@@ -154,10 +170,8 @@ MAN=	aac.4 \
 	geom_fox.4 \
 	geom_linux_lvm.4 \
 	geom_map.4 \
-	geom_uncompress.4 \
 	geom_uzip.4 \
 	gif.4 \
-	gpib.4 \
 	gpio.4 \
 	gpioiic.4 \
 	gpioled.4 \
@@ -185,6 +199,7 @@ MAN=	aac.4 \
 	icmp6.4 \
 	ida.4 \
 	ifmib.4 \
+	ig4.4 \
 	igb.4 \
 	igmp.4 \
 	iic.4 \
@@ -197,25 +212,31 @@ MAN=	aac.4 \
 	intpm.4 \
 	intro.4 \
 	${_io.4} \
+	${_ioat.4} \
 	ip.4 \
 	ip6.4 \
 	ipfirewall.4 \
+	ipheth.4 \
 	${_ipmi.4} \
 	ips.4 \
 	ipsec.4 \
 	ipw.4 \
 	ipwfw.4 \
 	isci.4 \
-	iscsi_initiator.4 \
+	isl.4 \
 	ismt.4 \
 	isp.4 \
 	ispfw.4 \
 	iwi.4 \
 	iwifw.4 \
+	iwm.4 \
+	iwmfw.4 \
 	iwn.4 \
 	iwnfw.4 \
 	ixgb.4 \
 	ixgbe.4 \
+	ixl.4 \
+	ixlv.4 \
 	jme.4 \
 	joy.4 \
 	kbdmux.4 \
@@ -248,8 +269,9 @@ MAN=	aac.4 \
 	mac_stub.4 \
 	mac_test.4 \
 	malo.4 \
-	mcd.4 \
 	md.4 \
+	mdio.4 \
+	me.4 \
 	mem.4 \
 	meteor.4 \
 	mfi.4 \
@@ -257,6 +279,7 @@ MAN=	aac.4 \
 	mk48txx.4 \
 	mld.4 \
 	mlx.4 \
+	mlx5en.4 \
 	mly.4 \
 	mmc.4 \
 	mmcsd.4 \
@@ -294,7 +317,6 @@ MAN=	aac.4 \
 	ng_atm.4 \
 	ngatmbase.4 \
 	ng_atmllc.4 \
-	ng_bluetooth.4 \
 	ng_bpf.4 \
 	ng_bridge.4 \
 	ng_bt3c.4 \
@@ -351,8 +373,11 @@ MAN=	aac.4 \
 	ng_vlan.4 \
 	nmdm.4 \
 	nsp.4 \
-	${_ntb.4} \
+	${_ntb_hw.4} \
+	${_ntb_transport.4} \
+	${_if_ntb.4} \
 	null.4 \
+	numa.4 \
 	${_nvd.4} \
 	${_nvme.4} \
 	${_nvram.4} \
@@ -361,6 +386,9 @@ MAN=	aac.4 \
 	oce.4 \
 	ohci.4 \
 	orm.4 \
+	ow.4 \
+	ow_temp.4 \
+	owc.4 \
 	${_padlock.4} \
 	pass.4 \
 	patm.4 \
@@ -370,13 +398,13 @@ MAN=	aac.4 \
 	pci.4 \
 	pcib.4 \
 	pcic.4 \
-	pcii.4 \
 	pcm.4 \
 	pcn.4 \
 	${_pf.4} \
 	${_pflog.4} \
 	${_pfsync.4} \
 	pim.4 \
+	pms.4 \
 	polling.4 \
 	ppbus.4 \
 	ppc.4 \
@@ -402,8 +430,8 @@ MAN=	aac.4 \
 	rndtest.4 \
 	route.4 \
 	rp.4 \
-	rsu.4 \
-	rsufw.4 \
+	rtwn.4 \
+	rtwnfw.4 \
 	rue.4 \
 	rum.4 \
 	run.4 \
@@ -413,7 +441,6 @@ MAN=	aac.4 \
 	sbp.4 \
 	sbp_targ.4 \
 	scc.4 \
-	scd.4 \
 	sched_4bsd.4 \
 	sched_ule.4 \
 	screen.4 \
@@ -426,7 +453,6 @@ MAN=	aac.4 \
 	sf.4 \
 	${_sfxge.4} \
 	sge.4 \
-	si.4 \
 	siba.4 \
 	siftr.4 \
 	siis.4 \
@@ -437,6 +463,7 @@ MAN=	aac.4 \
 	smb.4 \
 	smbus.4 \
 	smp.4 \
+	smsc.4 \
 	sn.4 \
 	snd_ad1816.4 \
 	snd_als4000.4 \
@@ -469,7 +496,6 @@ MAN=	aac.4 \
 	snd_via82c686.4 \
 	snd_vibes.4 \
 	snp.4 \
-	spic.4 \
 	${_spkr.4} \
 	splash.4 \
 	sppp.4 \
@@ -492,7 +518,6 @@ MAN=	aac.4 \
 	ti.4 \
 	timecounters.4 \
 	tl.4 \
-	tnt4882.4 \
 	${_tpm.4} \
 	trm.4 \
 	tty.4 \
@@ -502,55 +527,7 @@ MAN=	aac.4 \
 	tws.4 \
 	tx.4 \
 	txp.4 \
-	u3g.4 \
-	uark.4 \
-	uart.4 \
-	uath.4 \
-	ubsa.4 \
-	ubsec.4 \
-	ubser.4 \
-	ubtbcmfw.4 \
-	uchcom.4 \
-	ucom.4 \
-	ucycom.4 \
-	udav.4 \
-	udbp.4 \
-	udp.4 \
-	udplite.4 \
-	uep.4 \
-	ufm.4 \
-	ufoma.4 \
-	uftdi.4 \
-	ugen.4 \
-	uhci.4 \
-	uhid.4 \
-	uhso.4 \
-	uipaq.4 \
-	ukbd.4 \
-	ulpt.4 \
-	umass.4 \
-	umcs.4 \
-	umct.4 \
-	umodem.4 \
-	umoscom.4 \
-	ums.4 \
-	unix.4 \
-	upgt.4 \
-	uplcom.4 \
-	ural.4 \
-	urio.4 \
-	urndis.4 \
-	${_urtw.4} \
-	urtwn.4 \
-	urtwnfw.4 \
-	usb.4 \
-	usb_template.4 \
-	usb_quirk.4 \
-	uslcom.4 \
-	usfs.4 \
-	utopia.4 \
-	uvisor.4 \
-	uvscom.4 \
+	ure.4 \
 	vale.4 \
 	vga.4 \
 	vge.4 \
@@ -559,10 +536,12 @@ MAN=	aac.4 \
 	${_virtio.4} \
 	${_virtio_balloon.4} \
 	${_virtio_blk.4} \
+	${_virtio_console.4} \
 	${_virtio_random.4} \
 	${_virtio_scsi.4} \
 	vkbd.4 \
 	vlan.4 \
+	vxlan.4 \
 	${_vmx.4} \
 	vpo.4 \
 	vr.4 \
@@ -616,10 +595,14 @@ MLINKS+=bwn.4 if_bwn.4
 MLINKS+=${_bxe.4} ${_if_bxe.4}
 MLINKS+=cas.4 if_cas.4
 MLINKS+=cdce.4 if_cdce.4
+MLINKS+=cfi.4 cfid.4
+MLINKS+=cloudabi.4 cloudabi64.4
 MLINKS+=crypto.4 cryptodev.4
 MLINKS+=cue.4 if_cue.4
 MLINKS+=cxgb.4 if_cxgb.4
-MLINKS+=cxgbe.4 if_cxgbe.4
+MLINKS+=cxgbe.4 if_cxgbe.4 \
+	cxgbe.4 cxl.4 \
+	cxgbe.4 if_cxl.4
 MLINKS+=dc.4 if_dc.4
 MLINKS+=de.4 if_de.4
 MLINKS+=disc.4 if_disc.4
@@ -630,7 +613,6 @@ MLINKS+=en.4 if_en.4
 MLINKS+=enc.4 if_enc.4
 MLINKS+=epair.4 if_epair.4
 MLINKS+=et.4 if_et.4
-MLINKS+=faith.4 if_faith.4
 MLINKS+=fatm.4 if_fatm.4
 MLINKS+=fd.4 stderr.4 \
 	fd.4 stdin.4 \
@@ -656,13 +638,17 @@ MLINKS+=ip.4 rawip.4
 MLINKS+=ipfirewall.4 ipaccounting.4 \
 	ipfirewall.4 ipacct.4 \
 	ipfirewall.4 ipfw.4
+MLINKS+=ipheth.4 if_ipheth.4
 MLINKS+=ipw.4 if_ipw.4
 MLINKS+=iwi.4 if_iwi.4
+MLINKS+=iwm.4 if_iwm.4
 MLINKS+=iwn.4 if_iwn.4
 MLINKS+=ixgb.4 if_ixgb.4
 MLINKS+=ixgbe.4 ix.4
 MLINKS+=ixgbe.4 if_ix.4
 MLINKS+=ixgbe.4 if_ixgbe.4
+MLINKS+=ixl.4 if_ixl.4
+MLINKS+=ixlv.4 if_ixlv.4
 MLINKS+=jme.4 if_jme.4
 MLINKS+=kue.4 if_kue.4
 MLINKS+=lagg.4 trunk.4
@@ -675,6 +661,9 @@ MLINKS+=lp.4 plip.4
 MLINKS+=malo.4 if_malo.4
 MLINKS+=md.4 vn.4
 MLINKS+=mem.4 kmem.4
+MLINKS+=mfi.4 mfi_linux.4 \
+	mfi.4 mfip.4
+MLINKS+=mlx5en.4 mce.4
 MLINKS+=mn.4 if_mn.4
 MLINKS+=mos.4 if_mos.4
 MLINKS+=msk.4 if_msk.4
@@ -687,14 +676,15 @@ MLINKS+=netintro.4 net.4 \
 	netintro.4 networking.4
 MLINKS+=${_nfe.4} ${_if_nfe.4}
 MLINKS+=nge.4 if_nge.4
-MLINKS+=${_ntb.4} ${_if_ntb.4} \
-	${_ntb.4} ${_ntb_hw.4}
+MLINKS+=${_ntb_hw.4} ${_ntb.4}
 MLINKS+=${_nxge.4} ${_if_nxge.4}
+MLINKS+=ow.4 onewire.4
 MLINKS+=patm.4 if_patm.4
 MLINKS+=pccbb.4 cbb.4
 MLINKS+=pcm.4 snd.4 \
 	pcm.4 sound.4
 MLINKS+=pcn.4 if_pcn.4
+MLINKS+=pms.4 pmspcv.4
 MLINKS+=ral.4 if_ral.4
 MLINKS+=re.4 if_re.4
 MLINKS+=rl.4 if_rl.4
@@ -710,6 +700,7 @@ MLINKS+=sge.4 if_sge.4
 MLINKS+=sis.4 if_sis.4
 MLINKS+=sk.4 if_sk.4
 MLINKS+=smp.4 SMP.4
+MLINKS+=smsc.4 if_smsc.4
 MLINKS+=sn.4 if_sn.4
 MLINKS+=snd_envy24.4 snd_ak452x.4
 MLINKS+=snd_sbc.4 snd_sb16.4 \
@@ -728,15 +719,10 @@ MLINKS+=tl.4 if_tl.4
 MLINKS+=tun.4 if_tun.4
 MLINKS+=tx.4 if_tx.4
 MLINKS+=txp.4 if_txp.4
-MLINKS+=u3g.4 u3gstub.4
-MLINKS+=uath.4 if_uath.4
-MLINKS+=udav.4 if_udav.4
-MLINKS+=upgt.4 if_upgt.4
-MLINKS+=ural.4 if_ural.4
-MLINKS+=urndis.4 if_urndis.4
-MLINKS+=${_urtw.4} ${_if_urtw.4}
+MLINKS+=ure.4 if_ure.4
 MLINKS+=vge.4 if_vge.4
 MLINKS+=vlan.4 if_vlan.4
+MLINKS+=vxlan.4 if_vxlan.4
 MLINKS+=${_vmx.4} ${_if_vmx.4}
 MLINKS+=vpo.4 imm.4
 MLINKS+=vr.4 if_vr.4
@@ -806,6 +792,7 @@ _nxge.4=	nxge.4
 _virtio.4=	virtio.4
 _virtio_balloon.4=virtio_balloon.4
 _virtio_blk.4=	virtio_blk.4
+_virtio_console.4=virtio_console.4
 _virtio_random.4= virtio_random.4
 _virtio_scsi.4= virtio_scsi.4
 _vmx.4=		vmx.4
@@ -826,10 +813,11 @@ _xnb.4=		xnb.4
 .endif
 
 .if ${MACHINE_CPUARCH} == "amd64"
-_bhyve.4=	bhyve.4
 _if_ntb.4=	if_ntb.4
+_ioat.4=	ioat.4
 _ntb.4=		ntb.4
 _ntb_hw.4=	ntb_hw.4
+_ntb_transport.4=ntb_transport.4
 _qlxge.4=	qlxge.4
 _qlxgb.4=	qlxgb.4
 _qlxgbe.4=	qlxgbe.4
@@ -839,6 +827,10 @@ MLINKS+=qlxge.4 if_qlxge.4
 MLINKS+=qlxgb.4 if_qlxgb.4
 MLINKS+=qlxgbe.4 if_qlxgbe.4
 MLINKS+=sfxge.4 if_sfxge.4
+
+.if ${MK_BHYVE} != "no"
+_bhyve.4=	bhyve.4
+.endif
 .endif
 
 .if ${MACHINE_CPUARCH} == "mips"
@@ -847,6 +839,29 @@ _nvram2env.4=	nvram2env.4
 
 .if exists(${.CURDIR}/man4.${MACHINE_CPUARCH})
 SUBDIR=	man4.${MACHINE_CPUARCH}
+.endif
+
+.if ${MK_BLUETOOTH} != "no"
+MAN+=		ng_bluetooth.4
+.endif
+
+.if ${MK_CCD} != "no"
+_ccd.4=		ccd.4
+.endif
+
+.if ${MK_CDDL} != "no"
+_dtrace_io.4=	dtrace_io.4
+_dtrace_ip.4=	dtrace_ip.4
+_dtrace_proc.4=	dtrace_proc.4
+_dtrace_sched.4= dtrace_sched.4
+_dtrace_tcp.4=	dtrace_tcp.4
+_dtrace_udp.4=	dtrace_udp.4
+.endif
+
+.if ${MK_ISCSI} != "no"
+MAN+=		iscsi.4
+MAN+=		iscsi_initiator.4
+MAN+=		iser.4
 .endif
 
 .if ${MK_TESTS} != "no"
@@ -859,6 +874,77 @@ _atf_test_case.4=	atf-test-case.4
 _pf.4=		pf.4
 _pflog.4=	pflog.4
 _pfsync.4=	pfsync.4
+.endif
+
+.if ${MK_USB} != "no"
+MAN+=	\
+	otus.4 \
+	otusfw.4 \
+	rsu.4 \
+	rsufw.4 \
+	u3g.4 \
+	uark.4 \
+	uart.4 \
+	uath.4 \
+	ubsa.4 \
+	ubsec.4 \
+	ubser.4 \
+	ubtbcmfw.4 \
+	uchcom.4 \
+	ucom.4 \
+	ucycom.4 \
+	udav.4 \
+	udbp.4 \
+	udp.4 \
+	udplite.4 \
+	udl.4 \
+	uep.4 \
+	ufm.4 \
+	ufoma.4 \
+	uftdi.4 \
+	ugen.4 \
+	ugold.4 \
+	uhci.4 \
+	uhid.4 \
+	uhso.4 \
+	uipaq.4 \
+	ukbd.4 \
+	uled.4 \
+	ulpt.4 \
+	umass.4 \
+	umcs.4 \
+	umct.4 \
+	umodem.4 \
+	umoscom.4 \
+	ums.4 \
+	unix.4 \
+	upgt.4 \
+	uplcom.4 \
+	ural.4 \
+	urio.4 \
+	urndis.4 \
+	${_urtw.4} \
+	urtwn.4 \
+	urtwnfw.4 \
+	usb.4 \
+	usb_quirk.4 \
+	usb_template.4 \
+	usfs.4 \
+	uslcom.4 \
+	utopia.4 \
+	uvisor.4 \
+	uvscom.4 \
+
+MLINKS+=otus.4 if_otus.4
+MLINKS+=rsu.4 if_rsu.4
+MLINKS+=u3g.4 u3gstub.4
+MLINKS+=uath.4 if_uath.4
+MLINKS+=udav.4 if_udav.4
+MLINKS+=upgt.4 if_upgt.4
+MLINKS+=ural.4 if_ural.4
+MLINKS+=urndis.4 if_urndis.4
+MLINKS+=${_urtw.4} ${_if_urtw.4}
+MLINKS+=urtwn.4 if_urtwn.4
 .endif
 
 .include <bsd.prog.mk>

@@ -255,6 +255,8 @@ ffs_balloc_ufs1(struct vnode *vp, off_t startoffset, int size,
 		}
 		pref = newb + fs->fs_frag;
 		nb = newb;
+		MPASS(allocblk < allociblk + nitems(allociblk));
+		MPASS(lbns_remfree < lbns + nitems(lbns));
 		*allocblk++ = nb;
 		*lbns_remfree++ = indirs[1].in_lbn;
 		bp = getblk(vp, indirs[1].in_lbn, fs->fs_bsize, 0, 0, gbflags);
@@ -309,7 +311,7 @@ retry:
 		if ((error = ffs_alloc(ip, lbn, pref, (int)fs->fs_bsize,
 		    flags | IO_BUFLOCKED, cred, &newb)) != 0) {
 			brelse(bp);
-			if (++reclaimed == 1) {
+			if (DOINGSOFTDEP(vp) && ++reclaimed == 1) {
 				UFS_LOCK(ump);
 				softdep_request_cleanup(fs, vp, cred,
 				    FLUSH_BLOCKS_WAIT);
@@ -325,6 +327,8 @@ retry:
 		}
 		pref = newb + fs->fs_frag;
 		nb = newb;
+		MPASS(allocblk < allociblk + nitems(allociblk));
+		MPASS(lbns_remfree < lbns + nitems(lbns));
 		*allocblk++ = nb;
 		*lbns_remfree++ = indirs[i].in_lbn;
 		nbp = getblk(vp, indirs[i].in_lbn, fs->fs_bsize, 0, 0, 0);
@@ -386,7 +390,7 @@ retry:
 		    flags | IO_BUFLOCKED, cred, &newb);
 		if (error) {
 			brelse(bp);
-			if (++reclaimed == 1) {
+			if (DOINGSOFTDEP(vp) && ++reclaimed == 1) {
 				UFS_LOCK(ump);
 				softdep_request_cleanup(fs, vp, cred,
 				    FLUSH_BLOCKS_WAIT);
@@ -401,6 +405,8 @@ retry:
 			goto fail;
 		}
 		nb = newb;
+		MPASS(allocblk < allociblk + nitems(allociblk));
+		MPASS(lbns_remfree < lbns + nitems(lbns));
 		*allocblk++ = nb;
 		*lbns_remfree++ = lbn;
 		nbp = getblk(vp, lbn, fs->fs_bsize, 0, 0, gbflags);
@@ -429,7 +435,9 @@ retry:
 	brelse(bp);
 	if (flags & BA_CLRBUF) {
 		int seqcount = (flags & BA_SEQMASK) >> BA_SEQSHIFT;
-		if (seqcount && (vp->v_mount->mnt_flag & MNT_NOCLUSTERR) == 0) {
+		if (seqcount != 0 &&
+		    (vp->v_mount->mnt_flag & MNT_NOCLUSTERR) == 0 &&
+		    !(vm_page_count_severe() || buf_dirty_count_severe())) {
 			error = cluster_read(vp, ip->i_size, lbn,
 			    (int)fs->fs_bsize, NOCRED,
 			    MAXBSIZE, seqcount, gbflags, &nbp);
@@ -476,10 +484,16 @@ fail:
 		 * We shall not leave the freed blocks on the vnode
 		 * buffer object lists.
 		 */
-		bp = getblk(vp, *lbns_remfree, fs->fs_bsize, 0, 0, GB_NOCREAT);
+		bp = getblk(vp, *lbns_remfree, fs->fs_bsize, 0, 0,
+		    GB_NOCREAT | GB_UNMAPPED);
 		if (bp != NULL) {
-			bp->b_flags |= (B_INVAL | B_RELBUF);
-			bp->b_flags &= ~B_ASYNC;
+			KASSERT(bp->b_blkno == fsbtodb(fs, *blkp),
+			    ("mismatch1 l %jd %jd b %ju %ju",
+			    (intmax_t)bp->b_lblkno, (uintmax_t)*lbns_remfree,
+			    (uintmax_t)bp->b_blkno,
+			    (uintmax_t)fsbtodb(fs, *blkp)));
+			bp->b_flags |= B_INVAL | B_RELBUF | B_NOCACHE;
+			bp->b_flags &= ~(B_ASYNC | B_CACHE);
 			brelse(bp);
 		}
 		deallocated += fs->fs_bsize;
@@ -522,6 +536,18 @@ fail:
 	 * cleared, free the blocks.
 	 */
 	for (blkp = allociblk; blkp < allocblk; blkp++) {
+#ifdef INVARIANTS
+		if (blkp == allociblk)
+			lbns_remfree = lbns;
+		bp = getblk(vp, *lbns_remfree, fs->fs_bsize, 0, 0,
+		    GB_NOCREAT | GB_UNMAPPED);
+		if (bp != NULL) {
+			panic("zombie1 %jd %ju %ju",
+			    (intmax_t)bp->b_lblkno, (uintmax_t)bp->b_blkno,
+			    (uintmax_t)fsbtodb(fs, *blkp));
+		}
+		lbns_remfree++;
+#endif
 		ffs_blkfree(ump, fs, ip->i_devvp, *blkp, fs->fs_bsize,
 		    ip->i_number, vp->v_type, NULL);
 	}
@@ -816,6 +842,8 @@ ffs_balloc_ufs2(struct vnode *vp, off_t startoffset, int size,
 		}
 		pref = newb + fs->fs_frag;
 		nb = newb;
+		MPASS(allocblk < allociblk + nitems(allociblk));
+		MPASS(lbns_remfree < lbns + nitems(lbns));
 		*allocblk++ = nb;
 		*lbns_remfree++ = indirs[1].in_lbn;
 		bp = getblk(vp, indirs[1].in_lbn, fs->fs_bsize, 0, 0,
@@ -871,7 +899,7 @@ retry:
 		if ((error = ffs_alloc(ip, lbn, pref, (int)fs->fs_bsize,
 		    flags | IO_BUFLOCKED, cred, &newb)) != 0) {
 			brelse(bp);
-			if (++reclaimed == 1) {
+			if (DOINGSOFTDEP(vp) && ++reclaimed == 1) {
 				UFS_LOCK(ump);
 				softdep_request_cleanup(fs, vp, cred,
 				    FLUSH_BLOCKS_WAIT);
@@ -887,6 +915,8 @@ retry:
 		}
 		pref = newb + fs->fs_frag;
 		nb = newb;
+		MPASS(allocblk < allociblk + nitems(allociblk));
+		MPASS(lbns_remfree < lbns + nitems(lbns));
 		*allocblk++ = nb;
 		*lbns_remfree++ = indirs[i].in_lbn;
 		nbp = getblk(vp, indirs[i].in_lbn, fs->fs_bsize, 0, 0,
@@ -949,7 +979,7 @@ retry:
 		    flags | IO_BUFLOCKED, cred, &newb);
 		if (error) {
 			brelse(bp);
-			if (++reclaimed == 1) {
+			if (DOINGSOFTDEP(vp) && ++reclaimed == 1) {
 				UFS_LOCK(ump);
 				softdep_request_cleanup(fs, vp, cred,
 				    FLUSH_BLOCKS_WAIT);
@@ -964,6 +994,8 @@ retry:
 			goto fail;
 		}
 		nb = newb;
+		MPASS(allocblk < allociblk + nitems(allociblk));
+		MPASS(lbns_remfree < lbns + nitems(lbns));
 		*allocblk++ = nb;
 		*lbns_remfree++ = lbn;
 		nbp = getblk(vp, lbn, fs->fs_bsize, 0, 0, gbflags);
@@ -998,7 +1030,9 @@ retry:
 	 */
 	if (flags & BA_CLRBUF) {
 		int seqcount = (flags & BA_SEQMASK) >> BA_SEQSHIFT;
-		if (seqcount && (vp->v_mount->mnt_flag & MNT_NOCLUSTERR) == 0) {
+		if (seqcount != 0 &&
+		    (vp->v_mount->mnt_flag & MNT_NOCLUSTERR) == 0 &&
+		    !(vm_page_count_severe() || buf_dirty_count_severe())) {
 			error = cluster_read(vp, ip->i_size, lbn,
 			    (int)fs->fs_bsize, NOCRED,
 			    MAXBSIZE, seqcount, gbflags, &nbp);
@@ -1045,10 +1079,16 @@ fail:
 		 * We shall not leave the freed blocks on the vnode
 		 * buffer object lists.
 		 */
-		bp = getblk(vp, *lbns_remfree, fs->fs_bsize, 0, 0, GB_NOCREAT);
+		bp = getblk(vp, *lbns_remfree, fs->fs_bsize, 0, 0,
+		    GB_NOCREAT | GB_UNMAPPED);
 		if (bp != NULL) {
-			bp->b_flags |= (B_INVAL | B_RELBUF);
-			bp->b_flags &= ~B_ASYNC;
+			KASSERT(bp->b_blkno == fsbtodb(fs, *blkp),
+			    ("mismatch2 l %jd %jd b %ju %ju",
+			    (intmax_t)bp->b_lblkno, (uintmax_t)*lbns_remfree,
+			    (uintmax_t)bp->b_blkno,
+			    (uintmax_t)fsbtodb(fs, *blkp)));
+			bp->b_flags |= B_INVAL | B_RELBUF | B_NOCACHE;
+			bp->b_flags &= ~(B_ASYNC | B_CACHE);
 			brelse(bp);
 		}
 		deallocated += fs->fs_bsize;
@@ -1091,6 +1131,18 @@ fail:
 	 * cleared, free the blocks.
 	 */
 	for (blkp = allociblk; blkp < allocblk; blkp++) {
+#ifdef INVARIANTS
+		if (blkp == allociblk)
+			lbns_remfree = lbns;
+		bp = getblk(vp, *lbns_remfree, fs->fs_bsize, 0, 0,
+		    GB_NOCREAT | GB_UNMAPPED);
+		if (bp != NULL) {
+			panic("zombie2 %jd %ju %ju",
+			    (intmax_t)bp->b_lblkno, (uintmax_t)bp->b_blkno,
+			    (uintmax_t)fsbtodb(fs, *blkp));
+		}
+		lbns_remfree++;
+#endif
 		ffs_blkfree(ump, fs, ip->i_devvp, *blkp, fs->fs_bsize,
 		    ip->i_number, vp->v_type, NULL);
 	}

@@ -30,7 +30,7 @@ display_usage () {
 
 # Set the default path for the temporary root environment
 #
-TEMPROOT='/var/tmp/temproot'
+TEMPROOT=`TMPDIR=/var/tmp mktemp -d -t temproot`
 
 # Assign the location of the mtree database
 #
@@ -147,7 +147,7 @@ find -d ${TEMPROOT} -type d -empty -delete 2>/dev/null
 
 # Build the mtree database in a temporary location.
 MTREENEW=`mktemp -t mergemaster.mtree`
-mtree -ci -p ${TEMPROOT} -k size,md5digest > ${MTREENEW} 2>/dev/null
+mtree -nci -p ${TEMPROOT} -k size,md5digest > ${MTREENEW} 2>/dev/null
 
 if [ -s "${MTREENEW}" ]; then
   echo "*** Saving mtree database for future upgrades"

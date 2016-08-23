@@ -23,8 +23,6 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- * $FreeBSD$
  */
 
 /*
@@ -56,6 +54,9 @@
  * SUCH DAMAGE.
  *
  */
+
+#include <sys/cdefs.h>
+__FBSDID("$FreeBSD$");
 
 #include <sys/syscall.h>
 #include "namespace.h"
@@ -128,12 +129,10 @@ __pthread_cxa_finalize(struct dl_phdr_info *phdr_info)
 	_thr_sigact_unload(phdr_info);
 }
 
-__weak_reference(_fork, fork);
-
-pid_t _fork(void);
+__weak_reference(__thr_fork, _fork);
 
 pid_t
-_fork(void)
+__thr_fork(void)
 {
 	struct pthread *curthread;
 	struct pthread_atfork *af;
@@ -170,6 +169,7 @@ _fork(void)
 	if (_thr_isthreaded() != 0) {
 		was_threaded = 1;
 		_malloc_prefork();
+		__thr_pshared_atfork_pre();
 		_rtld_atfork_pre(rtld_locks);
 	} else {
 		was_threaded = 0;
@@ -204,14 +204,16 @@ _fork(void)
 
 		_thr_signal_postfork_child();
 
-		if (was_threaded)
+		if (was_threaded) {
 			_rtld_atfork_post(rtld_locks);
+			__thr_pshared_atfork_post();
+		}
 		_thr_setthreaded(0);
 
 		/* reinitalize library. */
 		_libpthread_init(curthread);
 
-		/* atfork is reinitializeded by _libpthread_init()! */
+		/* atfork is reinitialized by _libpthread_init()! */
 		_thr_rwl_rdlock(&_thr_atfork_lock);
 
 		if (was_threaded) {
@@ -238,6 +240,7 @@ _fork(void)
 
 		if (was_threaded) {
 			_rtld_atfork_post(rtld_locks);
+			__thr_pshared_atfork_post();
 			_malloc_postfork();
 		}
 

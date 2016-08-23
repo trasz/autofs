@@ -54,9 +54,11 @@ struct mips_cpuinfo {
 	u_int8_t	cpu_rev;
 	u_int8_t	cpu_impl;
 	u_int8_t	tlb_type;
+	u_int32_t	tlb_pgmask;
 	u_int16_t	tlb_nentries;
 	u_int8_t	icache_virtual;
 	boolean_t	cache_coherent_dma;
+	boolean_t	userlocal_reg;
 	struct {
 		u_int32_t	ic_size;
 		u_int8_t	ic_linesize;
@@ -67,6 +69,12 @@ struct mips_cpuinfo {
 		u_int8_t	dc_nways;
 		u_int16_t	dc_nsets;
 	} l1;
+	struct {
+		u_int32_t	dc_size;
+		u_int8_t	dc_linesize;
+		u_int8_t	dc_nways;
+		u_int16_t	dc_nsets;
+	} l2;
 };
 
 extern struct mips_cpuinfo cpuinfo;

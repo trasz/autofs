@@ -710,7 +710,7 @@ sf_probe(device_t dev)
 	sdid = pci_get_subdevice(dev);
 
 	t = sf_devs;
-	for (i = 0; i < sizeof(sf_devs) / sizeof(sf_devs[0]); i++, t++) {
+	for (i = 0; i < nitems(sf_devs); i++, t++) {
 		if (vid == t->sf_vid && did == t->sf_did) {
 			if (sdid == t->sf_sdid) {
 				device_set_desc(dev, t->sf_sname);
@@ -720,7 +720,7 @@ sf_probe(device_t dev)
 	}
 
 	if (vid == AD_VENDORID && did == AD_DEVICEID_STARFIRE) {
-		/* unkown subdevice */
+		/* unknown subdevice */
 		device_set_desc(dev, sf_devs[0].sf_name);
 		return (BUS_PROBE_DEFAULT);
 	}
@@ -1515,7 +1515,7 @@ sf_fixup_rx(struct mbuf *m)
  * it is marred by one truly stupid design flaw, which is that receive
  * buffer addresses must be aligned on a longword boundary. This forces
  * the packet payload to be unaligned, which is suboptimal on the x86 and
- * completely unuseable on the Alpha. Our only recourse is to copy received
+ * completely unusable on the Alpha. Our only recourse is to copy received
  * packets into properly aligned buffers before handing them off.
  */
 static int
@@ -1566,7 +1566,7 @@ sf_rxeof(struct sf_softc *sc)
 		m = rxd->rx_m;
 
 		/*
-		 * Note, if_ipackets and if_ierrors counters
+		 * Note, IFCOUNTER_IPACKETS and IFCOUNTER_IERRORS
 		 * are handled in sf_stats_update().
 		 */
 		if ((status & SF_RXSTAT1_OK) == 0) {
@@ -1575,7 +1575,7 @@ sf_rxeof(struct sf_softc *sc)
 		}
 
 		if (sf_newbuf(sc, eidx) != 0) {
-			ifp->if_iqdrops++;
+			if_inc_counter(ifp, IFCOUNTER_IQDROPS, 1);
 			cur_cmp->sf_rx_status1 = 0;
 			continue;
 		}
@@ -1720,8 +1720,9 @@ sf_txeof(struct sf_softc *sc)
 			/*
 			 * We don't need to check Tx status here.
 			 * SF_ISR_TX_LOFIFO intr would handle this.
-			 * Note, if_opackets, if_collisions and if_oerrors
-			 * counters are handled in sf_stats_update().
+			 * Note, IFCOUNTER_OPACKETS, IFCOUNTER_COLLISIONS
+			 * and IFCOUNTER_OERROR are handled in
+			 * sf_stats_update().
 			 */
 			txd = &sc->sf_cdata.sf_txdesc[idx];
 			if (txd->tx_m != NULL) {
@@ -2479,23 +2480,26 @@ sf_stats_update(struct sf_softc *sc)
 	for (i = SF_STATS_BASE; i < (SF_STATS_END + 1); i += sizeof(uint32_t))
 		csr_write_4(sc, i, 0);
 
-	ifp->if_opackets += (u_long)stats->sf_tx_frames;
+	if_inc_counter(ifp, IFCOUNTER_OPACKETS, (u_long)stats->sf_tx_frames);
 
-	ifp->if_collisions += (u_long)stats->sf_tx_single_colls +
-	    (u_long)stats->sf_tx_multi_colls;
+	if_inc_counter(ifp, IFCOUNTER_COLLISIONS,
+	    (u_long)stats->sf_tx_single_colls +
+	    (u_long)stats->sf_tx_multi_colls);
 
-	ifp->if_oerrors += (u_long)stats->sf_tx_excess_colls +
+	if_inc_counter(ifp, IFCOUNTER_OERRORS,
+	    (u_long)stats->sf_tx_excess_colls +
 	    (u_long)stats->sf_tx_excess_defer +
-	    (u_long)stats->sf_tx_frames_lost;
+	    (u_long)stats->sf_tx_frames_lost);
 
-	ifp->if_ipackets += (u_long)stats->sf_rx_frames;
+	if_inc_counter(ifp, IFCOUNTER_IPACKETS, (u_long)stats->sf_rx_frames);
 
-	ifp->if_ierrors += (u_long)stats->sf_rx_crcerrs +
+	if_inc_counter(ifp, IFCOUNTER_IERRORS,
+	    (u_long)stats->sf_rx_crcerrs +
 	    (u_long)stats->sf_rx_alignerrs +
 	    (u_long)stats->sf_rx_giants +
 	    (u_long)stats->sf_rx_runts +
 	    (u_long)stats->sf_rx_jabbererrs +
-	    (u_long)stats->sf_rx_frames_lost;
+	    (u_long)stats->sf_rx_frames_lost);
 
 	nstats = &sc->sf_statistics;
 
@@ -2546,7 +2550,7 @@ sf_watchdog(struct sf_softc *sc)
 
 	ifp = sc->sf_ifp;
 
-	ifp->if_oerrors++;
+	if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 	if (sc->sf_link == 0) {
 		if (bootverbose)
 			if_printf(sc->sf_ifp, "watchdog timeout "

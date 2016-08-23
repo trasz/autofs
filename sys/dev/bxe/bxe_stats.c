@@ -178,7 +178,7 @@ bxe_storm_stats_post(struct bxe_softc *sc)
 static void
 bxe_hw_stats_post(struct bxe_softc *sc)
 {
-    struct dmae_command *dmae = &sc->stats_dmae;
+    struct dmae_cmd *dmae = &sc->stats_dmae;
     uint32_t *stats_comp = BXE_SP(sc, stats_comp);
     int loader_idx;
     uint32_t opcode;
@@ -201,15 +201,15 @@ bxe_hw_stats_post(struct bxe_softc *sc)
                                   TRUE, DMAE_COMP_GRC);
         opcode = bxe_dmae_opcode_clr_src_reset(opcode);
 
-        memset(dmae, 0, sizeof(struct dmae_command));
+        memset(dmae, 0, sizeof(struct dmae_cmd));
         dmae->opcode = opcode;
         dmae->src_addr_lo = U64_LO(BXE_SP_MAPPING(sc, dmae[0]));
         dmae->src_addr_hi = U64_HI(BXE_SP_MAPPING(sc, dmae[0]));
         dmae->dst_addr_lo = ((DMAE_REG_CMD_MEM +
-                              sizeof(struct dmae_command) *
+                              sizeof(struct dmae_cmd) *
                               (loader_idx + 1)) >> 2);
         dmae->dst_addr_hi = 0;
-        dmae->len = sizeof(struct dmae_command) >> 2;
+        dmae->len = sizeof(struct dmae_cmd) >> 2;
         if (CHIP_IS_E1(sc)) {
             dmae->len--;
         }
@@ -234,6 +234,10 @@ bxe_stats_comp(struct bxe_softc *sc)
     while (*stats_comp != DMAE_COMP_VAL) {
         if (!cnt) {
             BLOGE(sc, "Timeout waiting for stats finished\n");
+            if(sc->trigger_grcdump) {
+                /* taking grcdump */
+                bxe_grc_dump(sc);
+            }
             break;
         }
 
@@ -251,7 +255,7 @@ bxe_stats_comp(struct bxe_softc *sc)
 static void
 bxe_stats_pmf_update(struct bxe_softc *sc)
 {
-    struct dmae_command *dmae;
+    struct dmae_cmd *dmae;
     uint32_t opcode;
     int loader_idx = PMF_DMAE_C(sc);
     uint32_t *stats_comp = BXE_SP(sc, stats_comp);
@@ -310,7 +314,7 @@ bxe_stats_pmf_update(struct bxe_softc *sc)
 static void
 bxe_port_stats_init(struct bxe_softc *sc)
 {
-    struct dmae_command *dmae;
+    struct dmae_cmd *dmae;
     int port = SC_PORT(sc);
     uint32_t opcode;
     int loader_idx = PMF_DMAE_C(sc);
@@ -538,7 +542,7 @@ bxe_port_stats_init(struct bxe_softc *sc)
 static void
 bxe_func_stats_init(struct bxe_softc *sc)
 {
-    struct dmae_command *dmae = &sc->stats_dmae;
+    struct dmae_cmd *dmae = &sc->stats_dmae;
     uint32_t *stats_comp = BXE_SP(sc, stats_comp);
 
     /* sanity */
@@ -548,7 +552,7 @@ bxe_func_stats_init(struct bxe_softc *sc)
     }
 
     sc->executer_idx = 0;
-    memset(dmae, 0, sizeof(struct dmae_command));
+    memset(dmae, 0, sizeof(struct dmae_cmd));
 
     dmae->opcode = bxe_dmae_opcode(sc, DMAE_SRC_PCI, DMAE_DST_GRC,
                                    TRUE, DMAE_COMP_PCI);
@@ -1164,50 +1168,54 @@ bxe_storm_stats_update(struct bxe_softc *sc)
 static void
 bxe_net_stats_update(struct bxe_softc *sc)
 {
-    struct bxe_eth_stats *estats = &sc->eth_stats;
-    if_t ifnet = sc->ifp;
-    int i;
 
-    if_setipackets(ifnet,
-        bxe_hilo(&estats->total_unicast_packets_received_hi) +
-        bxe_hilo(&estats->total_multicast_packets_received_hi) +
-        bxe_hilo(&estats->total_broadcast_packets_received_hi));
+    for (int i = 0; i < sc->num_queues; i++)
+        if_inc_counter(sc->ifp, IFCOUNTER_IQDROPS,
+	    le32toh(sc->fp[i].old_tclient.checksum_discard));
+}
 
-    if_setopackets(ifnet,
-        bxe_hilo(&estats->total_unicast_packets_transmitted_hi) +
-        bxe_hilo(&estats->total_multicast_packets_transmitted_hi) +
-        bxe_hilo(&estats->total_broadcast_packets_transmitted_hi));
+uint64_t
+bxe_get_counter(if_t ifp, ift_counter cnt)
+{
+	struct bxe_softc *sc;
+	struct bxe_eth_stats *estats;
 
-    if_setibytes(ifnet, bxe_hilo(&estats->total_bytes_received_hi));
+	sc = if_getsoftc(ifp);
+	estats = &sc->eth_stats;
 
-    if_setobytes(ifnet, bxe_hilo(&estats->total_bytes_transmitted_hi));
-
-    for (i = 0; i < sc->num_queues; i++) {
-        struct tstorm_per_queue_stats *old_tclient =
-            &sc->fp[i].old_tclient;
-        if_inciqdrops(ifnet, le32toh(old_tclient->checksum_discard));
-    }
-
-    if_setierrors(ifnet,
-        bxe_hilo(&estats->rx_stat_etherstatsundersizepkts_hi) +
-        bxe_hilo(&estats->etherstatsoverrsizepkts_hi) +
-        bxe_hilo(&estats->brb_drop_hi) +
-        bxe_hilo(&estats->brb_truncate_hi) +
-        bxe_hilo(&estats->rx_stat_dot3statsfcserrors_hi) +
-        bxe_hilo(&estats->rx_stat_dot3statsalignmenterrors_hi) +
-        bxe_hilo(&estats->no_buff_discard_hi));
-
-    if_setoerrors(ifnet, 
-        bxe_hilo(&estats->rx_stat_dot3statscarriersenseerrors_hi) +
-        bxe_hilo(&estats->tx_stat_dot3statsinternalmactransmiterrors_hi));
-
-    if_setimcasts(ifnet, 
-        bxe_hilo(&estats->total_multicast_packets_received_hi));
-
-    if_setcollisions(ifnet, 
-        bxe_hilo(&estats->tx_stat_etherstatscollisions_hi) +
-        bxe_hilo(&estats->tx_stat_dot3statslatecollisions_hi) +
-        bxe_hilo(&estats->tx_stat_dot3statsexcessivecollisions_hi));
+	switch (cnt) {
+	case IFCOUNTER_IPACKETS:
+		return (bxe_hilo(&estats->total_unicast_packets_received_hi) +
+		    bxe_hilo(&estats->total_multicast_packets_received_hi) +
+		    bxe_hilo(&estats->total_broadcast_packets_received_hi));
+	case IFCOUNTER_OPACKETS:
+		return (bxe_hilo(&estats->total_unicast_packets_transmitted_hi) +
+		    bxe_hilo(&estats->total_multicast_packets_transmitted_hi) +
+		    bxe_hilo(&estats->total_broadcast_packets_transmitted_hi));
+	case IFCOUNTER_IBYTES:
+		return (bxe_hilo(&estats->total_bytes_received_hi));
+	case IFCOUNTER_OBYTES:
+		return (bxe_hilo(&estats->total_bytes_transmitted_hi));
+	case IFCOUNTER_IERRORS:
+		return (bxe_hilo(&estats->rx_stat_etherstatsundersizepkts_hi) +
+		    bxe_hilo(&estats->etherstatsoverrsizepkts_hi) +
+		    bxe_hilo(&estats->brb_drop_hi) +
+		    bxe_hilo(&estats->brb_truncate_hi) +
+		    bxe_hilo(&estats->rx_stat_dot3statsfcserrors_hi) +
+		    bxe_hilo(&estats->rx_stat_dot3statsalignmenterrors_hi) +
+		    bxe_hilo(&estats->no_buff_discard_hi));
+	case IFCOUNTER_OERRORS:
+		return (bxe_hilo(&estats->rx_stat_dot3statscarriersenseerrors_hi) +
+		    bxe_hilo(&estats->tx_stat_dot3statsinternalmactransmiterrors_hi));
+	case IFCOUNTER_IMCASTS:
+		return (bxe_hilo(&estats->total_multicast_packets_received_hi));
+	case IFCOUNTER_COLLISIONS:
+		return (bxe_hilo(&estats->tx_stat_etherstatscollisions_hi) +
+		    bxe_hilo(&estats->tx_stat_dot3statslatecollisions_hi) +
+		    bxe_hilo(&estats->tx_stat_dot3statsexcessivecollisions_hi));
+	default:
+		return (if_get_counter_default(ifp, cnt));
+	}
 }
 
 static void
@@ -1223,6 +1231,9 @@ bxe_drv_stats_update(struct bxe_softc *sc)
         UPDATE_ESTAT_QSTAT(rx_calls);
         UPDATE_ESTAT_QSTAT(rx_pkts);
         UPDATE_ESTAT_QSTAT(rx_tpa_pkts);
+        UPDATE_ESTAT_QSTAT(rx_erroneous_jumbo_sge_pkts);
+        UPDATE_ESTAT_QSTAT(rx_bxe_service_rxsgl);
+        UPDATE_ESTAT_QSTAT(rx_jumbo_sge_pkts);
         UPDATE_ESTAT_QSTAT(rx_soft_errors);
         UPDATE_ESTAT_QSTAT(rx_hw_csum_errors);
         UPDATE_ESTAT_QSTAT(rx_ofld_frames_csum_ip);
@@ -1303,8 +1314,12 @@ bxe_stats_update(struct bxe_softc *sc)
         if (bxe_storm_stats_update(sc)) {
             if (sc->stats_pending++ == 3) {
 		if (if_getdrvflags(sc->ifp) & IFF_DRV_RUNNING) {
-			atomic_store_rel_long(&sc->chip_tq_flags, CHIP_TQ_REINIT);
-			taskqueue_enqueue(sc->chip_tq, &sc->chip_tq_task);
+                    if(sc->trigger_grcdump) {
+                        /* taking grcdump */
+                        bxe_grc_dump(sc);
+                    }
+                    atomic_store_rel_long(&sc->chip_tq_flags, CHIP_TQ_REINIT);
+                    taskqueue_enqueue(sc->chip_tq, &sc->chip_tq_task);
 		}
             }
             return;
@@ -1332,7 +1347,7 @@ bxe_stats_update(struct bxe_softc *sc)
 static void
 bxe_port_stats_stop(struct bxe_softc *sc)
 {
-    struct dmae_command *dmae;
+    struct dmae_cmd *dmae;
     uint32_t opcode;
     int loader_idx = PMF_DMAE_C(sc);
     uint32_t *stats_comp = BXE_SP(sc, stats_comp);
@@ -1459,7 +1474,7 @@ void bxe_stats_handle(struct bxe_softc     *sc,
 static void
 bxe_port_stats_base_init(struct bxe_softc *sc)
 {
-    struct dmae_command *dmae;
+    struct dmae_cmd *dmae;
     uint32_t *stats_comp = BXE_SP(sc, stats_comp);
 
     /* sanity */
@@ -1551,23 +1566,6 @@ bxe_prep_fw_stats_req(struct bxe_softc *sc)
     cur_query_entry->address.hi = htole32(U64_HI(cur_data_offset));
     cur_query_entry->address.lo = htole32(U64_LO(cur_data_offset));
 
-#if 0
-    /**** FCoE FW statistics data ****/
-    if (!NO_FCOE(sc)) {
-        cur_data_offset = (sc->fw_stats_data_mapping +
-                           offsetof(struct bxe_fw_stats_data, fcoe));
-
-        cur_query_entry = &sc->fw_stats_req->query[BXE_FCOE_QUERY_IDX];
-
-        cur_query_entry->kind = STATS_TYPE_FCOE;
-        /* For FCoE query index is a DONT CARE */
-        cur_query_entry->index = SC_PORT(sc);
-        cur_query_entry->funcID = cpu_to_le16(SC_FUNC(sc));
-        cur_query_entry->address.hi = htole32(U64_HI(cur_data_offset));
-        cur_query_entry->address.lo = htole32(U64_LO(cur_data_offset));
-    }
-#endif
-
     /**** Clients' queries ****/
     cur_data_offset = (sc->fw_stats_data_mapping +
                        offsetof(struct bxe_fw_stats_data, queue_stats));
@@ -1576,12 +1574,7 @@ bxe_prep_fw_stats_req(struct bxe_softc *sc)
      * First queue query index depends whether FCoE offloaded request will
      * be included in the ramrod
      */
-#if 0
-    if (!NO_FCOE(sc))
-        first_queue_query_index = BXE_FIRST_QUEUE_QUERY_IDX;
-    else
-#endif
-        first_queue_query_index = (BXE_FIRST_QUEUE_QUERY_IDX - 1);
+    first_queue_query_index = (BXE_FIRST_QUEUE_QUERY_IDX - 1);
 
     for (i = 0; i < sc->num_queues; i++) {
         cur_query_entry =
@@ -1595,20 +1588,6 @@ bxe_prep_fw_stats_req(struct bxe_softc *sc)
 
         cur_data_offset += sizeof(struct per_queue_stats);
     }
-
-#if 0
-    /* add FCoE queue query if needed */
-    if (!NO_FCOE(sc)) {
-        cur_query_entry =
-            &sc->fw_stats_req->query[first_queue_query_index + i];
-
-        cur_query_entry->kind = STATS_TYPE_QUEUE;
-        cur_query_entry->index = bxe_stats_id(&sc->fp[FCOE_IDX(sc)]);
-        cur_query_entry->funcID = htole16(SC_FUNC(sc));
-        cur_query_entry->address.hi = htole32(U64_HI(cur_data_offset));
-        cur_query_entry->address.lo = htole32(U64_LO(cur_data_offset));
-    }
-#endif
 }
 
 void
@@ -1669,15 +1648,6 @@ bxe_stats_init(struct bxe_softc *sc)
     /* prepare statistics ramrod data */
     bxe_prep_fw_stats_req(sc);
 
-    if_setipackets(sc->ifp, 0);
-    if_setopackets(sc->ifp, 0);
-    if_setibytes(sc->ifp, 0);
-    if_setobytes(sc->ifp, 0);
-    if_setierrors(sc->ifp, 0);
-    if_setoerrors(sc->ifp, 0);
-    if_setimcasts(sc->ifp, 0);
-    if_setcollisions(sc->ifp, 0);
-
     if (sc->stats_init) {
         memset(&sc->net_stats_old, 0, sizeof(sc->net_stats_old));
         memset(&sc->fw_stats_old, 0, sizeof(sc->fw_stats_old));
@@ -1700,7 +1670,7 @@ bxe_stats_init(struct bxe_softc *sc)
         bxe_port_stats_base_init(sc);
     }
 
-    /* mark the end of statistics initializiation */
+    /* mark the end of statistics initialization */
     sc->stats_init = FALSE;
 }
 
@@ -1731,9 +1701,6 @@ bxe_save_statistics(struct bxe_softc *sc)
         UPDATE_QSTAT_OLD(total_tpa_bytes_lo);
     }
 
-    /* save net_device_stats statistics */
-    sc->net_stats_old.rx_dropped = if_getiqdrops(sc->ifp);
-
     /* store port firmware statistics */
     if (sc->port.pmf) {
         struct bxe_eth_stats *estats = &sc->eth_stats;
@@ -1762,22 +1729,6 @@ bxe_afex_collect_stats(struct bxe_softc *sc,
     int i;
     struct afex_stats *afex_stats = (struct afex_stats *)void_afex_stats;
     struct bxe_eth_stats *estats = &sc->eth_stats;
-#if 0
-    struct per_queue_stats *fcoe_q_stats =
-        &sc->fw_stats_data->queue_stats[FCOE_IDX(sc)];
-
-    struct tstorm_per_queue_stats *fcoe_q_tstorm_stats =
-        &fcoe_q_stats->tstorm_queue_statistics;
-
-    struct ustorm_per_queue_stats *fcoe_q_ustorm_stats =
-        &fcoe_q_stats->ustorm_queue_statistics;
-
-    struct xstorm_per_queue_stats *fcoe_q_xstorm_stats =
-        &fcoe_q_stats->xstorm_queue_statistics;
-
-    struct fcoe_statistics_params *fw_fcoe_stat =
-        &sc->fw_stats_data->fcoe;
-#endif
 
     memset(afex_stats, 0, sizeof(struct afex_stats));
 
@@ -1873,144 +1824,6 @@ bxe_afex_collect_stats(struct bxe_softc *sc,
                afex_stats->tx_frames_dropped_lo,
                qstats->total_transmitted_dropped_packets_error_lo);
     }
-
-#if 0
-    /*
-     * Now add FCoE statistics which are collected separately
-     * (both offloaded and non offloaded)
-     */
-    if (!NO_FCOE(sc)) {
-        ADD_64_LE(afex_stats->rx_unicast_bytes_hi,
-                  LE32_0,
-                  afex_stats->rx_unicast_bytes_lo,
-                  fw_fcoe_stat->rx_stat0.fcoe_rx_byte_cnt);
-
-        ADD_64_LE(afex_stats->rx_unicast_bytes_hi,
-                  fcoe_q_tstorm_stats->rcv_ucast_bytes.hi,
-                  afex_stats->rx_unicast_bytes_lo,
-                  fcoe_q_tstorm_stats->rcv_ucast_bytes.lo);
-
-        ADD_64_LE(afex_stats->rx_broadcast_bytes_hi,
-                  fcoe_q_tstorm_stats->rcv_bcast_bytes.hi,
-                  afex_stats->rx_broadcast_bytes_lo,
-                  fcoe_q_tstorm_stats->rcv_bcast_bytes.lo);
-
-        ADD_64_LE(afex_stats->rx_multicast_bytes_hi,
-                  fcoe_q_tstorm_stats->rcv_mcast_bytes.hi,
-                  afex_stats->rx_multicast_bytes_lo,
-                  fcoe_q_tstorm_stats->rcv_mcast_bytes.lo);
-
-        ADD_64_LE(afex_stats->rx_unicast_frames_hi,
-                  LE32_0,
-                  afex_stats->rx_unicast_frames_lo,
-                  fw_fcoe_stat->rx_stat0.fcoe_rx_pkt_cnt);
-
-        ADD_64_LE(afex_stats->rx_unicast_frames_hi,
-                  LE32_0,
-                  afex_stats->rx_unicast_frames_lo,
-                  fcoe_q_tstorm_stats->rcv_ucast_pkts);
-
-        ADD_64_LE(afex_stats->rx_broadcast_frames_hi,
-                  LE32_0,
-                  afex_stats->rx_broadcast_frames_lo,
-                  fcoe_q_tstorm_stats->rcv_bcast_pkts);
-
-        ADD_64_LE(afex_stats->rx_multicast_frames_hi,
-                  LE32_0,
-                  afex_stats->rx_multicast_frames_lo,
-                  fcoe_q_tstorm_stats->rcv_ucast_pkts);
-
-        ADD_64_LE(afex_stats->rx_frames_discarded_hi,
-                  LE32_0,
-                  afex_stats->rx_frames_discarded_lo,
-                  fcoe_q_tstorm_stats->checksum_discard);
-
-        ADD_64_LE(afex_stats->rx_frames_discarded_hi,
-                  LE32_0,
-                  afex_stats->rx_frames_discarded_lo,
-                  fcoe_q_tstorm_stats->pkts_too_big_discard);
-
-        ADD_64_LE(afex_stats->rx_frames_discarded_hi,
-                  LE32_0,
-                  afex_stats->rx_frames_discarded_lo,
-                  fcoe_q_tstorm_stats->ttl0_discard);
-
-        ADD_64_LE16(afex_stats->rx_frames_dropped_hi,
-                    LE16_0,
-                    afex_stats->rx_frames_dropped_lo,
-                    fcoe_q_tstorm_stats->no_buff_discard);
-
-        ADD_64_LE(afex_stats->rx_frames_dropped_hi,
-                  LE32_0,
-                  afex_stats->rx_frames_dropped_lo,
-                  fcoe_q_ustorm_stats->ucast_no_buff_pkts);
-
-        ADD_64_LE(afex_stats->rx_frames_dropped_hi,
-                  LE32_0,
-                  afex_stats->rx_frames_dropped_lo,
-                  fcoe_q_ustorm_stats->mcast_no_buff_pkts);
-
-        ADD_64_LE(afex_stats->rx_frames_dropped_hi,
-                  LE32_0,
-                  afex_stats->rx_frames_dropped_lo,
-                  fcoe_q_ustorm_stats->bcast_no_buff_pkts);
-
-        ADD_64_LE(afex_stats->rx_frames_dropped_hi,
-                  LE32_0,
-                  afex_stats->rx_frames_dropped_lo,
-                  fw_fcoe_stat->rx_stat1.fcoe_rx_drop_pkt_cnt);
-
-        ADD_64_LE(afex_stats->rx_frames_dropped_hi,
-                  LE32_0,
-                  afex_stats->rx_frames_dropped_lo,
-                  fw_fcoe_stat->rx_stat2.fcoe_rx_drop_pkt_cnt);
-
-        ADD_64_LE(afex_stats->tx_unicast_bytes_hi,
-                  LE32_0,
-                  afex_stats->tx_unicast_bytes_lo,
-                  fw_fcoe_stat->tx_stat.fcoe_tx_byte_cnt);
-
-        ADD_64_LE(afex_stats->tx_unicast_bytes_hi,
-                  fcoe_q_xstorm_stats->ucast_bytes_sent.hi,
-                  afex_stats->tx_unicast_bytes_lo,
-                  fcoe_q_xstorm_stats->ucast_bytes_sent.lo);
-
-        ADD_64_LE(afex_stats->tx_broadcast_bytes_hi,
-                  fcoe_q_xstorm_stats->bcast_bytes_sent.hi,
-                  afex_stats->tx_broadcast_bytes_lo,
-                  fcoe_q_xstorm_stats->bcast_bytes_sent.lo);
-
-        ADD_64_LE(afex_stats->tx_multicast_bytes_hi,
-                  fcoe_q_xstorm_stats->mcast_bytes_sent.hi,
-                  afex_stats->tx_multicast_bytes_lo,
-                  fcoe_q_xstorm_stats->mcast_bytes_sent.lo);
-
-        ADD_64_LE(afex_stats->tx_unicast_frames_hi,
-                  LE32_0,
-                  afex_stats->tx_unicast_frames_lo,
-                  fw_fcoe_stat->tx_stat.fcoe_tx_pkt_cnt);
-
-        ADD_64_LE(afex_stats->tx_unicast_frames_hi,
-                  LE32_0,
-                  afex_stats->tx_unicast_frames_lo,
-                  fcoe_q_xstorm_stats->ucast_pkts_sent);
-
-        ADD_64_LE(afex_stats->tx_broadcast_frames_hi,
-                  LE32_0,
-                  afex_stats->tx_broadcast_frames_lo,
-                  fcoe_q_xstorm_stats->bcast_pkts_sent);
-
-        ADD_64_LE(afex_stats->tx_multicast_frames_hi,
-                  LE32_0,
-                  afex_stats->tx_multicast_frames_lo,
-                  fcoe_q_xstorm_stats->mcast_pkts_sent);
-
-        ADD_64_LE(afex_stats->tx_frames_dropped_hi,
-                  LE32_0,
-                  afex_stats->tx_frames_dropped_lo,
-                  fcoe_q_xstorm_stats->error_drop_pkts);
-    }
-#endif
 
     /*
      * If port stats are requested, add them to the PMF

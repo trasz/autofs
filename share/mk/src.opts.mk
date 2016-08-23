@@ -11,7 +11,7 @@
 # are exceptions). Recursive makes usually add MK_FOO=no for options that they wish
 # to omit from that make.
 #
-# Makefiles must include bsd.srcpot.mk before they test the value of any MK_FOO
+# Makefiles must include bsd.mkopt.mk before they test the value of any MK_FOO
 # variable.
 #
 # Makefiles may also assume that this file is included by src.opts.mk should it
@@ -48,21 +48,27 @@ __DEFAULT_YES_OPTIONS = \
     ACPI \
     AMD \
     APM \
-    ARM_EABI \
     AT \
     ATM \
     AUDIT \
     AUTHPF \
+    AUTOFS \
+    BHYVE \
     BINUTILS \
     BINUTILS_BOOTSTRAP \
+    BLACKLIST \
     BLUETOOTH \
     BOOT \
+    BOOTPARAMD \
+    BOOTPD \
     BSD_CPIO \
+    BSDINSTALL \
     BSNMP \
     BZIP2 \
     CALENDAR \
     CAPSICUM \
     CASPER \
+    CCD \
     CDDL \
     CPP \
     CROSS_COMPILER \
@@ -74,28 +80,37 @@ __DEFAULT_YES_OPTIONS = \
     DMAGENT \
     DYNAMICROOT \
     ED_CRYPTO \
+    EE \
+    ELFCOPY_AS_OBJCOPY \
+    ELFTOOLCHAIN_BOOTSTRAP \
     EXAMPLES \
     FDT \
+    FILE \
+    FINGER \
     FLOPPY \
     FMTREE \
     FORTH \
     FP_LIBC \
     FREEBSD_UPDATE \
+    FTP \
     GAMES \
     GCOV \
     GDB \
     GNU \
     GNU_GREP_COMPAT \
-    GPIB \
     GPIO \
     GPL_DTC \
     GROFF \
+    HAST \
     HTML \
+    HYPERV \
     ICONV \
     INET \
     INET6 \
+    INETD \
     IPFILTER \
     IPFW \
+    ISCSI \
     JAIL \
     KDUMP \
     KVM \
@@ -113,6 +128,7 @@ __DEFAULT_YES_OPTIONS = \
     MAIL \
     MAILWRAPPER \
     MAKE \
+    MANDOCDB \
     NDIS \
     NETCAT \
     NETGRAPH \
@@ -128,7 +144,9 @@ __DEFAULT_YES_OPTIONS = \
     PORTSNAP \
     PPP \
     QUOTAS \
+    RADIUS_SUPPORT \
     RCMDS \
+    RBOOTD \
     RCS \
     RESCUE \
     ROUTED \
@@ -139,13 +157,16 @@ __DEFAULT_YES_OPTIONS = \
     SOURCELESS_HOST \
     SOURCELESS_UCODE \
     SVNLITE \
-    SYSCALL_COMPAT \
     SYSCONS \
-    SYSINSTALL \
+    SYSTEM_COMPILER \
+    TALK \
+    TCP_WRAPPERS \
     TCSH \
     TELNET \
     TESTS \
     TEXTPROC \
+    TFTP \
+    TIMED \
     UNBOUND \
     USB \
     UTMPX \
@@ -159,18 +180,17 @@ __DEFAULT_YES_OPTIONS = \
 __DEFAULT_NO_OPTIONS = \
     BSD_GREP \
     CLANG_EXTRAS \
+    DTRACE_TESTS \
     EISA \
-    FMAKE \
     HESIOD \
-    LLDB \
+    LIBSOFT \
     NAND \
     OFED \
     OPENLDAP \
-    OPENSSH_NONE_CIPHER \
     SHARED_TOOLCHAIN \
     SORT_THREADS \
     SVN \
-    USB_GADGET_EXAMPLES
+
 
 #
 # Default behaviour of some options depends on the architecture.  Unfortunately
@@ -191,25 +211,54 @@ __TT=${TARGET}
 .else
 __TT=${MACHINE}
 .endif
-# Clang is only for x86, powerpc and little-endian arm right now, by default.
-.if ${__T} == "amd64" || ${__T} == "i386" || ${__T:Mpowerpc*}
-__DEFAULT_YES_OPTIONS+=CLANG CLANG_FULL CLANG_BOOTSTRAP
-.elif ${__T} == "arm" || ${__T} == "armv6" || ${__T} == "armv6hf"
-__DEFAULT_YES_OPTIONS+=CLANG CLANG_BOOTSTRAP
-# GCC is unable to build the full clang on arm, disable it by default.
-__DEFAULT_NO_OPTIONS+=CLANG_FULL
-.else
-__DEFAULT_NO_OPTIONS+=CLANG CLANG_FULL CLANG_BOOTSTRAP
-.endif
-# Clang the default system compiler only on little-endian arm and x86.
-.if ${__T} == "amd64" || ${__T} == "arm" || ${__T} == "armv6" || \
-    ${__T} == "armv6hf" || ${__T} == "i386"
-__DEFAULT_YES_OPTIONS+=CLANG_IS_CC
+
+.include <bsd.compiler.mk>
+# If the compiler is not C++11 capable, disable Clang and use GCC instead.
+# This means that architectures that have GCC 4.2 as default can not
+# build Clang without using an external compiler.
+
+.if ${COMPILER_FEATURES:Mc++11} && (${__T} == "aarch64" || \
+    ${__T} == "amd64" || ${__TT} == "arm" || ${__T} == "i386")
+# Clang is enabled, and will be installed as the default /usr/bin/cc.
+__DEFAULT_YES_OPTIONS+=CLANG CLANG_BOOTSTRAP CLANG_FULL CLANG_IS_CC
 __DEFAULT_NO_OPTIONS+=GCC GCC_BOOTSTRAP GNUCXX
+.elif ${COMPILER_FEATURES:Mc++11} && ${__T:Mpowerpc*}
+# On powerpc, if an external compiler that supports C++11 is used as ${CC},
+# then Clang is enabled, but GCC is installed as the default /usr/bin/cc.
+__DEFAULT_YES_OPTIONS+=CLANG CLANG_FULL GCC GCC_BOOTSTRAP GNUCXX
+__DEFAULT_NO_OPTIONS+=CLANG_BOOTSTRAP CLANG_IS_CC
 .else
-# If clang is not cc, then build gcc by default
-__DEFAULT_NO_OPTIONS+=CLANG_IS_CC CLANG CLANG_BOOTSTRAP
+# Everything else disables Clang, and uses GCC instead.
 __DEFAULT_YES_OPTIONS+=GCC GCC_BOOTSTRAP GNUCXX
+__DEFAULT_NO_OPTIONS+=CLANG CLANG_BOOTSTRAP CLANG_FULL CLANG_IS_CC
+.endif
+# In-tree binutils/gcc are older versions without modern architecture support.
+.if ${__T} == "aarch64" || ${__T} == "riscv64"
+BROKEN_OPTIONS+=BINUTILS BINUTILS_BOOTSTRAP GCC GCC_BOOTSTRAP GDB
+.endif
+.if ${__T} == "riscv64"
+BROKEN_OPTIONS+=PROFILE # "sorry, unimplemented: profiler support for RISC-V"
+BROKEN_OPTIONS+=TESTS   # "undefined reference to `_Unwind_Resume'"
+BROKEN_OPTIONS+=CXX     # "libcxxrt.so: undefined reference to `_Unwind_Resume_or_Rethrow'"
+.endif
+.if ${__T} == "aarch64" || ${__T} == "amd64" || ${__T} == "i386" || \
+    ${__T} == "riscv64"
+__DEFAULT_YES_OPTIONS+=LLVM_LIBUNWIND
+.else
+__DEFAULT_NO_OPTIONS+=LLVM_LIBUNWIND
+.endif
+.if ${__T} == "aarch64" || ${__T} == "amd64"
+__DEFAULT_YES_OPTIONS+=LLDB
+.else
+__DEFAULT_NO_OPTIONS+=LLDB
+.endif
+# LLVM lacks support for FreeBSD 64-bit atomic operations for ARMv4/ARMv5
+.if ${__T} == "arm" || ${__T} == "armeb"
+BROKEN_OPTIONS+=LLDB
+.endif
+# Only doing soft float API stuff on armv6
+.if ${__T} != "armv6"
+BROKEN_OPTIONS+=LIBSOFT
 .endif
 
 .include <bsd.mkopt.mk>
@@ -217,7 +266,6 @@ __DEFAULT_YES_OPTIONS+=GCC GCC_BOOTSTRAP GNUCXX
 #
 # MK_* options that default to "yes" if the compiler is a C++11 compiler.
 #
-.include <bsd.compiler.mk>
 .for var in \
     LIBCPLUSPLUS
 .if !defined(MK_${var})
@@ -270,6 +318,7 @@ MK_KERBEROS:=	no
 MK_CLANG:=	no
 MK_GROFF:=	no
 MK_GNUCXX:=	no
+MK_TESTS:=	no
 .endif
 
 .if ${MK_MAIL} == "no"
@@ -292,6 +341,10 @@ MK_KERBEROS:=	no
 MK_AUTHPF:=	no
 .endif
 
+.if ${MK_TESTS} == "no"
+MK_DTRACE_TESTS:= no
+.endif
+
 .if ${MK_TEXTPROC} == "no"
 MK_GROFF:=	no
 .endif
@@ -299,6 +352,7 @@ MK_GROFF:=	no
 .if ${MK_CROSS_COMPILER} == "no"
 MK_BINUTILS_BOOTSTRAP:= no
 MK_CLANG_BOOTSTRAP:= no
+MK_ELFTOOLCHAIN_BOOTSTRAP:= no
 MK_GCC_BOOTSTRAP:= no
 .endif
 
@@ -307,6 +361,8 @@ MK_BINUTILS:=	no
 MK_CLANG:=	no
 MK_GCC:=	no
 MK_GDB:=	no
+MK_INCLUDES:=	no
+MK_LLDB:=	no
 .endif
 
 .if ${MK_CLANG} == "no"
@@ -323,6 +379,7 @@ MK_CLANG_FULL:= no
 # MK_* variable is set to "no".
 #
 .for var in \
+    BLACKLIST \
     BZIP2 \
     GNU \
     INET \
@@ -331,6 +388,7 @@ MK_CLANG_FULL:= no
     KVM \
     NETGRAPH \
     PAM \
+    TESTS \
     WIRELESS
 .if defined(WITHOUT_${var}_SUPPORT) || ${MK_${var}} == "no"
 MK_${var}_SUPPORT:= no
@@ -358,4 +416,15 @@ MK_${vv:H}:=	${MK_${vv:T}}
 MK_LLDB:=	no
 .endif
 
+# gcc 4.8 and newer supports libc++, so suppress gnuc++ in that case.
+# while in theory we could build it with that, we don't want to do
+# that since it creates too much confusion for too little gain.
+# XXX: This is incomplete and needs X_COMPILER_TYPE/VERSION checks too
+#      to prevent Makefile.inc1 from bootstrapping unneeded dependencies
+#      and to support 'make delete-old' when supplying an external toolchain.
+.if ${COMPILER_TYPE} == "gcc" && ${COMPILER_VERSION} >= 40800
+MK_GNUCXX:=no
+MK_GCC:=no
 .endif
+
+.endif #  !target(__<src.opts.mk>__)

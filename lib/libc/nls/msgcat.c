@@ -83,6 +83,7 @@ __FBSDID("$FreeBSD$");
 				  	np->name = strdup(n);			\
 					np->path = NULL;			\
 					np->catd = NLERR;			\
+					np->refcount = 0;			\
 					np->lang = (l == NULL) ? NULL :		\
 					    strdup(l);				\
 					np->caterrno = e;			\
@@ -324,6 +325,21 @@ notfound:
 	return ((char *)s);
 }
 
+static void
+catfree(struct catentry *np)
+{
+
+	if (np->catd != NULL && np->catd != NLERR) {
+		munmap(np->catd->__data, (size_t)np->catd->__size);
+		free(np->catd);
+	}
+	SLIST_REMOVE(&cache, np, catentry, list);
+	free(np->name);
+	free(np->path);
+	free(np->lang);
+	free(np);
+}
+
 int
 catclose(nl_catd catd)
 {
@@ -340,15 +356,8 @@ catclose(nl_catd catd)
 	SLIST_FOREACH(np, &cache, list) {
 		if (catd == np->catd) {
 			np->refcount--;
-			if (np->refcount == 0) {
-				munmap(catd->__data, (size_t)catd->__size);
-				free(catd);
-				SLIST_REMOVE(&cache, np, catentry, list);
-				free(np->name);
-				free(np->path);
-				free(np->lang);
-				free(np);
-			}
+			if (np->refcount == 0)
+				catfree(np);
 			break;
 		}
 	}

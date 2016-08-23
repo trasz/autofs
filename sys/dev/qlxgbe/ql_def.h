@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014 Qlogic Corporation
+ * Copyright (c) 2013-2016 Qlogic Corporation
  * All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -113,17 +113,17 @@ typedef struct _qla_tx_ring {
 } qla_tx_ring_t;
 
 /*
- * Adapter structure contains the hardware independant information of the
+ * Adapter structure contains the hardware independent information of the
  * pci function.
  */
 struct qla_host {
         volatile struct {
                 volatile uint32_t
+			qla_interface_up        :1,
 			qla_callout_init	:1,
 			qla_watchdog_active	:1,
 			qla_watchdog_exit	:1,
 			qla_watchdog_pause	:1,
-			lro_init		:1,
 			stop_rcv		:1,
 			parent_tag		:1,
 			lock_init		:1;
@@ -231,6 +231,11 @@ struct qla_host {
 	uint32_t		err_inject;
 	struct task		err_task;
 	struct taskqueue	*err_tq;
+
+	/* Async Event Related */
+	uint32_t                async_event;
+	struct task             async_event_task;
+	struct taskqueue        *async_event_tq;
 
 	/* Peer Device */
 	device_t		peer_dev;

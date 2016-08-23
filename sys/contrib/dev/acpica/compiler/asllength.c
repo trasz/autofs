@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2013, Intel Corp.
+ * Copyright (C) 2000 - 2016, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -40,7 +40,6 @@
  * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGES.
  */
-
 
 #include <contrib/dev/acpica/compiler/aslcompiler.h>
 #include "aslcompiler.y.h"
@@ -133,10 +132,11 @@ LnPackageLengthWalk (
     if ((Op->Asl.Parent) &&
         (Op->Asl.ParseOpcode != PARSEOP_DEFAULT_ARG))
     {
-        Op->Asl.Parent->Asl.AmlSubtreeLength += (Op->Asl.AmlLength +
-                                           Op->Asl.AmlOpcodeLength +
-                                           Op->Asl.AmlPkgLenBytes +
-                                           Op->Asl.AmlSubtreeLength);
+        Op->Asl.Parent->Asl.AmlSubtreeLength += (
+            Op->Asl.AmlLength +
+            Op->Asl.AmlOpcodeLength +
+            Op->Asl.AmlPkgLenBytes +
+            Op->Asl.AmlSubtreeLength);
     }
     return (AE_OK);
 }
@@ -230,7 +230,7 @@ CgGenerateAmlOpcodeLength (
     if (Op->Asl.CompileFlags & NODE_AML_PACKAGE)
     {
         Op->Asl.AmlPkgLenBytes = CgGetPackageLenByteCount (
-                                    Op, Op->Asl.AmlSubtreeLength);
+            Op, Op->Asl.AmlSubtreeLength);
     }
 
     /* Data opcode lengths are easy */
@@ -333,10 +333,9 @@ CgGenerateAmlLengths (
 
     switch (Op->Asl.ParseOpcode)
     {
-    case PARSEOP_DEFINITIONBLOCK:
+    case PARSEOP_DEFINITION_BLOCK:
 
-        Gbl_TableLength = sizeof (ACPI_TABLE_HEADER) +
-                            Op->Asl.AmlSubtreeLength;
+        Gbl_TableLength = sizeof (ACPI_TABLE_HEADER) + Op->Asl.AmlSubtreeLength;
         break;
 
     case PARSEOP_NAMESEG:
@@ -366,7 +365,6 @@ CgGenerateAmlLengths (
         Op->Asl.ExternalName = Op->Asl.Value.String;
         Op->Asl.Value.String = Buffer;
         Op->Asl.CompileFlags |= NODE_NAME_INTERNALIZED;
-
         Op->Asl.AmlLength = strlen (Buffer);
 
         /*
@@ -392,7 +390,7 @@ CgGenerateAmlLengths (
 
         Op->Asl.AmlOpcodeLength = 0;
         Op->Asl.AmlPkgLenBytes = CgGetPackageLenByteCount (Op,
-                                    (UINT32) Op->Asl.Value.Integer);
+            (UINT32) Op->Asl.Value.Integer);
         break;
 
     case PARSEOP_RAW_DATA:
@@ -401,12 +399,19 @@ CgGenerateAmlLengths (
         break;
 
     case PARSEOP_DEFAULT_ARG:
-    case PARSEOP_EXTERNAL:
     case PARSEOP_INCLUDE:
     case PARSEOP_INCLUDE_END:
 
         /* Ignore the "default arg" nodes, they are extraneous at this point */
 
+        break;
+
+    case PARSEOP_EXTERNAL:
+
+        if (Gbl_DoExternals == TRUE)
+        {
+            CgGenerateAmlOpcodeLength (Op);
+        }
         break;
 
     default:

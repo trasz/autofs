@@ -24,7 +24,7 @@
  */
 
 /*
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -58,9 +58,11 @@ typedef struct mirror_map {
 
 static int vdev_mirror_shift = 21;
 
+#ifdef _KERNEL
 SYSCTL_DECL(_vfs_zfs_vdev);
 static SYSCTL_NODE(_vfs_zfs_vdev, OID_AUTO, mirror, CTLFLAG_RD, 0,
     "ZFS VDEV Mirror");
+#endif
 
 /*
  * The load configuration settings below are tuned by default for
@@ -74,28 +76,38 @@ static SYSCTL_NODE(_vfs_zfs_vdev, OID_AUTO, mirror, CTLFLAG_RD, 0,
 
 /* Rotating media load calculation configuration. */
 static int rotating_inc = 0;
+#ifdef _KERNEL
 SYSCTL_INT(_vfs_zfs_vdev_mirror, OID_AUTO, rotating_inc, CTLFLAG_RWTUN,
     &rotating_inc, 0, "Rotating media load increment for non-seeking I/O's");
+#endif
 
 static int rotating_seek_inc = 5;
+#ifdef _KERNEL
 SYSCTL_INT(_vfs_zfs_vdev_mirror, OID_AUTO, rotating_seek_inc, CTLFLAG_RWTUN,
     &rotating_seek_inc, 0, "Rotating media load increment for seeking I/O's");
+#endif
 
 static int rotating_seek_offset = 1 * 1024 * 1024;
+#ifdef _KERNEL
 SYSCTL_INT(_vfs_zfs_vdev_mirror, OID_AUTO, rotating_seek_offset, CTLFLAG_RWTUN,
     &rotating_seek_offset, 0, "Offset in bytes from the last I/O which "
     "triggers a reduced rotating media seek increment");
+#endif
 
 /* Non-rotating media load calculation configuration. */
 static int non_rotating_inc = 0;
+#ifdef _KERNEL
 SYSCTL_INT(_vfs_zfs_vdev_mirror, OID_AUTO, non_rotating_inc, CTLFLAG_RWTUN,
     &non_rotating_inc, 0,
     "Non-rotating media load increment for non-seeking I/O's");
+#endif
 
 static int non_rotating_seek_inc = 1;
+#ifdef _KERNEL
 SYSCTL_INT(_vfs_zfs_vdev_mirror, OID_AUTO, non_rotating_seek_inc, CTLFLAG_RWTUN,
     &non_rotating_seek_inc, 0,
     "Non-rotating media load increment for seeking I/O's");
+#endif
 
 
 static inline size_t
@@ -425,7 +437,7 @@ vdev_mirror_child_select(zio_t *zio)
 	return (-1);
 }
 
-static int
+static void
 vdev_mirror_io_start(zio_t *zio)
 {
 	mirror_map_t *mm;
@@ -435,7 +447,8 @@ vdev_mirror_io_start(zio_t *zio)
 	mm = vdev_mirror_map_init(zio);
 
 	if (zio->io_type == ZIO_TYPE_READ) {
-		if ((zio->io_flags & ZIO_FLAG_SCRUB) && !mm->mm_replacing) {
+		if ((zio->io_flags & ZIO_FLAG_SCRUB) && !mm->mm_replacing &&
+		    mm->mm_children > 1) {
 			/*
 			 * For scrubbing reads we need to allocate a read
 			 * buffer for each child and issue reads to all
@@ -450,8 +463,8 @@ vdev_mirror_io_start(zio_t *zio)
 				    zio->io_type, zio->io_priority, 0,
 				    vdev_mirror_scrub_done, mc));
 			}
-			zio_interrupt(zio);
-			return (ZIO_PIPELINE_STOP);
+			zio_execute(zio);
+			return;
 		}
 		/*
 		 * For normal reads just pick one child.
@@ -478,8 +491,7 @@ vdev_mirror_io_start(zio_t *zio)
 		c++;
 	}
 
-	zio_interrupt(zio);
-	return (ZIO_PIPELINE_STOP);
+	zio_execute(zio);
 }
 
 static int

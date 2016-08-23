@@ -36,6 +36,10 @@
 #include <sys/cdefs.h>
 #include <sys/_types.h>
 #include <sys/signal.h>
+#if __POSIX_VISIBLE >= 200112 || __XSI_VISIBLE
+#include <machine/ucontext.h>
+#include <sys/_ucontext.h>
+#endif
 
 #if __BSD_VISIBLE
 /*
@@ -78,10 +82,10 @@ int	sigdelset(sigset_t *, int);
 int	sigemptyset(sigset_t *);
 int	sigfillset(sigset_t *);
 int	sigismember(const sigset_t *, int);
-int	sigpending(sigset_t *);
+int	sigpending(sigset_t *) __nonnull(1);
 int	sigprocmask(int, const sigset_t * __restrict, sigset_t * __restrict);
-int	sigsuspend(const sigset_t *);
-int	sigwait(const sigset_t * __restrict, int * __restrict);
+int	sigsuspend(const sigset_t *) __nonnull(1);
+int	sigwait(const sigset_t * __restrict, int * __restrict) __nonnull_all;
 #endif
 
 #if __POSIX_VISIBLE >= 199506 || __XSI_VISIBLE >= 600
@@ -109,12 +113,11 @@ int	siginterrupt(int, int);
 #endif
 
 #if __POSIX_VISIBLE >= 200809
-void	psignal(unsigned int, const char *);
+void	psignal(int, const char *);
 #endif
 
 #if __BSD_VISIBLE
 int	sigblock(int);
-struct __ucontext;		/* XXX spec requires a complete declaration. */
 int	sigreturn(const struct __ucontext *);
 int	sigsetmask(int);
 int	sigstack(const struct sigstack *, struct sigstack *);

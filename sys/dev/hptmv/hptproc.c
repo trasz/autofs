@@ -51,9 +51,6 @@ int hpt_rescan_all(void);
 static char hptproc_buffer[256];
 extern char DRIVER_VERSION[];
 
-#define FORMAL_HANDLER_ARGS struct sysctl_oid *oidp, void *arg1,	\
-	intptr_t arg2, struct sysctl_req *req
-#define REAL_HANDLER_ARGS oidp, arg1, arg2, req
 typedef struct sysctl_req HPT_GET_INFO;
 
 static int
@@ -311,7 +308,9 @@ hpt_set_info(int length)
 			/*
         	 	 * map buffer to kernel.
         	 	 */
-        		if (piop->nInBufferSize+piop->nOutBufferSize > PAGE_SIZE) {
+        		if (piop->nInBufferSize > PAGE_SIZE ||
+        			piop->nOutBufferSize > PAGE_SIZE ||
+        			piop->nInBufferSize+piop->nOutBufferSize > PAGE_SIZE) {
         			KdPrintE(("User buffer too large\n"));
         			return -EINVAL;
         		}
@@ -322,8 +321,13 @@ hpt_set_info(int length)
 					return -EINVAL;
 				}
 
-			if (piop->nInBufferSize)
-				copyin((void*)(ULONG_PTR)piop->lpInBuffer, ke_area, piop->nInBufferSize);
+			if (piop->nInBufferSize) {
+				if (copyin((void*)(ULONG_PTR)piop->lpInBuffer, ke_area, piop->nInBufferSize) != 0) {
+					KdPrintE(("Failed to copyin from lpInBuffer\n"));
+					free(ke_area, M_DEVBUF);
+					return -EFAULT;
+				}
+			}
 
 			/*
 			  * call kernel handler.
@@ -345,7 +349,7 @@ hpt_set_info(int length)
 			else  KdPrintW(("Kernel_ioctl(): return %d\n", err));
 
 			free(ke_area, M_DEVBUF);
-            		return -EINVAL;
+			return -EINVAL;
 		} else 	{
     		KdPrintW(("Wrong signature: %x\n", piop->Magic));
     		return -EINVAL;
@@ -572,7 +576,7 @@ hpt_get_info(IAL_ADAPTER_T *pAdapter, HPT_GET_INFO *pinfo)
 }
 
 static __inline int
-hpt_proc_in(FORMAL_HANDLER_ARGS, int *len)
+hpt_proc_in(SYSCTL_HANDLER_ARGS, int *len)
 {
 	int i, error=0;
 
@@ -590,12 +594,12 @@ hpt_proc_in(FORMAL_HANDLER_ARGS, int *len)
 }
 
 static int
-hpt_status(FORMAL_HANDLER_ARGS)
+hpt_status(SYSCTL_HANDLER_ARGS)
 {
 	int length, error=0, retval=0;
 	IAL_ADAPTER_T *pAdapter;
 
-	error = hpt_proc_in(REAL_HANDLER_ARGS, &length);
+	error = hpt_proc_in(oidp, arg1, arg2, req, &length);
 	
     if (req->newptr != NULL) 	
 	{

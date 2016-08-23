@@ -726,7 +726,7 @@ bt_init(device_t dev)
 				/* highaddr	*/ BUS_SPACE_MAXADDR,
 				/* filter	*/ NULL,
 				/* filterarg	*/ NULL,
-				/* maxsize	*/ MAXBSIZE,
+				/* maxsize	*/ DFLTPHYS,
 				/* nsegments	*/ BT_NSEG,
 				/* maxsegsz	*/ BUS_SPACE_MAXSIZE_32BIT,
 				/* flags	*/ BUS_DMA_ALLOCNOW,
@@ -1465,8 +1465,8 @@ btexecuteccb(void *arg, bus_dma_segment_t *dm_segs, int nseg, int error)
 	ccb->ccb_h.status |= CAM_SIM_QUEUED;
 	LIST_INSERT_HEAD(&bt->pending_ccbs, &ccb->ccb_h, sim_links.le);
 
-	callout_reset(&bccb->timer, (ccb->ccb_h.timeout * hz) / 1000,
-	    bttimeout, bccb);
+	callout_reset_sbt(&bccb->timer, SBT_1MS * ccb->ccb_h.timeout, 0,
+	    bttimeout, bccb, 0);
 
 	/* Tell the adapter about this command */
 	bt->cur_outbox->ccb_addr = btccbvtop(bt, bccb);
@@ -1578,7 +1578,7 @@ btdone(struct bt_softc *bt, struct bt_ccb *bccb, bt_mbi_comp_code_t comp_code)
 		struct ccb_hdr *ccb_h;
 		cam_status error;
 
-		/* Notify all clients that a BDR occured */
+		/* Notify all clients that a BDR occurred */
 		error = xpt_create_path(&path, /*periph*/NULL,
 					cam_sim_path(bt->sim),
 					bccb->hccb.target_id,
@@ -1600,9 +1600,9 @@ btdone(struct bt_softc *bt, struct bt_ccb *bccb, bt_mbi_comp_code_t comp_code)
 				ccb_h = LIST_NEXT(ccb_h, sim_links.le);
 				btdone(bt, pending_bccb, BMBI_ERROR);
 			} else {
-				callout_reset(&pending_bccb->timer,
-				    (ccb_h->timeout * hz) / 1000,
-				    bttimeout, pending_bccb);
+				callout_reset_sbt(&pending_bccb->timer,
+				    SBT_1MS * ccb_h->timeout, 0, bttimeout,
+				    pending_bccb, 0);
 				ccb_h = LIST_NEXT(ccb_h, sim_links.le);
 			}
 		}
@@ -1624,12 +1624,12 @@ btdone(struct bt_softc *bt, struct bt_ccb *bccb, bt_mbi_comp_code_t comp_code)
 	case BMBI_ABORT:
 	case BMBI_ERROR:
 		if (bootverbose) {
-			printf("bt: ccb %p - error %x occured.  "
+			printf("bt: ccb %p - error %x occurred.  "
 			       "btstat = %x, sdstat = %x\n",
 			       (void *)bccb, comp_code, bccb->hccb.btstat,
 			       bccb->hccb.sdstat);
 		}
-		/* An error occured */
+		/* An error occurred */
 		switch(bccb->hccb.btstat) {
 		case BTSTAT_DATARUN_ERROR:
 			if (bccb->hccb.data_len == 0) {
@@ -2317,7 +2317,7 @@ bttimeout(void *arg)
 	 * means that the driver attempts to clear only one error
 	 * condition at a time.  In general, timeouts that occur
 	 * close together are related anyway, so there is no benefit
-	 * in attempting to handle errors in parrallel.  Timeouts will
+	 * in attempting to handle errors in parallel.  Timeouts will
 	 * be reinstated when the recovery process ends.
 	 */
 	if ((bccb->flags & BCCB_DEVICE_RESET) == 0) {

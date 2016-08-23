@@ -93,8 +93,18 @@ SYSCTL_INT(_hw_usb_uhub, OID_AUTO, debug, CTLFLAG_RWTUN, &uhub_debug, 0,
 #if USB_HAVE_POWERD
 static int usb_power_timeout = 30;	/* seconds */
 
-SYSCTL_INT(_hw_usb, OID_AUTO, power_timeout, CTLFLAG_RW,
+SYSCTL_INT(_hw_usb, OID_AUTO, power_timeout, CTLFLAG_RWTUN,
     &usb_power_timeout, 0, "USB power timeout");
+#endif
+
+#if USB_HAVE_DISABLE_ENUM
+static int usb_disable_enumeration = 0;
+SYSCTL_INT(_hw_usb, OID_AUTO, disable_enumeration, CTLFLAG_RWTUN,
+    &usb_disable_enumeration, 0, "Set to disable all USB device enumeration.");
+
+static int usb_disable_port_power = 0;
+SYSCTL_INT(_hw_usb, OID_AUTO, disable_port_power, CTLFLAG_RWTUN,
+    &usb_disable_port_power, 0, "Set to disable all USB port power.");
 #endif
 
 struct uhub_current_state {
@@ -111,6 +121,10 @@ struct uhub_softc {
 	struct mtx sc_mtx;		/* our mutex */
 	struct usb_device *sc_udev;	/* USB device */
 	struct usb_xfer *sc_xfer[UHUB_N_TRANSFER];	/* interrupt xfer */
+#if USB_HAVE_DISABLE_ENUM
+	int sc_disable_enumeration;
+	int sc_disable_port_power;
+#endif
 	uint8_t	sc_flags;
 #define	UHUB_FLAG_DID_EXPLORE 0x01
 };
@@ -332,7 +346,7 @@ uhub_tt_buffer_reset_async_locked(struct usb_device *child, struct usb_endpoint 
 	}
 	up->req_reset_tt = req;
 	/* get reset transfer started */
-	usb_proc_msignal(USB_BUS_NON_GIANT_PROC(udev->bus),
+	usb_proc_msignal(USB_BUS_TT_PROC(udev->bus),
 	    &hub->tt_msg[0], &hub->tt_msg[1]);
 }
 #endif
@@ -618,9 +632,9 @@ repeat:
 	err = usbd_req_clear_port_feature(udev, NULL,
 	    portno, UHF_C_PORT_CONNECTION);
 
-	if (err) {
+	if (err)
 		goto error;
-	}
+
 	/* check if there is a child */
 
 	if (child != NULL) {
@@ -633,14 +647,22 @@ repeat:
 	/* get fresh status */
 
 	err = uhub_read_port_status(sc, portno);
-	if (err) {
+	if (err)
+		goto error;
+
+#if USB_HAVE_DISABLE_ENUM
+	/* check if we should skip enumeration from this USB HUB */
+	if (usb_disable_enumeration != 0 ||
+	    sc->sc_disable_enumeration != 0) {
+		DPRINTF("Enumeration is disabled!\n");
 		goto error;
 	}
+#endif
 	/* check if nothing is connected to the port */
 
-	if (!(sc->sc_st.port_status & UPS_CURRENT_CONNECT_STATUS)) {
+	if (!(sc->sc_st.port_status & UPS_CURRENT_CONNECT_STATUS))
 		goto error;
-	}
+
 	/* check if there is no power on the port and print a warning */
 
 	switch (udev->speed) {
@@ -1188,6 +1210,10 @@ uhub_attach(device_t dev)
 	struct usb_hub *hub;
 	struct usb_hub_descriptor hubdesc20;
 	struct usb_hub_ss_descriptor hubdesc30;
+#if USB_HAVE_DISABLE_ENUM
+	struct sysctl_ctx_list *sysctl_ctx;
+	struct sysctl_oid *sysctl_tree;
+#endif
 	uint16_t pwrdly;
 	uint16_t nports;
 	uint8_t x;
@@ -1385,6 +1411,24 @@ uhub_attach(device_t dev)
 	/* wait with power off for a while */
 	usb_pause_mtx(NULL, USB_MS_TO_TICKS(USB_POWER_DOWN_TIME));
 
+#if USB_HAVE_DISABLE_ENUM
+	/* Add device sysctls */
+
+	sysctl_ctx = device_get_sysctl_ctx(dev);
+	sysctl_tree = device_get_sysctl_tree(dev);
+
+	if (sysctl_ctx != NULL && sysctl_tree != NULL) {
+		(void) SYSCTL_ADD_INT(sysctl_ctx, SYSCTL_CHILDREN(sysctl_tree),
+		    OID_AUTO, "disable_enumeration", CTLFLAG_RWTUN,
+		    &sc->sc_disable_enumeration, 0,
+		    "Set to disable enumeration on this USB HUB.");
+
+		(void) SYSCTL_ADD_INT(sysctl_ctx, SYSCTL_CHILDREN(sysctl_tree),
+		    OID_AUTO, "disable_port_power", CTLFLAG_RWTUN,
+		    &sc->sc_disable_port_power, 0,
+		    "Set to disable USB port power on this USB HUB.");
+	}
+#endif
 	/*
 	 * To have the best chance of success we do things in the exact same
 	 * order as Windoze98.  This should not be necessary, but some
@@ -1439,13 +1483,27 @@ uhub_attach(device_t dev)
 			removable++;
 			break;
 		}
-		if (!err) {
-			/* turn the power on */
-			err = usbd_req_set_port_feature(udev, NULL,
-			    portno, UHF_PORT_POWER);
+		if (err == 0) {
+#if USB_HAVE_DISABLE_ENUM
+			/* check if we should disable USB port power or not */
+			if (usb_disable_port_power != 0 ||
+			    sc->sc_disable_port_power != 0) {
+				/* turn the power off */
+				DPRINTFN(2, "Turning port %d power off\n", portno);
+				err = usbd_req_clear_port_feature(udev, NULL,
+				    portno, UHF_PORT_POWER);
+			} else {
+#endif
+				/* turn the power on */
+				DPRINTFN(2, "Turning port %d power on\n", portno);
+				err = usbd_req_set_port_feature(udev, NULL,
+				    portno, UHF_PORT_POWER);
+#if USB_HAVE_DISABLE_ENUM
+			}
+#endif
 		}
-		if (err) {
-			DPRINTFN(0, "port %d power on failed, %s\n",
+		if (err != 0) {
+			DPRINTFN(0, "port %d power on or off failed, %s\n",
 			    portno, usbd_errstr(err));
 		}
 		DPRINTF("turn on port %d power\n",
@@ -1521,7 +1579,7 @@ uhub_detach(device_t dev)
 #if USB_HAVE_TT_SUPPORT
 	/* Make sure our TT messages are not queued anywhere */
 	USB_BUS_LOCK(bus);
-	usb_proc_mwait(USB_BUS_NON_GIANT_PROC(bus),
+	usb_proc_mwait(USB_BUS_TT_PROC(bus),
 	    &hub->tt_msg[0], &hub->tt_msg[1]);
 	USB_BUS_UNLOCK(bus);
 #endif
@@ -1623,11 +1681,19 @@ uhub_child_location_string(device_t parent, device_t child,
 		}
 		goto done;
 	}
-	snprintf(buf, buflen, "bus=%u hubaddr=%u port=%u devaddr=%u interface=%u",
-	    device_get_unit(res.udev->bus->bdev),
-	    (res.udev->parent_hub != NULL) ? res.udev->parent_hub->device_index : 0,
-	    res.portno,
-	    res.udev->device_index, res.iface_index);
+	snprintf(buf, buflen, "bus=%u hubaddr=%u port=%u devaddr=%u"
+	    " interface=%u"
+#if USB_HAVE_UGEN
+	    " ugen=%s"
+#endif
+	    , device_get_unit(res.udev->bus->bdev)
+	    , (res.udev->parent_hub != NULL) ?
+	    res.udev->parent_hub->device_index : 0
+	    , res.portno, res.udev->device_index, res.iface_index
+#if USB_HAVE_UGEN
+	    , res.udev->ugen_name
+#endif
+	    );
 done:
 	mtx_unlock(&Giant);
 
@@ -1665,15 +1731,17 @@ uhub_child_pnpinfo_string(device_t parent, device_t child,
 	if (iface && iface->idesc) {
 		snprintf(buf, buflen, "vendor=0x%04x product=0x%04x "
 		    "devclass=0x%02x devsubclass=0x%02x "
+		    "devproto=0x%02x "
 		    "sernum=\"%s\" "
 		    "release=0x%04x "
 		    "mode=%s "
 		    "intclass=0x%02x intsubclass=0x%02x "
-		    "intprotocol=0x%02x " "%s%s",
+		    "intprotocol=0x%02x" "%s%s",
 		    UGETW(res.udev->ddesc.idVendor),
 		    UGETW(res.udev->ddesc.idProduct),
 		    res.udev->ddesc.bDeviceClass,
 		    res.udev->ddesc.bDeviceSubClass,
+		    res.udev->ddesc.bDeviceProtocol,
 		    usb_get_serial(res.udev),
 		    UGETW(res.udev->ddesc.bcdDevice),
 		    (res.udev->flags.usb_mode == USB_MODE_HOST) ? "host" : "device",
@@ -1698,7 +1766,7 @@ done:
  * The USB Transaction Translator:
  * ===============================
  *
- * When doing LOW- and FULL-speed USB transfers accross a HIGH-speed
+ * When doing LOW- and FULL-speed USB transfers across a HIGH-speed
  * USB HUB, bandwidth must be allocated for ISOCHRONOUS and INTERRUPT
  * USB transfers. To utilize bandwidth dynamically the "scatter and
  * gather" principle must be applied. This means that bandwidth must
@@ -1770,7 +1838,7 @@ usb_intr_find_best_slot(usb_size_t *ptr, uint8_t start,
 /*------------------------------------------------------------------------*
  *	usb_hs_bandwidth_adjust
  *
- * This function will update the bandwith usage for the microframe
+ * This function will update the bandwidth usage for the microframe
  * having index "slot" by "len" bytes. "len" can be negative.  If the
  * "slot" argument is greater or equal to "USB_HS_MICRO_FRAMES_MAX"
  * the "slot" argument will be replaced by the slot having least used
@@ -2242,7 +2310,7 @@ usb_needs_explore_all(void)
 		return;
 	}
 	/*
-	 * Explore all USB busses in parallell.
+	 * Explore all USB busses in parallel.
 	 */
 	max = devclass_get_maxunit(dc);
 	while (max >= 0) {

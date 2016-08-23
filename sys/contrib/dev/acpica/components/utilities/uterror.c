@@ -5,7 +5,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2013, Intel Corp.
+ * Copyright (C) 2000 - 2016, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -40,8 +40,6 @@
  * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGES.
  */
-
-#define __UTERROR_C__
 
 #include <contrib/dev/acpica/include/acpi.h>
 #include <contrib/dev/acpica/include/accommon.h>
@@ -246,8 +244,8 @@ AcpiUtNamespaceError (
     {
         /* Convert path to external format */
 
-        Status = AcpiNsExternalizeName (ACPI_UINT32_MAX,
-                    InternalName, NULL, &Name);
+        Status = AcpiNsExternalizeName (
+            ACPI_UINT32_MAX, InternalName, NULL, &Name);
 
         /* Print target name */
 
@@ -309,8 +307,8 @@ AcpiUtMethodError (
 
     if (Path)
     {
-        Status = AcpiNsGetNode (PrefixNode, Path, ACPI_NS_NO_UPSEARCH,
-                    &Node);
+        Status = AcpiNsGetNode (PrefixNode, Path,
+            ACPI_NS_NO_UPSEARCH, &Node);
         if (ACPI_FAILURE (Status))
         {
             AcpiOsPrintf ("[Could not get node by pathname]");

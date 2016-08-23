@@ -290,11 +290,6 @@ systrace_args(int sysnum, void *params, uint64_t *uarg, int *n_args)
 		*n_args = 1;
 		break;
 	}
-	/* pipe */
-	case 42: {
-		*n_args = 0;
-		break;
-	}
 	/* getegid */
 	case 43: {
 		*n_args = 0;
@@ -464,7 +459,7 @@ systrace_args(int sysnum, void *params, uint64_t *uarg, int *n_args)
 	/* mprotect */
 	case 74: {
 		struct mprotect_args *p = params;
-		uarg[0] = (intptr_t) p->addr; /* const void * */
+		uarg[0] = (intptr_t) p->addr; /* void * */
 		uarg[1] = p->len; /* size_t */
 		iarg[2] = p->prot; /* int */
 		*n_args = 3;
@@ -914,28 +909,6 @@ systrace_args(int sysnum, void *params, uint64_t *uarg, int *n_args)
 		*n_args = 4;
 		break;
 	}
-	/* freebsd6_pread */
-	case 173: {
-		struct freebsd6_pread_args *p = params;
-		iarg[0] = p->fd; /* int */
-		uarg[1] = (intptr_t) p->buf; /* void * */
-		uarg[2] = p->nbyte; /* size_t */
-		iarg[3] = p->pad; /* int */
-		iarg[4] = p->offset; /* off_t */
-		*n_args = 5;
-		break;
-	}
-	/* freebsd6_pwrite */
-	case 174: {
-		struct freebsd6_pwrite_args *p = params;
-		iarg[0] = p->fd; /* int */
-		uarg[1] = (intptr_t) p->buf; /* const void * */
-		uarg[2] = p->nbyte; /* size_t */
-		iarg[3] = p->pad; /* int */
-		iarg[4] = p->offset; /* off_t */
-		*n_args = 5;
-		break;
-	}
 	/* setfib */
 	case 175: {
 		struct setfib_args *p = params;
@@ -1037,50 +1010,9 @@ systrace_args(int sysnum, void *params, uint64_t *uarg, int *n_args)
 		*n_args = 4;
 		break;
 	}
-	/* freebsd6_mmap */
-	case 197: {
-		struct freebsd6_mmap_args *p = params;
-		uarg[0] = (intptr_t) p->addr; /* caddr_t */
-		uarg[1] = p->len; /* size_t */
-		iarg[2] = p->prot; /* int */
-		iarg[3] = p->flags; /* int */
-		iarg[4] = p->fd; /* int */
-		iarg[5] = p->pad; /* int */
-		iarg[6] = p->pos; /* off_t */
-		*n_args = 7;
-		break;
-	}
 	/* nosys */
 	case 198: {
 		*n_args = 0;
-		break;
-	}
-	/* freebsd6_lseek */
-	case 199: {
-		struct freebsd6_lseek_args *p = params;
-		iarg[0] = p->fd; /* int */
-		iarg[1] = p->pad; /* int */
-		iarg[2] = p->offset; /* off_t */
-		iarg[3] = p->whence; /* int */
-		*n_args = 4;
-		break;
-	}
-	/* freebsd6_truncate */
-	case 200: {
-		struct freebsd6_truncate_args *p = params;
-		uarg[0] = (intptr_t) p->path; /* char * */
-		iarg[1] = p->pad; /* int */
-		iarg[2] = p->length; /* off_t */
-		*n_args = 3;
-		break;
-	}
-	/* freebsd6_ftruncate */
-	case 201: {
-		struct freebsd6_ftruncate_args *p = params;
-		iarg[0] = p->fd; /* int */
-		iarg[1] = p->pad; /* int */
-		iarg[2] = p->length; /* off_t */
-		*n_args = 3;
 		break;
 	}
 	/* __sysctl */
@@ -1390,15 +1322,6 @@ systrace_args(int sysnum, void *params, uint64_t *uarg, int *n_args)
 		*n_args = 1;
 		break;
 	}
-	/* openbsd_poll */
-	case 252: {
-		struct openbsd_poll_args *p = params;
-		uarg[0] = (intptr_t) p->fds; /* struct pollfd * */
-		uarg[1] = p->nfds; /* u_int */
-		iarg[2] = p->timeout; /* int */
-		*n_args = 3;
-		break;
-	}
 	/* issetugid */
 	case 253: {
 		*n_args = 0;
@@ -1668,30 +1591,6 @@ systrace_args(int sysnum, void *params, uint64_t *uarg, int *n_args)
 		*n_args = 1;
 		break;
 	}
-	/* oaio_read */
-	case 318: {
-		struct oaio_read_args *p = params;
-		uarg[0] = (intptr_t) p->aiocbp; /* struct oaiocb * */
-		*n_args = 1;
-		break;
-	}
-	/* oaio_write */
-	case 319: {
-		struct oaio_write_args *p = params;
-		uarg[0] = (intptr_t) p->aiocbp; /* struct oaiocb * */
-		*n_args = 1;
-		break;
-	}
-	/* olio_listio */
-	case 320: {
-		struct olio_listio_args *p = params;
-		iarg[0] = p->mode; /* int */
-		uarg[1] = (intptr_t) p->acb_list; /* struct oaiocb *const * */
-		iarg[2] = p->nent; /* int */
-		uarg[3] = (intptr_t) p->sig; /* struct osigevent * */
-		*n_args = 4;
-		break;
-	}
 	/* yield */
 	case 321: {
 		*n_args = 0;
@@ -1712,7 +1611,7 @@ systrace_args(int sysnum, void *params, uint64_t *uarg, int *n_args)
 	/* __getcwd */
 	case 326: {
 		struct __getcwd_args *p = params;
-		uarg[0] = (intptr_t) p->buf; /* u_char * */
+		uarg[0] = (intptr_t) p->buf; /* char * */
 		uarg[1] = p->buflen; /* u_int */
 		*n_args = 2;
 		break;
@@ -3372,6 +3271,59 @@ systrace_args(int sysnum, void *params, uint64_t *uarg, int *n_args)
 		*n_args = 4;
 		break;
 	}
+	/* ppoll */
+	case 545: {
+		struct ppoll_args *p = params;
+		uarg[0] = (intptr_t) p->fds; /* struct pollfd * */
+		uarg[1] = p->nfds; /* u_int */
+		uarg[2] = (intptr_t) p->ts; /* const struct timespec * */
+		uarg[3] = (intptr_t) p->set; /* const sigset_t * */
+		*n_args = 4;
+		break;
+	}
+	/* futimens */
+	case 546: {
+		struct futimens_args *p = params;
+		iarg[0] = p->fd; /* int */
+		uarg[1] = (intptr_t) p->times; /* struct timespec * */
+		*n_args = 2;
+		break;
+	}
+	/* utimensat */
+	case 547: {
+		struct utimensat_args *p = params;
+		iarg[0] = p->fd; /* int */
+		uarg[1] = (intptr_t) p->path; /* char * */
+		uarg[2] = (intptr_t) p->times; /* struct timespec * */
+		iarg[3] = p->flag; /* int */
+		*n_args = 4;
+		break;
+	}
+	/* numa_getaffinity */
+	case 548: {
+		struct numa_getaffinity_args *p = params;
+		iarg[0] = p->which; /* cpuwhich_t */
+		iarg[1] = p->id; /* id_t */
+		uarg[2] = (intptr_t) p->policy; /* struct vm_domain_policy_entry * */
+		*n_args = 3;
+		break;
+	}
+	/* numa_setaffinity */
+	case 549: {
+		struct numa_setaffinity_args *p = params;
+		iarg[0] = p->which; /* cpuwhich_t */
+		iarg[1] = p->id; /* id_t */
+		uarg[2] = (intptr_t) p->policy; /* const struct vm_domain_policy_entry * */
+		*n_args = 3;
+		break;
+	}
+	/* fdatasync */
+	case 550: {
+		struct fdatasync_args *p = params;
+		iarg[0] = p->fd; /* int */
+		*n_args = 1;
+		break;
+	}
 	default:
 		*n_args = 0;
 		break;
@@ -3816,9 +3768,6 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
-	/* pipe */
-	case 42:
-		break;
 	/* getegid */
 	case 43:
 		break;
@@ -4076,7 +4025,7 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 	case 74:
 		switch(ndx) {
 		case 0:
-			p = "const void *";
+			p = "void *";
 			break;
 		case 1:
 			p = "size_t";
@@ -4845,50 +4794,6 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
-	/* freebsd6_pread */
-	case 173:
-		switch(ndx) {
-		case 0:
-			p = "int";
-			break;
-		case 1:
-			p = "void *";
-			break;
-		case 2:
-			p = "size_t";
-			break;
-		case 3:
-			p = "int";
-			break;
-		case 4:
-			p = "off_t";
-			break;
-		default:
-			break;
-		};
-		break;
-	/* freebsd6_pwrite */
-	case 174:
-		switch(ndx) {
-		case 0:
-			p = "int";
-			break;
-		case 1:
-			p = "const void *";
-			break;
-		case 2:
-			p = "size_t";
-			break;
-		case 3:
-			p = "int";
-			break;
-		case 4:
-			p = "off_t";
-			break;
-		default:
-			break;
-		};
-		break;
 	/* setfib */
 	case 175:
 		switch(ndx) {
@@ -5049,87 +4954,8 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
-	/* freebsd6_mmap */
-	case 197:
-		switch(ndx) {
-		case 0:
-			p = "caddr_t";
-			break;
-		case 1:
-			p = "size_t";
-			break;
-		case 2:
-			p = "int";
-			break;
-		case 3:
-			p = "int";
-			break;
-		case 4:
-			p = "int";
-			break;
-		case 5:
-			p = "int";
-			break;
-		case 6:
-			p = "off_t";
-			break;
-		default:
-			break;
-		};
-		break;
 	/* nosys */
 	case 198:
-		break;
-	/* freebsd6_lseek */
-	case 199:
-		switch(ndx) {
-		case 0:
-			p = "int";
-			break;
-		case 1:
-			p = "int";
-			break;
-		case 2:
-			p = "off_t";
-			break;
-		case 3:
-			p = "int";
-			break;
-		default:
-			break;
-		};
-		break;
-	/* freebsd6_truncate */
-	case 200:
-		switch(ndx) {
-		case 0:
-			p = "char *";
-			break;
-		case 1:
-			p = "int";
-			break;
-		case 2:
-			p = "off_t";
-			break;
-		default:
-			break;
-		};
-		break;
-	/* freebsd6_ftruncate */
-	case 201:
-		switch(ndx) {
-		case 0:
-			p = "int";
-			break;
-		case 1:
-			p = "int";
-			break;
-		case 2:
-			p = "off_t";
-			break;
-		default:
-			break;
-		};
 		break;
 	/* __sysctl */
 	case 202:
@@ -5591,22 +5417,6 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
-	/* openbsd_poll */
-	case 252:
-		switch(ndx) {
-		case 0:
-			p = "struct pollfd *";
-			break;
-		case 1:
-			p = "u_int";
-			break;
-		case 2:
-			p = "int";
-			break;
-		default:
-			break;
-		};
-		break;
 	/* issetugid */
 	case 253:
 		break;
@@ -6039,45 +5849,6 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
-	/* oaio_read */
-	case 318:
-		switch(ndx) {
-		case 0:
-			p = "struct oaiocb *";
-			break;
-		default:
-			break;
-		};
-		break;
-	/* oaio_write */
-	case 319:
-		switch(ndx) {
-		case 0:
-			p = "struct oaiocb *";
-			break;
-		default:
-			break;
-		};
-		break;
-	/* olio_listio */
-	case 320:
-		switch(ndx) {
-		case 0:
-			p = "int";
-			break;
-		case 1:
-			p = "struct oaiocb *const *";
-			break;
-		case 2:
-			p = "int";
-			break;
-		case 3:
-			p = "struct osigevent *";
-			break;
-		default:
-			break;
-		};
-		break;
 	/* yield */
 	case 321:
 		break;
@@ -6098,7 +5869,7 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 	case 326:
 		switch(ndx) {
 		case 0:
-			p = "u_char *";
+			p = "char *";
 			break;
 		case 1:
 			p = "u_int";
@@ -8990,6 +8761,99 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
+	/* ppoll */
+	case 545:
+		switch(ndx) {
+		case 0:
+			p = "struct pollfd *";
+			break;
+		case 1:
+			p = "u_int";
+			break;
+		case 2:
+			p = "const struct timespec *";
+			break;
+		case 3:
+			p = "const sigset_t *";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* futimens */
+	case 546:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "struct timespec *";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* utimensat */
+	case 547:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "char *";
+			break;
+		case 2:
+			p = "struct timespec *";
+			break;
+		case 3:
+			p = "int";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* numa_getaffinity */
+	case 548:
+		switch(ndx) {
+		case 0:
+			p = "cpuwhich_t";
+			break;
+		case 1:
+			p = "id_t";
+			break;
+		case 2:
+			p = "struct vm_domain_policy_entry *";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* numa_setaffinity */
+	case 549:
+		switch(ndx) {
+		case 0:
+			p = "cpuwhich_t";
+			break;
+		case 1:
+			p = "id_t";
+			break;
+		case 2:
+			p = "const struct vm_domain_policy_entry *";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* fdatasync */
+	case 550:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		default:
+			break;
+		};
+		break;
 	default:
 		break;
 	};
@@ -9160,8 +9024,6 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
-	/* pipe */
-	case 42:
 	/* getegid */
 	case 43:
 	/* profil */
@@ -9519,16 +9381,6 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
-	/* freebsd6_pread */
-	case 173:
-		if (ndx == 0 || ndx == 1)
-			p = "ssize_t";
-		break;
-	/* freebsd6_pwrite */
-	case 174:
-		if (ndx == 0 || ndx == 1)
-			p = "ssize_t";
-		break;
 	/* setfib */
 	case 175:
 		if (ndx == 0 || ndx == 1)
@@ -9594,28 +9446,8 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
-	/* freebsd6_mmap */
-	case 197:
-		if (ndx == 0 || ndx == 1)
-			p = "caddr_t";
-		break;
 	/* nosys */
 	case 198:
-	/* freebsd6_lseek */
-	case 199:
-		if (ndx == 0 || ndx == 1)
-			p = "off_t";
-		break;
-	/* freebsd6_truncate */
-	case 200:
-		if (ndx == 0 || ndx == 1)
-			p = "int";
-		break;
-	/* freebsd6_ftruncate */
-	case 201:
-		if (ndx == 0 || ndx == 1)
-			p = "int";
-		break;
 	/* __sysctl */
 	case 202:
 		if (ndx == 0 || ndx == 1)
@@ -9694,7 +9526,7 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 	/* msgrcv */
 	case 227:
 		if (ndx == 0 || ndx == 1)
-			p = "int";
+			p = "ssize_t";
 		break;
 	/* shmat */
 	case 228:
@@ -9788,11 +9620,6 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		break;
 	/* rfork */
 	case 251:
-		if (ndx == 0 || ndx == 1)
-			p = "int";
-		break;
-	/* openbsd_poll */
-	case 252:
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
@@ -9946,7 +9773,7 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 	/* aio_return */
 	case 314:
 		if (ndx == 0 || ndx == 1)
-			p = "int";
+			p = "ssize_t";
 		break;
 	/* aio_suspend */
 	case 315:
@@ -9960,21 +9787,6 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		break;
 	/* aio_error */
 	case 317:
-		if (ndx == 0 || ndx == 1)
-			p = "int";
-		break;
-	/* oaio_read */
-	case 318:
-		if (ndx == 0 || ndx == 1)
-			p = "int";
-		break;
-	/* oaio_write */
-	case 319:
-		if (ndx == 0 || ndx == 1)
-			p = "int";
-		break;
-	/* olio_listio */
-	case 320:
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
@@ -10137,7 +9949,7 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 	/* aio_waitcomplete */
 	case 359:
 		if (ndx == 0 || ndx == 1)
-			p = "int";
+			p = "ssize_t";
 		break;
 	/* getresuid */
 	case 360:
@@ -10925,6 +10737,36 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		break;
 	/* procctl */
 	case 544:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* ppoll */
+	case 545:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* futimens */
+	case 546:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* utimensat */
+	case 547:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* numa_getaffinity */
+	case 548:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* numa_setaffinity */
+	case 549:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* fdatasync */
+	case 550:
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;

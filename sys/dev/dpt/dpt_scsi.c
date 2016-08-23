@@ -31,7 +31,7 @@
 __FBSDID("$FreeBSD$");
 
 /*
- * dpt_scsi.c: SCSI dependant code for the DPT driver
+ * dpt_scsi.c: SCSI dependent code for the DPT driver
  *
  * credits:	Assisted by Mike Neuffer in the early low level DPT code
  *		Thanx to Mark Salyzyn of DPT for his assistance.
@@ -95,7 +95,7 @@ devclass_t	dpt_devclass;
 
 /*
  * These will have to be setup by parameters passed at boot/load time. For
- * perfromance reasons, we make them constants for the time being.
+ * performance reasons, we make them constants for the time being.
  */
 #define	dpt_min_segs	DPT_MAX_SEGS
 #define	dpt_max_segs	DPT_MAX_SEGS
@@ -598,7 +598,7 @@ dpt_detect_cache(dpt_softc_t *dpt, dpt_ccb_t *dccb, u_int32_t dccb_busaddr,
 	mtx_assert(&dpt->lock, MA_OWNED);
 
 	/*
-	 * Default setting, for best perfromance..
+	 * Default setting, for best performance..
 	 * This is what virtually all cards default to..
 	 */
 	dpt->cache_type = DPT_CACHE_WRITEBACK;
@@ -793,8 +793,8 @@ dptexecuteccb(void *arg, bus_dma_segment_t *dm_segs, int nseg, int error)
 	dccb->state |= DCCB_ACTIVE;
 	ccb->ccb_h.status |= CAM_SIM_QUEUED;
 	LIST_INSERT_HEAD(&dpt->pending_ccb_list, &ccb->ccb_h, sim_links.le);
-	callout_reset(&dccb->timer, (ccb->ccb_h.timeout * hz) / 1000,
-	    dpttimeout, dccb);
+	callout_reset_sbt(&dccb->timer, SBT_1MS * ccb->ccb_h.timeout, 0,
+	    dpttimeout, dccb, 0);
 	if (dpt_send_eata_command(dpt, &dccb->eata_ccb,
 				  dccb->eata_ccb.cp_busaddr,
 				  EATA_CMD_DMA_SEND_CP, 0, 0, 0, 0) != 0) {
@@ -1388,7 +1388,7 @@ dpt_init(struct dpt_softc *dpt)
 				/* highaddr	*/ BUS_SPACE_MAXADDR,
 				/* filter	*/ NULL,
 				/* filterarg	*/ NULL,
-				/* maxsize	*/ MAXBSIZE,
+				/* maxsize	*/ DFLTPHYS,
 				/* nsegments	*/ dpt->sgsize,
 				/* maxsegsz	*/ BUS_SPACE_MAXSIZE_32BIT,
 				/* flags	*/ BUS_DMA_ALLOCNOW,
@@ -1878,7 +1878,7 @@ dpt_reset_hba(dpt_softc_t *dpt)
 	ccb->cp_msg[0] = HA_IDENTIFY_MSG | HA_DISCO_RECO;
 	ccb->cp_scsi_cmd = 0;  /* Should be ignored */
 
-	/* Lock up the submitted queue.  We are very persistant here */
+	/* Lock up the submitted queue.  We are very persistent here */
 	while (dpt->queue_status & DPT_SUBMITTED_QUEUE_ACTIVE) {
 		DELAY(100);
 	}

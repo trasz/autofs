@@ -1,9 +1,14 @@
 /*-
- * Copyright (c) 2009 Robert N. M. Watson
+ * Copyright (c) 2009, 2016 Robert N. M. Watson
  * All rights reserved.
  *
  * This software was developed at the University of Cambridge Computer
  * Laboratory with support from a grant from Google, Inc.
+ *
+ * Portions of this software were developed by BAE Systems, the University of
+ * Cambridge Computer Laboratory, and Memorial University under DARPA/AFRL
+ * contract FA8650-15-C-7558 ("CADETS"), as part of the DARPA Transparent
+ * Computing (TC) research program.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -78,6 +83,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/sysctl.h>
 #include <sys/systm.h>
 #include <sys/ucred.h>
+#include <sys/user.h>
 
 #include <security/audit/audit.h>
 
@@ -87,29 +93,25 @@ FEATURE(process_descriptors, "Process Descriptors");
 
 static uma_zone_t procdesc_zone;
 
-static fo_rdwr_t	procdesc_read;
-static fo_rdwr_t	procdesc_write;
-static fo_truncate_t	procdesc_truncate;
-static fo_ioctl_t	procdesc_ioctl;
 static fo_poll_t	procdesc_poll;
 static fo_kqfilter_t	procdesc_kqfilter;
 static fo_stat_t	procdesc_stat;
 static fo_close_t	procdesc_close;
-static fo_chmod_t	procdesc_chmod;
-static fo_chown_t	procdesc_chown;
+static fo_fill_kinfo_t	procdesc_fill_kinfo;
 
 static struct fileops procdesc_ops = {
-	.fo_read = procdesc_read,
-	.fo_write = procdesc_write,
-	.fo_truncate = procdesc_truncate,
-	.fo_ioctl = procdesc_ioctl,
+	.fo_read = invfo_rdwr,
+	.fo_write = invfo_rdwr,
+	.fo_truncate = invfo_truncate,
+	.fo_ioctl = invfo_ioctl,
 	.fo_poll = procdesc_poll,
 	.fo_kqfilter = procdesc_kqfilter,
 	.fo_stat = procdesc_stat,
 	.fo_close = procdesc_close,
-	.fo_chmod = procdesc_chmod,
-	.fo_chown = procdesc_chown,
+	.fo_chmod = invfo_chmod,
+	.fo_chown = invfo_chown,
 	.fo_sendfile = invfo_sendfile,
+	.fo_fill_kinfo = procdesc_fill_kinfo,
 	.fo_flags = DFLAG_PASSABLE,
 };
 
@@ -246,6 +248,22 @@ procdesc_new(struct proc *p, int flags)
 }
 
 /*
+ * Create a new process decriptor for the process that refers to it.
+ */
+int
+procdesc_falloc(struct thread *td, struct file **resultfp, int *resultfd,
+    int flags, struct filecaps *fcaps)
+{
+	int fflags;
+
+	fflags = 0;
+	if (flags & PD_CLOEXEC)
+		fflags = O_CLOEXEC;
+
+	return (falloc_caps(td, resultfp, resultfd, fflags, fcaps));
+}
+
+/*
  * Initialize a file with a process descriptor.
  */
 void
@@ -298,7 +316,7 @@ procdesc_exit(struct proc *p)
 	    ("procdesc_exit: closed && parent not init"));
 
 	pd->pd_flags |= PDF_EXITED;
-	pd->pd_xstat = p->p_xstat;
+	pd->pd_xstat = KW_EXITCODE(p->p_xexit, p->p_xsig);
 
 	/*
 	 * If the process descriptor has been closed, then we have nothing
@@ -370,6 +388,7 @@ procdesc_close(struct file *fp, struct thread *td)
 		sx_xunlock(&proctree_lock);
 	} else {
 		PROC_LOCK(p);
+		AUDIT_ARG_PROCESS(p);
 		if (p->p_state == PRS_ZOMBIE) {
 			/*
 			 * If the process is already dead and just awaiting
@@ -410,38 +429,6 @@ procdesc_close(struct file *fp, struct thread *td)
 	 */
 	procdesc_free(pd);
 	return (0);
-}
-
-static int
-procdesc_read(struct file *fp, struct uio *uio, struct ucred *active_cred,
-    int flags, struct thread *td)
-{
-
-	return (EOPNOTSUPP);
-}
-
-static int
-procdesc_write(struct file *fp, struct uio *uio, struct ucred *active_cred,
-    int flags, struct thread *td)
-{
-
-	return (EOPNOTSUPP);
-}
-
-static int
-procdesc_truncate(struct file *fp, off_t length, struct ucred *active_cred,
-    struct thread *td)
-{
-
-	return (EOPNOTSUPP);
-}
-
-static int
-procdesc_ioctl(struct file *fp, u_long com, void *data,
-    struct ucred *active_cred, struct thread *td)
-{
-
-	return (EOPNOTSUPP);
 }
 
 static int
@@ -536,7 +523,7 @@ procdesc_stat(struct file *fp, struct stat *sb, struct ucred *active_cred,
     struct thread *td)
 {
 	struct procdesc *pd;
-	struct timeval pstart;
+	struct timeval pstart, boottime;
 
 	/*
 	 * XXXRW: Perhaps we should cache some more information from the
@@ -548,9 +535,11 @@ procdesc_stat(struct file *fp, struct stat *sb, struct ucred *active_cred,
 	sx_slock(&proctree_lock);
 	if (pd->pd_proc != NULL) {
 		PROC_LOCK(pd->pd_proc);
+		AUDIT_ARG_PROCESS(pd->pd_proc);
 
 		/* Set birth and [acm] times to process start time. */
 		pstart = pd->pd_proc->p_stats->p_start;
+		getboottime(&boottime);
 		timevaladd(&pstart, &boottime);
 		TIMEVAL_TO_TIMESPEC(&pstart, &sb->st_birthtim);
 		sb->st_atim = sb->st_birthtim;
@@ -570,17 +559,13 @@ procdesc_stat(struct file *fp, struct stat *sb, struct ucred *active_cred,
 }
 
 static int
-procdesc_chmod(struct file *fp, mode_t mode, struct ucred *active_cred,
-    struct thread *td)
+procdesc_fill_kinfo(struct file *fp, struct kinfo_file *kif,
+    struct filedesc *fdp)
 {
+	struct procdesc *pdp;
 
-	return (EOPNOTSUPP);
-}
-
-static int
-procdesc_chown(struct file *fp, uid_t uid, gid_t gid, struct ucred *active_cred,
-    struct thread *td)
-{
-
-	return (EOPNOTSUPP);
+	kif->kf_type = KF_TYPE_PROCDESC;
+	pdp = fp->f_data;
+	kif->kf_un.kf_proc.kf_pid = pdp->pd_pid;
+	return (0);
 }

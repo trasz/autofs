@@ -134,6 +134,35 @@ usbd_get_page(struct usb_page_cache *pc, usb_frlength_t offset,
 }
 
 /*------------------------------------------------------------------------*
+ *  usb_pc_buffer_is_aligned - verify alignment
+ * 
+ * This function is used to check if a page cache buffer is properly
+ * aligned to reduce the use of bounce buffers in PIO mode.
+ *------------------------------------------------------------------------*/
+uint8_t
+usb_pc_buffer_is_aligned(struct usb_page_cache *pc, usb_frlength_t offset,
+    usb_frlength_t len, usb_frlength_t mask)
+{
+	struct usb_page_search buf_res;
+
+	while (len != 0) {
+
+		usbd_get_page(pc, offset, &buf_res);
+
+		if (buf_res.length > len)
+			buf_res.length = len;
+		if (USB_P2U(buf_res.buffer) & mask)
+			return (0);
+		if (buf_res.length & mask)
+			return (0);
+
+		offset += buf_res.length;
+		len -= buf_res.length;
+	}
+	return (1);
+}
+
+/*------------------------------------------------------------------------*
  *  usbd_copy_in - copy directly to DMA-able memory
  *------------------------------------------------------------------------*/
 void
@@ -438,18 +467,27 @@ usb_pc_common_mem_cb(void *arg, bus_dma_segment_t *segs,
 
 	off = 0;
 	pg = pc->page_start;
-	pg->physaddr = segs->ds_addr & ~(USB_PAGE_SIZE - 1);
+	pg->physaddr = rounddown2(segs->ds_addr, USB_PAGE_SIZE);
 	rem = segs->ds_addr & (USB_PAGE_SIZE - 1);
 	pc->page_offset_buf = rem;
 	pc->page_offset_end += rem;
 #ifdef USB_DEBUG
-	if (rem != (USB_P2U(pc->buffer) & (USB_PAGE_SIZE - 1))) {
-		/*
-		 * This check verifies that the physical address is correct:
-		 */
-		DPRINTFN(0, "Page offset was not preserved\n");
-		error = 1;
-		goto done;
+	if (nseg > 1) {
+		int x;
+
+		for (x = 0; x != nseg - 1; x++) {
+			if (((segs[x].ds_addr + segs[x].ds_len) & (USB_PAGE_SIZE - 1)) ==
+			    ((segs[x + 1].ds_addr & (USB_PAGE_SIZE - 1))))
+				continue;
+			/*
+			 * This check verifies there is no page offset
+			 * hole between any of the segments. See the
+			 * BUS_DMA_KEEP_PG_OFFSET flag.
+			 */
+			DPRINTFN(0, "Page offset was not preserved\n");
+			error = 1;
+			goto done;
+		}
 	}
 #endif
 	while (pc->ismultiseg) {
@@ -464,7 +502,7 @@ usb_pc_common_mem_cb(void *arg, bus_dma_segment_t *segs,
 				break;
 		}
 		pg++;
-		pg->physaddr = (segs->ds_addr + off) & ~(USB_PAGE_SIZE - 1);
+		pg->physaddr = rounddown2(segs->ds_addr + off, USB_PAGE_SIZE);
 	}
 
 done:

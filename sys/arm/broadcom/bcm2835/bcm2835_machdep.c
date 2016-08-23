@@ -38,7 +38,6 @@
 
 #include "opt_ddb.h"
 #include "opt_platform.h"
-#include "opt_global.h"
 
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
@@ -47,12 +46,12 @@ __FBSDID("$FreeBSD$");
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/bus.h>
+#include <sys/devmap.h>
 
 #include <vm/vm.h>
 #include <vm/pmap.h>
 
 #include <machine/bus.h>
-#include <machine/devmap.h>
 #include <machine/machdep.h>
 #include <machine/platform.h>
 #include <machine/platformvar.h>
@@ -67,7 +66,7 @@ static vm_offset_t
 bcm2835_lastaddr(platform_t plat)
 {
 
-	return (arm_devmap_lastaddr());
+	return (devmap_lastaddr());
 }
 
 static void
@@ -89,6 +88,7 @@ bcm2835_late_init(platform_t plat)
 	}
 }
 
+#ifdef SOC_BCM2835
 /*
  * Set up static device mappings.
  * All on-chip peripherals exist in a 16MB range starting at 0x20000000.
@@ -98,9 +98,20 @@ static int
 bcm2835_devmap_init(platform_t plat)
 {
 
-	arm_devmap_add_entry(0x20000000, 0x01000000);
+	devmap_add_entry(0x20000000, 0x01000000);
 	return (0);
 }
+#endif
+
+#ifdef SOC_BCM2836
+static int
+bcm2836_devmap_init(platform_t plat)
+{
+
+	devmap_add_entry(0x3f000000, 0x01000000);
+	return (0);
+}
+#endif
 
 struct arm32_dma_range *
 bus_dma_get_range(void)
@@ -122,6 +133,8 @@ cpu_reset()
 	bcmwd_watchdog_reset();
 	while (1);
 }
+
+#ifdef SOC_BCM2835
 static platform_method_t bcm2835_methods[] = {
 	PLATFORMMETHOD(platform_devmap_init,	bcm2835_devmap_init),
 	PLATFORMMETHOD(platform_lastaddr,	bcm2835_lastaddr),
@@ -129,6 +142,16 @@ static platform_method_t bcm2835_methods[] = {
 
 	PLATFORMMETHOD_END,
 };
+FDT_PLATFORM_DEF(bcm2835, "bcm2835", 0, "raspberrypi,model-b", 0);
+#endif
 
-FDT_PLATFORM_DEF(bcm2835, "bcm2835", 0, "raspberrypi,model-b");
+#ifdef SOC_BCM2836
+static platform_method_t bcm2836_methods[] = {
+	PLATFORMMETHOD(platform_devmap_init,	bcm2836_devmap_init),
+	PLATFORMMETHOD(platform_lastaddr,	bcm2835_lastaddr),
+	PLATFORMMETHOD(platform_late_init,	bcm2835_late_init),
 
+	PLATFORMMETHOD_END,
+};
+FDT_PLATFORM_DEF(bcm2836, "bcm2836", 0, "brcm,bcm2709", 0);
+#endif

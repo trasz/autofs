@@ -159,8 +159,6 @@ re_netmap_txsync(struct netmap_kring *kring, int flags)
 		}
 	}
 
-	nm_txsync_finalize(kring);
-
 	return 0;
 }
 
@@ -178,7 +176,7 @@ re_netmap_rxsync(struct netmap_kring *kring, int flags)
 	u_int nic_i;	/* index into the NIC ring */
 	u_int n;
 	u_int const lim = kring->nkr_num_slots - 1;
-	u_int const head = nm_rxsync_prologue(kring);
+	u_int const head = kring->rhead;
 	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
 
 	/* device-specific */
@@ -222,7 +220,7 @@ re_netmap_rxsync(struct netmap_kring *kring, int flags)
 			/*  sync was in re_newbuf() */
 			bus_dmamap_sync(sc->rl_ldata.rl_rx_mtag,
 			    rxd[nic_i].rx_dmamap, BUS_DMASYNC_POSTREAD);
-			// sc->rl_ifp->if_ipackets++;
+			// if_inc_counter(sc->rl_ifp, IFCOUNTER_IPACKETS, 1);
 			nm_i = nm_next(nm_i, lim);
 			nic_i = nm_next(nic_i, lim);
 		}
@@ -272,9 +270,6 @@ re_netmap_rxsync(struct netmap_kring *kring, int flags)
 		    sc->rl_ldata.rl_rx_list_map,
 		    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 	}
-
-	/* tell userspace that there might be new packets */
-	nm_rxsync_finalize(kring);
 
 	return 0;
 

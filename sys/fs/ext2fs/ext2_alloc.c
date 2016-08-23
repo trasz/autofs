@@ -161,7 +161,7 @@ ext2_reallocblks(struct vop_reallocblks_args *ap)
 	struct inode *ip;
 	struct vnode *vp;
 	struct buf *sbp, *ebp;
-	uint32_t *bap, *sbap, *ebap = 0;
+	uint32_t *bap, *sbap, *ebap;
 	struct ext2mount *ump;
 	struct cluster_save *buflist;
 	struct indir start_ap[NIADDR + 1], end_ap[NIADDR + 1], *idp;
@@ -231,6 +231,7 @@ ext2_reallocblks(struct vop_reallocblks_args *ap)
 	/*
 	 * If the block range spans two block maps, get the second map.
 	 */
+	ebap = NULL;
 	if (end_lvl == 0 || (idp = &end_ap[end_lvl - 1])->in_off + 1 >= len) {
 		ssize = len;
 	} else {
@@ -264,8 +265,8 @@ ext2_reallocblks(struct vop_reallocblks_args *ap)
 	 * with the file.
 	 */
 #ifdef DEBUG
-	printf("realloc: ino %d, lbns %jd-%jd\n\told:", ip->i_number,
-	    (intmax_t)start_lbn, (intmax_t)end_lbn);
+	printf("realloc: ino %ju, lbns %jd-%jd\n\told:",
+	    (uintmax_t)ip->i_number, (intmax_t)start_lbn, (intmax_t)end_lbn);
 #endif /* DEBUG */
 	blkno = newblk;
 	for (bap = &sbap[soff], i = 0; i < len; i++, blkno += fs->e2fs_fpb) {
@@ -393,6 +394,7 @@ ext2_valloc(struct vnode *pvp, int mode, struct ucred *cred, struct vnode **vpp)
 	 * Linux doesn't read the old inode in when it is allocating a
 	 * new one. I will set at least i_size and i_blocks to zero.
 	 */
+	ip->i_flag = 0;
 	ip->i_size = 0;
 	ip->i_blocks = 0;
 	ip->i_mode = 0;
@@ -405,10 +407,11 @@ ext2_valloc(struct vnode *pvp, int mode, struct ucred *cred, struct vnode **vpp)
 
 	/*
 	 * Set up a new generation number for this inode.
-	 * XXX check if this makes sense in ext2
+	 * Avoid zero values.
 	 */
-	if (ip->i_gen == 0 || ++ip->i_gen == 0)
-		ip->i_gen = random() / 2 + 1;
+	do {
+		ip->i_gen = arc4random();
+	} while ( ip->i_gen == 0);
 
 	vfs_timestamp(&ts);
 	ip->i_birthtime = ts.tv_sec;
@@ -443,11 +446,11 @@ static u_long
 ext2_dirpref(struct inode *pip)
 {
 	struct m_ext2fs *fs;
-	int cg, prefcg, dirsize, cgsize;
+	int cg, prefcg, cgsize;
 	u_int avgifree, avgbfree, avgndir, curdirsize;
 	u_int minifree, minbfree, maxndir;
 	u_int mincg, minndir;
-	u_int maxcontigdirs;
+	u_int dirsize, maxcontigdirs;
 
 	mtx_assert(EXT2_MTX(pip->i_ump), MA_OWNED);
 	fs = pip->i_e2fs;
@@ -498,10 +501,7 @@ ext2_dirpref(struct inode *pip)
 	curdirsize = avgndir ? (cgsize - avgbfree * fs->e2fs_bsize) / avgndir : 0;
 	if (dirsize < curdirsize)
 		dirsize = curdirsize;
-	if (dirsize <= 0)
-		maxcontigdirs = 0;		/* dirsize overflowed */
-	else
-		maxcontigdirs = min((avgbfree * fs->e2fs_bsize) / dirsize, 255);
+	maxcontigdirs = min((avgbfree * fs->e2fs_bsize) / dirsize, 255);
 	maxcontigdirs = min(maxcontigdirs, fs->e2fs_ipg / AFPDIR);
 	if (maxcontigdirs == 0)
 		maxcontigdirs = 1;
@@ -968,8 +968,8 @@ ext2_blkfree(struct inode *ip, e4fs_daddr_t bno, long size)
 	ump = ip->i_ump;
 	cg = dtog(fs, bno);
 	if ((u_int)bno >= fs->e2fs->e2fs_bcount) {
-		printf("bad block %lld, ino %llu\n", (long long)bno,
-		    (unsigned long long)ip->i_number);
+		printf("bad block %lld, ino %ju\n", (long long)bno,
+		    (uintmax_t)ip->i_number);
 		ext2_fserr(fs, ip->i_uid, "bad block");
 		return;
 	}

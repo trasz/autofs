@@ -1,6 +1,6 @@
 /******************************************************************************
 
-  Copyright (c) 2001-2012, Intel Corporation 
+  Copyright (c) 2001-2015, Intel Corporation 
   All rights reserved.
   
   Redistribution and use in source and binary forms, with or without 
@@ -97,7 +97,7 @@
 /*********************************************************************
  *  Legacy Em Driver version:
  *********************************************************************/
-char lem_driver_version[] = "1.0.6";
+char lem_driver_version[] = "1.1.0";
 
 /*********************************************************************
  *  PCI Device ID Table
@@ -180,6 +180,7 @@ static int	lem_resume(device_t);
 static void	lem_start(if_t);
 static void	lem_start_locked(if_t ifp);
 static int	lem_ioctl(if_t, u_long, caddr_t);
+static uint64_t	lem_get_counter(if_t, ift_counter);
 static void	lem_init(void *);
 static void	lem_init_locked(struct adapter *);
 static void	lem_stop(void *);
@@ -259,7 +260,7 @@ static void	lem_add_rx_process_limit(struct adapter *, const char *,
 		    const char *, int *, int);
 
 #ifdef DEVICE_POLLING
-static poll_handler_drv_t lem_poll;
+static poll_handler_t lem_poll;
 #endif /* POLLING */
 
 /*********************************************************************
@@ -285,6 +286,9 @@ extern devclass_t em_devclass;
 DRIVER_MODULE(lem, pci, lem_driver, em_devclass, 0, 0);
 MODULE_DEPEND(lem, pci, 1, 1, 1);
 MODULE_DEPEND(lem, ether, 1, 1, 1);
+#ifdef DEV_NETMAP
+MODULE_DEPEND(lem, netmap, 1, 1, 1);
+#endif /* DEV_NETMAP */
 
 /*********************************************************************
  *  Tunable default values.
@@ -788,7 +792,7 @@ lem_detach(device_t dev)
 
 #ifdef DEVICE_POLLING
 	if (if_getcapenable(ifp) & IFCAP_POLLING)
-		ether_poll_deregister_drv(ifp);
+		ether_poll_deregister(ifp);
 #endif
 
 	if (adapter->led_dev != NULL)
@@ -1049,7 +1053,8 @@ lem_ioctl(if_t ifp, u_long command, caddr_t data)
 		if_setmtu(ifp, ifr->ifr_mtu);
 		adapter->max_frame_size =
 		    if_getmtu(ifp) + ETHER_HDR_LEN + ETHER_CRC_LEN;
-		lem_init_locked(adapter);
+		if (if_getdrvflags(ifp) & IFF_DRV_RUNNING)
+			lem_init_locked(adapter);
 		EM_CORE_UNLOCK(adapter);
 		break;
 	    }
@@ -1118,7 +1123,7 @@ lem_ioctl(if_t ifp, u_long command, caddr_t data)
 #ifdef DEVICE_POLLING
 		if (mask & IFCAP_POLLING) {
 			if (ifr->ifr_reqcap & IFCAP_POLLING) {
-				error = ether_poll_register_drv(lem_poll, ifp);
+				error = ether_poll_register(lem_poll, ifp);
 				if (error)
 					return (error);
 				EM_CORE_LOCK(adapter);
@@ -1126,7 +1131,7 @@ lem_ioctl(if_t ifp, u_long command, caddr_t data)
 				if_setcapenablebit(ifp, IFCAP_POLLING, 0);
 				EM_CORE_UNLOCK(adapter);
 			} else {
-				error = ether_poll_deregister_drv(ifp);
+				error = ether_poll_deregister(ifp);
 				/* Enable interrupt even in error case */
 				EM_CORE_LOCK(adapter);
 				lem_enable_intr(adapter);
@@ -1671,9 +1676,9 @@ lem_xmit(struct adapter *adapter, struct mbuf **m_headp)
 	if (error == EFBIG) {
 		struct mbuf *m;
 
-		m = m_defrag(*m_headp, M_NOWAIT);
+		m = m_collapse(*m_headp, M_NOWAIT, EM_MAX_SCATTER);
 		if (m == NULL) {
-			adapter->mbuf_alloc_failed++;
+			adapter->mbuf_defrag_failed++;
 			m_freem(*m_headp);
 			*m_headp = NULL;
 			return (ENOBUFS);
@@ -1695,7 +1700,7 @@ lem_xmit(struct adapter *adapter, struct mbuf **m_headp)
 		return (error);
 	}
 
-        if (nsegs > (adapter->num_tx_desc_avail - 2)) {
+        if (adapter->num_tx_desc_avail < (nsegs + 2)) {
                 adapter->no_tx_desc_avail2++;
 		bus_dmamap_unload(adapter->txtag, map);
 		return (ENOBUFS);
@@ -2408,7 +2413,7 @@ lem_hardware_init(struct adapter *adapter)
 	 *   received after sending an XOFF.
 	 * - Low water mark works best when it is very near the high water mark.
 	 *   This allows the receiver to restart by sending XON when it has
-	 *   drained a bit. Here we use an arbitary value of 1500 which will
+	 *   drained a bit. Here we use an arbitrary value of 1500 which will
 	 *   restart after one full frame is pulled from the buffer. There
 	 *   could be several smaller frames in the buffer and if so they will
 	 *   not trigger the XON until their total number reduces the buffer
@@ -2464,6 +2469,7 @@ lem_setup_interface(device_t dev, struct adapter *adapter)
 	if_setflags(ifp, IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST);
 	if_setioctlfn(ifp, lem_ioctl);
 	if_setstartfn(ifp, lem_start);
+	if_setgetcounterfn(ifp, lem_get_counter);
 	if_setsendqlen(ifp, adapter->num_tx_desc - 1);
 	if_setsendqready(ifp);
 
@@ -2908,10 +2914,6 @@ lem_free_transmit_structures(struct adapter *adapter)
 		bus_dma_tag_destroy(adapter->txtag);
 		adapter->txtag = NULL;
 	}
-#if __FreeBSD_version >= 800000
-	if (adapter->br != NULL)
-        	buf_ring_free(adapter->br, M_DEVBUF);
-#endif
 }
 
 /*********************************************************************
@@ -3122,7 +3124,7 @@ lem_txeof(struct adapter *adapter)
                 	++num_avail;
 
 			if (tx_buffer->m_head) {
-				if_incopackets(ifp, 1);
+				if_inc_counter(ifp, IFCOUNTER_OPACKETS, 1);
 				bus_dmamap_sync(adapter->txtag,
 				    tx_buffer->map,
 				    BUS_DMASYNC_POSTWRITE);
@@ -3681,7 +3683,7 @@ lem_rxeof(struct adapter *adapter, int count, int *done)
 
 		if (accept_frame) {
 			if (lem_get_buf(adapter, i) != 0) {
-				if_inciqdrops(ifp, 1);
+				if_inc_counter(ifp, IFCOUNTER_IQDROPS, 1);
 				goto discard;
 			}
 
@@ -3712,7 +3714,7 @@ lem_rxeof(struct adapter *adapter, int count, int *done)
 
 			if (eop) {
 				if_setrcvif(adapter->fmp, ifp);
-				if_incipackets(ifp, 1);
+				if_inc_counter(ifp, IFCOUNTER_IPACKETS, 1);
 				lem_receive_checksum(adapter, current_desc,
 				    adapter->fmp);
 #ifndef __NO_STRICT_ALIGNMENT
@@ -3837,7 +3839,7 @@ discard:
  * copy ethernet header to the new mbuf. The new mbuf is prepended into the
  * existing mbuf chain.
  *
- * Be aware, best performance of the 8254x is achived only when jumbo frame is
+ * Be aware, best performance of the 8254x is achieved only when jumbo frame is
  * not used at all on architectures with strict alignment.
  */
 static int
@@ -4397,7 +4399,6 @@ lem_fill_descriptors (bus_addr_t address, u32 length,
 static void
 lem_update_stats_counters(struct adapter *adapter)
 {
-	if_t ifp;
 
 	if(adapter->hw.phy.media_type == e1000_media_type_copper ||
 	   (E1000_READ_REG(&adapter->hw, E1000_STATUS) & E1000_STATUS_LU)) {
@@ -4472,19 +4473,29 @@ lem_update_stats_counters(struct adapter *adapter)
 		adapter->stats.tsctfc += 
 		E1000_READ_REG(&adapter->hw, E1000_TSCTFC);
 	}
-	ifp = adapter->ifp;
+}
 
-	if_setcollisions(ifp, adapter->stats.colc);
+static uint64_t
+lem_get_counter(if_t ifp, ift_counter cnt)
+{
+	struct adapter *adapter;
 
-	/* Rx Errors */
-	if_setierrors(ifp, adapter->dropped_pkts + adapter->stats.rxerrc +
-	    adapter->stats.crcerrs + adapter->stats.algnerrc +
-	    adapter->stats.ruc + adapter->stats.roc +
-	    adapter->stats.mpc + adapter->stats.cexterr);
+	adapter = if_getsoftc(ifp);
 
-	/* Tx Errors */
-	if_setoerrors(ifp, adapter->stats.ecol + adapter->stats.latecol +
-	    adapter->watchdog_events);
+	switch (cnt) {
+	case IFCOUNTER_COLLISIONS:
+		return (adapter->stats.colc);
+	case IFCOUNTER_IERRORS:
+		return (adapter->dropped_pkts + adapter->stats.rxerrc +
+		    adapter->stats.crcerrs + adapter->stats.algnerrc +
+		    adapter->stats.ruc + adapter->stats.roc +
+		    adapter->stats.mpc + adapter->stats.cexterr);
+	case IFCOUNTER_OERRORS:
+		return (adapter->stats.ecol + adapter->stats.latecol +
+		    adapter->watchdog_events);
+	default:
+		return (if_get_counter_default(ifp, cnt));
+	}
 }
 
 /* Export a single 32-bit register via a read-only sysctl. */
@@ -4516,12 +4527,12 @@ lem_add_hw_stats(struct adapter *adapter)
 	struct sysctl_oid_list *stat_list;
 
 	/* Driver Statistics */
-	SYSCTL_ADD_ULONG(ctx, child, OID_AUTO, "mbuf_alloc_fail", 
-			 CTLFLAG_RD, &adapter->mbuf_alloc_failed,
-			 "Std mbuf failed");
 	SYSCTL_ADD_ULONG(ctx, child, OID_AUTO, "cluster_alloc_fail", 
 			 CTLFLAG_RD, &adapter->mbuf_cluster_failed,
 			 "Std mbuf cluster failed");
+	SYSCTL_ADD_ULONG(ctx, child, OID_AUTO, "mbuf_defrag_fail", 
+			 CTLFLAG_RD, &adapter->mbuf_defrag_failed,
+			 "Defragmenting mbuf chain failed");
 	SYSCTL_ADD_ULONG(ctx, child, OID_AUTO, "dropped", 
 			CTLFLAG_RD, &adapter->dropped_pkts,
 			"Driver dropped packets");
@@ -4850,7 +4861,7 @@ lem_set_flow_cntrl(struct adapter *adapter, const char *name,
 	*limit = value;
 	SYSCTL_ADD_INT(device_get_sysctl_ctx(adapter->dev),
 	    SYSCTL_CHILDREN(device_get_sysctl_tree(adapter->dev)),
-	    OID_AUTO, name, CTLTYPE_INT|CTLFLAG_RW, limit, value, description);
+	    OID_AUTO, name, CTLFLAG_RW, limit, value, description);
 }
 
 static void
@@ -4860,5 +4871,5 @@ lem_add_rx_process_limit(struct adapter *adapter, const char *name,
 	*limit = value;
 	SYSCTL_ADD_INT(device_get_sysctl_ctx(adapter->dev),
 	    SYSCTL_CHILDREN(device_get_sysctl_tree(adapter->dev)),
-	    OID_AUTO, name, CTLTYPE_INT|CTLFLAG_RW, limit, value, description);
+	    OID_AUTO, name, CTLFLAG_RW, limit, value, description);
 }

@@ -32,6 +32,8 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
+#include "opt_ktrace.h"
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/limits.h>
@@ -54,6 +56,9 @@ __FBSDID("$FreeBSD$");
 #include <sys/timers.h>
 #include <sys/timetc.h>
 #include <sys/vnode.h>
+#ifdef KTRACE
+#include <sys/ktrace.h>
+#endif
 
 #include <vm/vm.h>
 #include <vm/vm_extern.h>
@@ -115,9 +120,7 @@ settime(struct thread *td, struct timeval *tv)
 	struct timeval delta, tv1, tv2;
 	static struct timeval maxtime, laststep;
 	struct timespec ts;
-	int s;
 
-	s = splclock();
 	microtime(&tv1);
 	delta = *tv;
 	timevalsub(&delta, &tv1);
@@ -147,10 +150,8 @@ settime(struct thread *td, struct timeval *tv)
 				printf("Time adjustment clamped to -1 second\n");
 			}
 		} else {
-			if (tv1.tv_sec == laststep.tv_sec) {
-				splx(s);
+			if (tv1.tv_sec == laststep.tv_sec)
 				return (EPERM);
-			}
 			if (delta.tv_sec > 1) {
 				tv->tv_sec = tv1.tv_sec + 1;
 				printf("Time adjustment clamped to +1 second\n");
@@ -161,10 +162,8 @@ settime(struct thread *td, struct timeval *tv)
 
 	ts.tv_sec = tv->tv_sec;
 	ts.tv_nsec = tv->tv_usec * 1000;
-	mtx_lock(&Giant);
 	tc_setclock(&ts);
 	resettodr();
-	mtx_unlock(&Giant);
 	return (0);
 }
 
@@ -200,13 +199,10 @@ kern_clock_getcpuclockid2(struct thread *td, id_t id, int which,
 	switch (which) {
 	case CPUCLOCK_WHICH_PID:
 		if (id != 0) {
-			p = pfind(id);
-			if (p == NULL)
-				return (ESRCH);
-			error = p_cansee(td, p);
-			PROC_UNLOCK(p);
+			error = pget(id, PGET_CANSEE | PGET_NOTID, &p);
 			if (error != 0)
 				return (error);
+			PROC_UNLOCK(p);
 			pid = id;
 		} else {
 			pid = td->td_proc->p_pid;
@@ -276,10 +272,10 @@ get_process_cputime(struct proc *targetp, struct timespec *ats)
 	uint64_t runtime;
 	struct rusage ru;
 
-	PROC_SLOCK(targetp);
+	PROC_STATLOCK(targetp);
 	rufetch(targetp, &ru);
 	runtime = targetp->p_rux.rux_runtime;
-	PROC_SUNLOCK(targetp);
+	PROC_STATUNLOCK(targetp);
 	cputick2timespec(runtime, ats);
 }
 
@@ -328,17 +324,17 @@ kern_clock_gettime(struct thread *td, clockid_t clock_id, struct timespec *ats)
 		break;
 	case CLOCK_VIRTUAL:
 		PROC_LOCK(p);
-		PROC_SLOCK(p);
+		PROC_STATLOCK(p);
 		calcru(p, &user, &sys);
-		PROC_SUNLOCK(p);
+		PROC_STATUNLOCK(p);
 		PROC_UNLOCK(p);
 		TIMEVAL_TO_TIMESPEC(&user, ats);
 		break;
 	case CLOCK_PROF:
 		PROC_LOCK(p);
-		PROC_SLOCK(p);
+		PROC_STATLOCK(p);
 		calcru(p, &user, &sys);
-		PROC_SUNLOCK(p);
+		PROC_STATUNLOCK(p);
 		PROC_UNLOCK(p);
 		timevaladd(&user, &sys);
 		TIMEVAL_TO_TIMESPEC(&user, ats);
@@ -401,7 +397,8 @@ kern_clock_settime(struct thread *td, clockid_t clock_id, struct timespec *ats)
 		return (error);
 	if (clock_id != CLOCK_REALTIME)
 		return (EINVAL);
-	if (ats->tv_nsec < 0 || ats->tv_nsec >= 1000000000)
+	if (ats->tv_nsec < 0 || ats->tv_nsec >= 1000000000 ||
+	    ats->tv_sec < 0)
 		return (EINVAL);
 	/* XXX Don't convert nsec->usec and back */
 	TIMESPEC_TO_TIMEVAL(&atv, ats);
@@ -455,7 +452,7 @@ kern_clock_getres(struct thread *td, clockid_t clock_id, struct timespec *ts)
 	case CLOCK_VIRTUAL:
 	case CLOCK_PROF:
 		/* Accurately round up here because we can do so cheaply. */
-		ts->tv_nsec = (1000000000 + hz - 1) / hz;
+		ts->tv_nsec = howmany(1000000000, hz);
 		break;
 	case CLOCK_SECOND:
 		ts->tv_sec = 1;
@@ -621,7 +618,8 @@ kern_settimeofday(struct thread *td, struct timeval *tv, struct timezone *tzp)
 		return (error);
 	/* Verify all parameters before changing time. */
 	if (tv) {
-		if (tv->tv_usec < 0 || tv->tv_usec >= 1000000)
+		if (tv->tv_usec < 0 || tv->tv_usec >= 1000000 ||
+		    tv->tv_sec < 0)
 			return (EINVAL);
 		error = settime(td, tv);
 	}
@@ -698,10 +696,14 @@ kern_getitimer(struct thread *td, u_int which, struct itimerval *aitv)
 				timevalsub(&aitv->it_value, &ctv);
 		}
 	} else {
-		PROC_SLOCK(p);
+		PROC_ITIMLOCK(p);
 		*aitv = p->p_stats->p_timer[which];
-		PROC_SUNLOCK(p);
+		PROC_ITIMUNLOCK(p);
 	}
+#ifdef KTRACE
+	if (KTRPOINT(td, KTR_STRUCT))
+		ktritimerval(aitv);
+#endif
 	return (0);
 }
 
@@ -743,6 +745,10 @@ kern_setitimer(struct thread *td, u_int which, struct itimerval *aitv,
 
 	if (which > ITIMER_PROF)
 		return (EINVAL);
+#ifdef KTRACE
+	if (KTRPOINT(td, KTR_STRUCT))
+		ktritimerval(aitv);
+#endif
 	if (itimerfix(&aitv->it_value) ||
 	    aitv->it_value.tv_sec > INT32_MAX / 2)
 		return (EINVAL);
@@ -782,11 +788,15 @@ kern_setitimer(struct thread *td, u_int which, struct itimerval *aitv,
 		    aitv->it_value.tv_usec != 0 &&
 		    aitv->it_value.tv_usec < tick)
 			aitv->it_value.tv_usec = tick;
-		PROC_SLOCK(p);
+		PROC_ITIMLOCK(p);
 		*oitv = p->p_stats->p_timer[which];
 		p->p_stats->p_timer[which] = *aitv;
-		PROC_SUNLOCK(p);
+		PROC_ITIMUNLOCK(p);
 	}
+#ifdef KTRACE
+	if (KTRPOINT(td, KTR_STRUCT))
+		ktritimerval(oitv);
+#endif
 	return (0);
 }
 
@@ -985,7 +995,7 @@ ppsratecheck(struct timeval *lasttime, int *curpps, int maxpps)
 		return (maxpps != 0);
 	} else {
 		(*curpps)++;		/* NB: ignore potential overflow */
-		return (maxpps < 0 || *curpps < maxpps);
+		return (maxpps < 0 || *curpps <= maxpps);
 	}
 }
 

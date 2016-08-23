@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014 Qlogic Corporation
+ * Copyright (c) 2013-2016 Qlogic Corporation
  * All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -156,10 +156,10 @@ qla_rx_intr(qla_host_t *ha, qla_sgl_rcv_t *sgc, uint32_t sds_idx)
 		mpf->m_pkthdr.csum_flags = 0;
 	}
 
-	ifp->if_ipackets++;
+	if_inc_counter(ifp, IFCOUNTER_IPACKETS, 1);
 
 	mpf->m_pkthdr.flowid = sgc->rss_hash;
-	mpf->m_flags |= M_FLOWID;
+	M_HASHTYPE_SET(mpf, M_HASHTYPE_OPAQUE_HASH);
 
 	(*ifp->if_input)(ifp, mpf);
 
@@ -303,6 +303,9 @@ qla_lro_intr(qla_host_t *ha, qla_sgl_lro_t *sgc, uint32_t sds_idx)
                 ip->ip_len = htons(iplen);
 
 		ha->ipv4_lro++;
+
+		M_HASHTYPE_SET(mpf, M_HASHTYPE_RSS_TCP_IPV4);
+
 	} else if (etype == ETHERTYPE_IPV6) {
 		ip6 = (struct ip6_hdr *)(mpf->m_data + ETHER_HDR_LEN);
 
@@ -311,6 +314,9 @@ qla_lro_intr(qla_host_t *ha, qla_sgl_lro_t *sgc, uint32_t sds_idx)
 		ip6->ip6_plen = htons(iplen);
 
 		ha->ipv6_lro++;
+
+		M_HASHTYPE_SET(mpf, M_HASHTYPE_RSS_TCP_IPV6);
+
 	} else {
 		m_freem(mpf);
 
@@ -324,9 +330,8 @@ qla_lro_intr(qla_host_t *ha, qla_sgl_lro_t *sgc, uint32_t sds_idx)
 	mpf->m_pkthdr.csum_data = 0xFFFF;
 
 	mpf->m_pkthdr.flowid = sgc->rss_hash;
-	mpf->m_flags |= M_FLOWID;
 
-	ifp->if_ipackets++;
+	if_inc_counter(ifp, IFCOUNTER_IPACKETS, 1);
 
 	(*ifp->if_input)(ifp, mpf);
 
@@ -458,6 +463,8 @@ qla_rcv_isr(qla_host_t *ha, uint32_t sds_idx, uint32_t count)
 	qla_sgl_comp_t sgc;
 	uint16_t nhandles;
 	uint32_t sds_replenish_threshold = 0;
+	uint32_t r_idx = 0;
+	qla_sds_t *sdsp;
 
 	dev = ha->pci_dev;
 	hw = &ha->hw;
@@ -700,8 +707,18 @@ qla_rcv_isr(qla_host_t *ha, uint32_t sds_idx, uint32_t count)
 
 	if (hw->sds[sds_idx].sdsr_next != comp_idx) {
 		QL_UPDATE_SDS_CONSUMER_INDEX(ha, sds_idx, comp_idx);
+		hw->sds[sds_idx].sdsr_next = comp_idx;
+	} else {
+		hw->sds[sds_idx].spurious_intr_count++;
+
+		if (ha->hw.num_rds_rings > 1)
+			r_idx = sds_idx;
+
+		sdsp = &ha->hw.sds[sds_idx];
+
+		if (sdsp->rx_free > ha->std_replenish)
+			qla_replenish_normal_rx(ha, sdsp, r_idx);
 	}
-	hw->sds[sds_idx].sdsr_next = comp_idx;
 
 	sdesc = (q80_stat_desc_t *)&hw->sds[sds_idx].sds_ring_base[comp_idx];
 	opcode = Q8_STAT_DESC_OPCODE((sdesc->data[1]));
@@ -776,16 +793,71 @@ ql_mbx_isr(void *arg)
 
 		ha->hw.link_faults = (data >> 3) & 0xFF;
 
-		WRITE_REG32(ha, Q8_FW_MBOX_CNTRL, 0x0);
-		WRITE_REG32(ha, ha->hw.mbx_intr_mask_offset, 0x0);
+		break;
+
+        case 0x8100:
+		ha->hw.imd_compl=1;
+		break;
+
+        case 0x8101:
+                ha->async_event = 1;
+                ha->hw.aen_mb0 = 0x8101;
+                ha->hw.aen_mb1 = READ_REG32(ha, (Q8_FW_MBOX0 + 4));
+                ha->hw.aen_mb2 = READ_REG32(ha, (Q8_FW_MBOX0 + 8));
+                ha->hw.aen_mb3 = READ_REG32(ha, (Q8_FW_MBOX0 + 12));
+                ha->hw.aen_mb4 = READ_REG32(ha, (Q8_FW_MBOX0 + 16));
+                break;
+
+        case 0x8110:
+                /* for now just dump the registers */
+                {
+                        uint32_t ombx[5];
+
+                        ombx[0] = READ_REG32(ha, (Q8_FW_MBOX0 + 4));
+                        ombx[1] = READ_REG32(ha, (Q8_FW_MBOX0 + 8));
+                        ombx[2] = READ_REG32(ha, (Q8_FW_MBOX0 + 12));
+                        ombx[3] = READ_REG32(ha, (Q8_FW_MBOX0 + 16));
+                        ombx[4] = READ_REG32(ha, (Q8_FW_MBOX0 + 20));
+
+                        device_printf(ha->pci_dev, "%s: "
+                                "0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x\n",
+                                __func__, data, ombx[0], ombx[1], ombx[2],
+                                ombx[3], ombx[4]);
+                }
+
+                break;
+
+        case 0x8130:
+                /* sfp insertion aen */
+                device_printf(ha->pci_dev, "%s: sfp inserted [0x%08x]\n",
+                        __func__, READ_REG32(ha, (Q8_FW_MBOX0 + 4)));
+                break;
+
+        case 0x8131:
+                /* sfp removal aen */
+                device_printf(ha->pci_dev, "%s: sfp removed]\n", __func__);
+                break;
+
+	case 0x8140:
+		{
+			uint32_t ombx[3];
+
+			ombx[0] = READ_REG32(ha, (Q8_FW_MBOX0 + 4));
+			ombx[1] = READ_REG32(ha, (Q8_FW_MBOX0 + 8));
+			ombx[2] = READ_REG32(ha, (Q8_FW_MBOX0 + 12));
+
+			device_printf(ha->pci_dev, "%s: "
+				"0x%08x 0x%08x 0x%08x 0x%08x \n",
+				__func__, data, ombx[0], ombx[1], ombx[2]);
+		}
 		break;
 
 	default:
 		device_printf(ha->pci_dev, "%s: AEN[0x%08x]\n", __func__, data);
-		WRITE_REG32(ha, Q8_FW_MBOX_CNTRL, 0x0);
-		WRITE_REG32(ha, ha->hw.mbx_intr_mask_offset, 0x0);
 		break;
 	}
+	WRITE_REG32(ha, Q8_FW_MBOX_CNTRL, 0x0);
+	WRITE_REG32(ha, ha->hw.mbx_intr_mask_offset, 0x0);
 	return;
 }
 
@@ -826,8 +898,8 @@ qla_replenish_normal_rx(qla_host_t *ha, qla_sds_t *sdsp, uint32_t r_idx)
 				rdesc->rx_next = 0;
 		} else {
 			device_printf(ha->pci_dev,
-				"%s: ql_get_mbuf [0,(%d),(%d)] failed\n",
-				__func__, rdesc->rx_in, rxb->handle);
+				"%s: qla_get_mbuf [(%d),(%d),(%d)] failed\n",
+				__func__, r_idx, rdesc->rx_in, rxb->handle);
 
 			rxb->m_head = NULL;
 			rxb->next = sdsp->rxb_free;

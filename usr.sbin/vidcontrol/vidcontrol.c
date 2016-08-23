@@ -197,8 +197,8 @@ usage(void)
 {
 	if (vt4_mode)
 		fprintf(stderr, "%s\n%s\n%s\n%s\n%s\n",
-"usage: vidcontrol [-CHPpx] [-b color] [-c appearance] [-f [size] file]",
-"                  [-g geometry] [-h size] [-i adapter | mode]",
+"usage: vidcontrol [-CHPpx] [-b color] [-c appearance] [-f [[size] file]]",
+"                  [-g geometry] [-h size] [-i active | adapter | mode]",
 "                  [-M char] [-m on | off] [-r foreground background]",
 "                  [-S on | off] [-s number] [-T xterm | cons25] [-t N | off]",
 "                  [mode] [foreground [background]] [show]");
@@ -407,6 +407,19 @@ load_vt4mappingtable(unsigned int nmappings, FILE *f)
 	}
 
 	return (t);
+}
+
+/*
+ * Set the default vt font.
+ */
+
+static void
+load_default_vt4font(void)
+{
+	if (ioctl(0, PIO_VFONT_DEFAULT) == -1) {
+		revert();
+		errc(1, errno, "loading default vt font");
+	}
 }
 
 static int
@@ -1022,6 +1035,18 @@ static const char
 
 
 /*
+ * Show active VTY, ie current console number.
+ */
+
+static void
+show_active_info(void)
+{
+
+	printf("%d\n", cur_info.active_vty);
+}
+
+
+/*
  * Show graphics adapter information.
  */
 
@@ -1072,11 +1097,15 @@ show_mode_info(void)
 	printf("---------------------------------------"
 	       "---------------------------------------\n");
 
+	memset(&_info, 0, sizeof(_info));
 	for (mode = 0; mode <= M_VESA_MODE_MAX; ++mode) {
 		_info.vi_mode = mode;
 		if (ioctl(0, CONS_MODEINFO, &_info))
 			continue;
 		if (_info.vi_mode != mode)
+			continue;
+		if (_info.vi_width == 0 && _info.vi_height == 0 &&
+		    _info.vi_cwidth == 0 && _info.vi_cheight == 0)
 			continue;
 
 		printf("%3d (0x%03x)", mode, mode);
@@ -1136,13 +1165,16 @@ show_mode_info(void)
 static void
 show_info(char *arg)
 {
-	if (!strcmp(arg, "adapter")) {
+
+	if (!strcmp(arg, "active")) {
+		show_active_info();
+	} else if (!strcmp(arg, "adapter")) {
 		show_adapter_info();
 	} else if (!strcmp(arg, "mode")) {
 		show_mode_info();
 	} else {
 		revert();
-		errx(1, "argument to -i must be either adapter or mode");
+		errx(1, "argument to -i must be active, adapter, or mode");
 	}
 }
 
@@ -1328,9 +1360,9 @@ main(int argc, char **argv)
 	dumpopt = DUMP_FBF;
 	termmode = NULL;
 	if (vt4_mode)
-		opts = "b:Cc:f:g:h:Hi:M:m:pPr:S:s:T:t:x";
+		opts = "b:Cc:fg:h:Hi:M:m:pPr:S:s:T:t:x";
 	else
-		opts = "b:Cc:df:g:h:Hi:l:LM:m:pPr:S:s:T:t:x";
+		opts = "b:Cc:dfg:h:Hi:l:LM:m:pPr:S:s:T:t:x";
 
 	while ((opt = getopt(argc, argv, opts)) != -1)
 		switch(opt) {
@@ -1349,15 +1381,23 @@ main(int argc, char **argv)
 			print_scrnmap();
 			break;
 		case 'f':
-			type = optarg;
-			font = nextarg(argc, argv, &optind, 'f', 0);
+			optarg = nextarg(argc, argv, &optind, 'f', 0);
+			if (optarg != NULL) {
+				font = nextarg(argc, argv, &optind, 'f', 0);
 
-			if (font == NULL) {
-				type = NULL;
-				font = optarg;
+				if (font == NULL) {
+					type = NULL;
+					font = optarg;
+				} else
+					type = optarg;
+
+				load_font(type, font);
+			} else {
+				if (!vt4_mode)
+					usage(); /* Switch syscons to ROM? */
+
+				load_default_vt4font();
 			}
-
-			load_font(type, font);
 			break;
 		case 'g':
 			if (sscanf(optarg, "%dx%d",

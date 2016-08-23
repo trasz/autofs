@@ -962,10 +962,6 @@ msk_jumbo_newbuf(struct msk_if_softc *sc_if, int idx)
 	m = m_getjcl(M_NOWAIT, MT_DATA, M_PKTHDR, MJUM9BYTES);
 	if (m == NULL)
 		return (ENOBUFS);
-	if ((m->m_flags & M_EXT) == 0) {
-		m_freem(m);
-		return (ENOBUFS);
-	}
 	m->m_len = m->m_pkthdr.len = MJUM9BYTES;
 	if ((sc_if->msk_flags & MSK_FLAG_RAMBUF) == 0)
 		m_adj(m, ETHER_ALIGN);
@@ -1627,7 +1623,7 @@ msk_attach(device_t dev)
 	callout_init_mtx(&sc_if->msk_tick_ch, &sc_if->msk_softc->msk_mtx, 0);
 	msk_sysctl_node(sc_if);
 
-	if ((error = msk_txrx_dma_alloc(sc_if) != 0))
+	if ((error = msk_txrx_dma_alloc(sc_if)) != 0)
 		goto fail;
 	msk_rx_dma_jalloc(sc_if);
 
@@ -1957,12 +1953,6 @@ mskc_attach(device_t dev)
 		goto fail;
 	}
 	mmd = malloc(sizeof(struct msk_mii_data), M_DEVBUF, M_WAITOK | M_ZERO);
-	if (mmd == NULL) {
-		device_printf(dev, "failed to allocate memory for "
-		    "ivars of PORT_A\n");
-		error = ENXIO;
-		goto fail;
-	}
 	mmd->port = MSK_PORT_A;
 	mmd->pmd = sc->msk_pmd;
 	mmd->mii_flags |= MIIF_DOPAUSE;
@@ -1981,12 +1971,6 @@ mskc_attach(device_t dev)
 		}
 		mmd = malloc(sizeof(struct msk_mii_data), M_DEVBUF, M_WAITOK |
 		    M_ZERO);
-		if (mmd == NULL) {
-			device_printf(dev, "failed to allocate memory for "
-			    "ivars of PORT_B\n");
-			error = ENXIO;
-			goto fail;
-		}
 		mmd->port = MSK_PORT_B;
 		mmd->pmd = sc->msk_pmd;
 		if (sc->msk_pmd == 'L' || sc->msk_pmd == 'S')
@@ -2063,11 +2047,11 @@ msk_detach(device_t dev)
 	msk_txrx_dma_free(sc_if);
 	bus_generic_detach(dev);
 
-	if (ifp)
-		if_free(ifp);
 	sc = sc_if->msk_softc;
 	sc->msk_if[sc_if->msk_port] = NULL;
 	MSK_IF_UNLOCK(sc_if);
+	if (ifp)
+		if_free(ifp);
 
 	return (0);
 }
@@ -2987,14 +2971,14 @@ msk_watchdog(struct msk_if_softc *sc_if)
 		if (bootverbose)
 			if_printf(sc_if->msk_ifp, "watchdog timeout "
 			   "(missed link)\n");
-		ifp->if_oerrors++;
+		if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 		ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
 		msk_init_locked(sc_if);
 		return;
 	}
 
 	if_printf(ifp, "watchdog timeout\n");
-	ifp->if_oerrors++;
+	if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 	ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
 	msk_init_locked(sc_if);
 	if (!IFQ_DRV_IS_EMPTY(&ifp->if_snd))
@@ -3216,7 +3200,7 @@ msk_rxeof(struct msk_if_softc *sc_if, uint32_t status, uint32_t control,
 			 * handle this frame.
 			 */
 			if (len > MSK_MAX_FRAMELEN || len < ETHER_HDR_LEN) {
-				ifp->if_ierrors++;
+				if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 				msk_discard_rxbuf(sc_if, cons);
 				break;
 			}
@@ -3225,7 +3209,7 @@ msk_rxeof(struct msk_if_softc *sc_if, uint32_t status, uint32_t control,
 		    ((status & GMR_FS_RX_OK) == 0) || (rxlen != len)) {
 			/* Don't count flow-control packet as errors. */
 			if ((status & GMR_FS_GOOD_FC) == 0)
-				ifp->if_ierrors++;
+				if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 			msk_discard_rxbuf(sc_if, cons);
 			break;
 		}
@@ -3237,7 +3221,7 @@ msk_rxeof(struct msk_if_softc *sc_if, uint32_t status, uint32_t control,
 #endif
 		m = rxd->rx_m;
 		if (msk_newbuf(sc_if, cons) != 0) {
-			ifp->if_iqdrops++;
+			if_inc_counter(ifp, IFCOUNTER_IQDROPS, 1);
 			/* Reuse old buffer. */
 			msk_discard_rxbuf(sc_if, cons);
 			break;
@@ -3248,7 +3232,7 @@ msk_rxeof(struct msk_if_softc *sc_if, uint32_t status, uint32_t control,
 		if ((sc_if->msk_flags & MSK_FLAG_RAMBUF) != 0)
 			msk_fixup_rx(m);
 #endif
-		ifp->if_ipackets++;
+		if_inc_counter(ifp, IFCOUNTER_IPACKETS, 1);
 		if ((ifp->if_capenable & IFCAP_RXCSUM) != 0)
 			msk_rxcsum(sc_if, control, m);
 		/* Check for VLAN tagged packets. */
@@ -3290,7 +3274,7 @@ msk_jumbo_rxeof(struct msk_if_softc *sc_if, uint32_t status, uint32_t control,
 		    ((status & GMR_FS_RX_OK) == 0) || (rxlen != len)) {
 			/* Don't count flow-control packet as errors. */
 			if ((status & GMR_FS_GOOD_FC) == 0)
-				ifp->if_ierrors++;
+				if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 			msk_discard_jumbo_rxbuf(sc_if, cons);
 			break;
 		}
@@ -3302,7 +3286,7 @@ msk_jumbo_rxeof(struct msk_if_softc *sc_if, uint32_t status, uint32_t control,
 #endif
 		m = jrxd->rx_m;
 		if (msk_jumbo_newbuf(sc_if, cons) != 0) {
-			ifp->if_iqdrops++;
+			if_inc_counter(ifp, IFCOUNTER_IQDROPS, 1);
 			/* Reuse old buffer. */
 			msk_discard_jumbo_rxbuf(sc_if, cons);
 			break;
@@ -3313,7 +3297,7 @@ msk_jumbo_rxeof(struct msk_if_softc *sc_if, uint32_t status, uint32_t control,
 		if ((sc_if->msk_flags & MSK_FLAG_RAMBUF) != 0)
 			msk_fixup_rx(m);
 #endif
-		ifp->if_ipackets++;
+		if_inc_counter(ifp, IFCOUNTER_IPACKETS, 1);
 		if ((ifp->if_capenable & IFCAP_RXCSUM) != 0)
 			msk_rxcsum(sc_if, control, m);
 		/* Check for VLAN tagged packets. */
@@ -3368,7 +3352,7 @@ msk_txeof(struct msk_if_softc *sc_if, int idx)
 		    BUS_DMASYNC_POSTWRITE);
 		bus_dmamap_unload(sc_if->msk_cdata.msk_tx_tag, txd->tx_dmamap);
 
-		ifp->if_opackets++;
+		if_inc_counter(ifp, IFCOUNTER_OPACKETS, 1);
 		KASSERT(txd->tx_m != NULL, ("%s: freeing NULL mbuf!",
 		    __func__));
 		m_freem(txd->tx_m);
@@ -3497,7 +3481,7 @@ msk_intr_hwerr(struct msk_softc *sc)
 		CSR_WRITE_1(sc, GMAC_TI_ST_CTRL, GMT_ST_CLR_IRQ);
 	if ((status & Y2_IS_PCI_NEXP) != 0) {
 		/*
-		 * PCI Express Error occured which is not described in PEX
+		 * PCI Express Error occurred which is not described in PEX
 		 * spec.
 		 * This error is also mapped either to Master Abort(
 		 * Y2_IS_MST_ERR) or Target Abort (Y2_IS_IRQ_STAT) bit and

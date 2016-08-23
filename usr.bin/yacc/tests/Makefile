@@ -2,11 +2,9 @@
 
 .include <bsd.own.mk>
 
-TEST_DIR=	${.CURDIR}/../../../contrib/byacc/test
+TEST_DIR=	${SRCTOP}/contrib/byacc/test
 
 .PATH: ${TEST_DIR} ${TEST_DIR}/yacc
-
-TESTSDIR=	${TESTSBASE}/usr.bin/yacc
 
 PLAIN_TESTS_SH=	yacc_tests
 # NOTE: due to caveats with how permissions are handled on FreeBSD
@@ -17,7 +15,11 @@ TEST_METADATA.yacc_tests+=	required_user="unprivileged"
 SCRIPTS=	run_test
 SCRIPTSDIR=	${TESTSDIR}
 
-FILESGROUPS=	FILES FILEStest FILEStest_yacc
+CLEANFILES=	run_test
+
+FILESGROUPS+=	FILEStest FILEStest_yacc
+FILEStestPACKAGE=${PACKAGE}
+FILEStest_yaccPACKAGE=${PACKAGE}
 
 FILEStestDIR=	${TESTSDIR}
 

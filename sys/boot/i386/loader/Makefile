@@ -5,6 +5,7 @@ MK_SSP=		no
 
 LOADER?=	loader
 PROG=		${LOADER}.sym
+MAN=	
 INTERNALPROG=
 NEWVERSWHAT?=	"bootstrap loader" x86
 
@@ -57,6 +58,13 @@ CFLAGS+=	-DLOADER_GZIP_SUPPORT
 .if defined(LOADER_NANDFS_SUPPORT)
 CFLAGS+=	-DLOADER_NANDFS_SUPPORT
 .endif
+.if !defined(LOADER_NO_GELI_SUPPORT)
+CFLAGS+=	-DLOADER_GELI_SUPPORT
+LIBGELIBOOT=	${.OBJDIR}/../../geli/libgeliboot.a
+.PATH:		${.CURDIR}/../../../opencrypto
+SRCS+=		xform_aes_xts.c
+CFLAGS+=	-I${.CURDIR}/../../.. -D_STAND
+.endif
 
 # Always add MI sources
 .PATH:		${.CURDIR}/../../common
@@ -106,25 +114,17 @@ FILESMODE_${LOADER}= ${BINMODE} -b
 
 .if !defined(LOADER_ONLY)
 .PATH: ${.CURDIR}/../../forth
-FILES+=	loader.help loader.4th support.4th loader.conf
-FILES+= screen.4th frames.4th beastie.4th
-FILES+= brand.4th check-password.4th color.4th delay.4th
-FILES+= menu.4th menu-commands.4th menusets.4th shortcuts.4th version.4th
-FILESDIR_loader.conf=	/boot/defaults
+.include	"${.CURDIR}/../../forth/Makefile.inc"
+FILES+=	pcibios.4th
 
-.if !exists(${DESTDIR}/boot/loader.rc)
-FILES+=	loader.rc
-.endif
-.if !exists(${DESTDIR}/boot/menu.rc)
-FILES+= menu.rc
-.endif
+FILES+=	loader.rc menu.rc
 .endif
 
 # XXX crt0.o needs to be first for pxeboot(8) to work
 OBJS=	${BTXCRT}
 
-DPADD=	${LIBFICL} ${LIBFIREWIRE} ${LIBZFSBOOT} ${LIBI386} ${LIBSTAND}
-LDADD=	${LIBFICL} ${LIBFIREWIRE} ${LIBZFSBOOT} ${LIBI386} ${LIBSTAND}
+DPADD=	${LIBFICL} ${LIBFIREWIRE} ${LIBZFSBOOT} ${LIBI386} ${LIBSTAND} ${LIBGELIBOOT}
+LDADD=	${LIBFICL} ${LIBFIREWIRE} ${LIBZFSBOOT} ${LIBI386} ${LIBSTAND} ${LIBGELIBOOT}
 
 .include <bsd.prog.mk>
 
@@ -132,6 +132,6 @@ LDADD=	${LIBFICL} ${LIBFIREWIRE} ${LIBZFSBOOT} ${LIBI386} ${LIBSTAND}
 beforedepend ${OBJS}: machine
 CLEANFILES+=	machine
 CFLAGS+=	-DLOADER_PREFER_AMD64
-machine: .NOPATH
+machine: .NOMETA
 	ln -sf ${.CURDIR}/../../../i386/include machine
 .endif

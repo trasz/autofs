@@ -169,6 +169,7 @@ static moduledata_t streams_mod = {
 };
 DECLARE_MODULE(streams, streams_mod, SI_SUB_DRIVERS, SI_ORDER_ANY);
 MODULE_VERSION(streams, 1);
+MODULE_DEPEND(streams, svr4elf, 1, 1, 1);
 
 /*
  * We only need open() and close() routines.  open() calls socreate()
@@ -180,7 +181,6 @@ MODULE_VERSION(streams, 1);
 static  int
 streamsopen(struct cdev *dev, int oflags, int devtype, struct thread *td)
 {
-	struct filedesc *fdp;
 	struct svr4_strm *st;
 	struct socket *so;
 	struct file *fp;
@@ -236,14 +236,13 @@ streamsopen(struct cdev *dev, int oflags, int devtype, struct thread *td)
 	  return EOPNOTSUPP;
 	}
 
-	fdp = td->td_proc->p_fd;
 	if ((error = falloc(td, &fp, &fd, 0)) != 0)
 	  return error;
 	/* An extra reference on `fp' has been held for us by falloc(). */
 
 	error = socreate(family, &so, type, protocol, td->td_ucred, td);
 	if (error) {
-	   fdclose(fdp, fp, fd, td);
+	   fdclose(td, fp, fd);
 	   fdrop(fp, td);
 	   return error;
 	}
@@ -302,7 +301,8 @@ svr4_ptm_alloc(td)
 		ptyname[8] = ttyletters[l];
 		ptyname[9] = ttynumbers[n];
 
-		error = kern_open(td, ptyname, UIO_SYSSPACE, O_RDWR, 0);
+		error = kern_openat(td, AT_FDCWD, ptyname, UIO_SYSSPACE,
+		    O_RDWR, 0);
 		switch (error) {
 		case ENOENT:
 		case ENXIO:
@@ -321,19 +321,6 @@ svr4_ptm_alloc(td)
 	return ENOENT;
 }
 
-
-struct svr4_strm *
-svr4_stream_get(fp)
-	struct file *fp;
-{
-	struct socket *so;
-
-	if (fp == NULL || fp->f_type != DTYPE_SOCKET)
-		return NULL;
-
-	so = fp->f_data;
-	return so->so_emuldata;
-}
 
 static int
 svr4_soo_close(struct file *fp, struct thread *td)

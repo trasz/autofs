@@ -59,7 +59,7 @@ __FBSDID("$FreeBSD$");
 #include <vm/vm.h>
 #include <vm/pmap.h>
 #include <dev/fdt/fdt_common.h>
-#include <machine/devmap.h>
+#include <sys/devmap.h>
 
 static uint32_t   *ocotp_regs;
 static vm_size_t   ocotp_size;
@@ -200,5 +200,6 @@ static driver_t ocotp_driver = {
 
 static devclass_t ocotp_devclass;
 
-DRIVER_MODULE(ocotp, simplebus, ocotp_driver, ocotp_devclass, 0, 0);
+EARLY_DRIVER_MODULE(ocotp, simplebus, ocotp_driver, ocotp_devclass, 0, 0,
+    BUS_PASS_CPU + BUS_PASS_ORDER_FIRST);
 

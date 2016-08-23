@@ -58,7 +58,11 @@ extern struct nfsrv_stablefirst nfsrv_stablefirst;
 extern void (*nfsd_call_servertimer)(void);
 extern SVCPOOL	*nfsrvd_pool;
 extern struct nfsv4lock nfsd_suspend_lock;
-extern struct nfssessionhash nfssessionhash[NFSSESSIONHASHSIZE];
+extern struct nfsclienthashhead *nfsclienthash;
+extern struct nfslockhashhead *nfslockhash;
+extern struct nfssessionhash *nfssessionhash;
+extern int nfsrv_sessionhashsize;
+extern struct nfsstatsv1 nfsstatsv1;
 struct vfsoptlist nfsv4root_opt, nfsv4root_newopt;
 NFSDLOCKMUTEX;
 struct nfsrchash_bucket nfsrchash_table[NFSRVCACHE_HASHSIZE];
@@ -84,7 +88,7 @@ extern int nfsrv_issuedelegs;
 extern int nfsrv_dolocallocks;
 extern int nfsd_enable_stringtouid;
 
-SYSCTL_NODE(_vfs, OID_AUTO, nfsd, CTLFLAG_RW, 0, "New NFS server");
+SYSCTL_NODE(_vfs, OID_AUTO, nfsd, CTLFLAG_RW, 0, "NFS server");
 SYSCTL_INT(_vfs_nfsd, OID_AUTO, mirrormnt, CTLFLAG_RW,
     &nfsrv_enable_crossmntpt, 0, "Enable nfsd to cross mount points");
 SYSCTL_INT(_vfs_nfsd, OID_AUTO, commit_blks, CTLFLAG_RW, &nfs_commit_blks,
@@ -96,7 +100,7 @@ SYSCTL_INT(_vfs_nfsd, OID_AUTO, issue_delegations, CTLFLAG_RW,
 SYSCTL_INT(_vfs_nfsd, OID_AUTO, enable_locallocks, CTLFLAG_RW,
     &nfsrv_dolocallocks, 0, "Enable nfsd to acquire local locks on files");
 SYSCTL_INT(_vfs_nfsd, OID_AUTO, debuglevel, CTLFLAG_RW, &nfsd_debuglevel,
-    0, "Debug level for new nfs server");
+    0, "Debug level for NFS server");
 SYSCTL_INT(_vfs_nfsd, OID_AUTO, enable_stringtouid, CTLFLAG_RW,
     &nfsd_enable_stringtouid, 0, "Enable nfsd to accept numeric owner_names");
 
@@ -575,7 +579,7 @@ nfsvno_readlink(struct vnode *vp, struct ucred *cred, struct thread *p,
 	while (len < NFS_MAXPATHLEN) {
 		NFSMGET(mp);
 		MCLGET(mp, M_WAITOK);
-		mp->m_len = NFSMSIZ(mp);
+		mp->m_len = M_SIZE(mp);
 		if (len == 0) {
 			mp3 = mp2 = mp;
 		} else {
@@ -683,6 +687,8 @@ nfsvno_read(struct vnode *vp, off_t off, int cnt, struct ucred *cred,
 	uiop->uio_td = NULL;
 	nh = nfsrv_sequential_heuristic(uiop, vp);
 	ioflag |= nh->nh_seqcount << IO_SEQSHIFT;
+	/* XXX KDM make this more systematic? */
+	nfsstatsv1.srvbytes[NFSV4OP_READ] += uiop->uio_resid;
 	error = VOP_READ(vp, uiop, IO_NODELOCKED | ioflag, cred);
 	FREE((caddr_t)iv2, M_TEMP);
 	if (error) {
@@ -755,6 +761,8 @@ nfsvno_write(struct vnode *vp, off_t off, int retlen, int cnt, int stable,
 	uiop->uio_offset = off;
 	nh = nfsrv_sequential_heuristic(uiop, vp);
 	ioflags |= nh->nh_seqcount << IO_SEQSHIFT;
+	/* XXX KDM make this more systematic? */
+	nfsstatsv1.srvbytes[NFSV4OP_WRITE] += uiop->uio_resid;
 	error = VOP_WRITE(vp, uiop, ioflags, cred);
 	if (error == 0)
 		nh->nh_nextoff = uiop->uio_offset;
@@ -791,6 +799,11 @@ nfsvno_createsub(struct nfsrv_descript *nd, struct nameidata *ndp,
 					nvap->na_atime.tv_nsec = cverf[1];
 					error = VOP_SETATTR(ndp->ni_vp,
 					    &nvap->na_vattr, nd->nd_cred);
+					if (error != 0) {
+						vput(ndp->ni_vp);
+						ndp->ni_vp = NULL;
+						error = NFSERR_NOTSUPP;
+					}
 				}
 			}
 		/*
@@ -1008,7 +1021,7 @@ nfsvno_getsymlink(struct nfsrv_descript *nd, struct nfsvattr *nvap,
 	*pathcpp = NULL;
 	*lenp = 0;
 	if ((nd->nd_flag & ND_NFSV3) &&
-	    (error = nfsrv_sattr(nd, nvap, NULL, NULL, p)))
+	    (error = nfsrv_sattr(nd, NULL, nvap, NULL, NULL, p)))
 		goto nfsmout;
 	NFSM_DISSECT(tl, u_int32_t *, NFSX_UNSIGNED);
 	len = fxdr_unsigned(int, *tl);
@@ -1270,8 +1283,11 @@ nfsvno_fsync(struct vnode *vp, u_int64_t off, int cnt, struct ucred *cred,
 	 * file is done.  At this time VOP_FSYNC does not accept offset and
 	 * byte count parameters so call VOP_FSYNC the whole file for now.
 	 * The same is true for NFSv4: RFC 3530 Sec. 14.2.3.
+	 * File systems that do not use the buffer cache (as indicated
+	 * by MNTK_USES_BCACHE not being set) must use VOP_FSYNC().
 	 */
-	if (cnt == 0 || cnt > MAX_COMMIT_COUNT) {
+	if (cnt == 0 || cnt > MAX_COMMIT_COUNT ||
+	    (vp->v_mount->mnt_kern_flag & MNTK_USES_BCACHE) == 0) {
 		/*
 		 * Give up and do the whole thing
 		 */
@@ -1294,7 +1310,7 @@ nfsvno_fsync(struct vnode *vp, u_int64_t off, int cnt, struct ucred *cred,
 		daddr_t lblkno;
 
 		/*
-		 * Align to iosize boundry, super-align to page boundry.
+		 * Align to iosize boundary, super-align to page boundary.
 		 */
 		if (off & iomask) {
 			cnt += off & iomask;
@@ -1416,6 +1432,11 @@ nfsvno_open(struct nfsrv_descript *nd, struct nameidata *ndp,
 					nvap->na_atime.tv_nsec = cverf[1];
 					nd->nd_repstat = VOP_SETATTR(ndp->ni_vp,
 					    &nvap->na_vattr, cred);
+					if (nd->nd_repstat != 0) {
+						vput(ndp->ni_vp);
+						ndp->ni_vp = NULL;
+						nd->nd_repstat = NFSERR_NOTSUPP;
+					}
 				} else {
 					nfsrv_fixattr(nd, ndp->ni_vp, nvap,
 					    aclp, p, attrbitp, exp);
@@ -2298,7 +2319,7 @@ nfsmout:
  * (Return 0 or EBADRPC)
  */
 int
-nfsrv_sattr(struct nfsrv_descript *nd, struct nfsvattr *nvap,
+nfsrv_sattr(struct nfsrv_descript *nd, vnode_t vp, struct nfsvattr *nvap,
     nfsattrbit_t *attrbitp, NFSACL_T *aclp, struct thread *p)
 {
 	u_int32_t *tl;
@@ -2364,7 +2385,7 @@ nfsrv_sattr(struct nfsrv_descript *nd, struct nfsvattr *nvap,
 			vfs_timestamp(&nvap->na_atime);
 			nvap->na_vaflags |= VA_UTIMES_NULL;
 			break;
-		};
+		}
 		NFSM_DISSECT(tl, u_int32_t *, NFSX_UNSIGNED);
 		switch (fxdr_unsigned(int, *tl)) {
 		case NFSV3SATTRTIME_TOCLIENT:
@@ -2377,11 +2398,11 @@ nfsrv_sattr(struct nfsrv_descript *nd, struct nfsvattr *nvap,
 			if (!toclient)
 				nvap->na_vaflags |= VA_UTIMES_NULL;
 			break;
-		};
+		}
 		break;
 	case ND_NFSV4:
-		error = nfsv4_sattr(nd, nvap, attrbitp, aclp, p);
-	};
+		error = nfsv4_sattr(nd, vp, nvap, attrbitp, aclp, p);
+	}
 nfsmout:
 	NFSEXITCODE2(error, nd);
 	return (error);
@@ -2392,7 +2413,7 @@ nfsmout:
  * Returns NFSERR_BADXDR if it can't be parsed, 0 otherwise.
  */
 int
-nfsv4_sattr(struct nfsrv_descript *nd, struct nfsvattr *nvap,
+nfsv4_sattr(struct nfsrv_descript *nd, vnode_t vp, struct nfsvattr *nvap,
     nfsattrbit_t *attrbitp, NFSACL_T *aclp, struct thread *p)
 {
 	u_int32_t *tl;
@@ -2429,6 +2450,11 @@ nfsv4_sattr(struct nfsrv_descript *nd, struct nfsvattr *nvap,
 		switch (bitpos) {
 		case NFSATTRBIT_SIZE:
 			NFSM_DISSECT(tl, u_int32_t *, NFSX_HYPER);
+                     if (vp != NULL && vp->v_type != VREG) {
+                            error = (vp->v_type == VDIR) ? NFSERR_ISDIR :
+                                NFSERR_INVAL;
+                            goto nfsmout;
+			}
 			nvap->na_size = fxdr_hyper(tl);
 			attrsum += NFSX_HYPER;
 			break;
@@ -2574,7 +2600,7 @@ nfsv4_sattr(struct nfsrv_descript *nd, struct nfsvattr *nvap,
 			 */
 			bitpos = NFSATTRBIT_MAX;
 			break;
-		};
+		}
 	}
 
 	/*
@@ -2638,14 +2664,24 @@ nfsd_excred(struct nfsrv_descript *nd, struct nfsexstuff *exp,
 	 *  Fsinfo RPC. If set for anything else, this code might need
 	 *  to change.)
 	 */
-	if (NFSVNO_EXPORTED(exp) &&
-	    ((!(nd->nd_flag & ND_GSS) && nd->nd_cred->cr_uid == 0) ||
-	     NFSVNO_EXPORTANON(exp) ||
-	     (nd->nd_flag & ND_AUTHNONE))) {
-		nd->nd_cred->cr_uid = credanon->cr_uid;
-		nd->nd_cred->cr_gid = credanon->cr_gid;
-		crsetgroups(nd->nd_cred, credanon->cr_ngroups,
-		    credanon->cr_groups);
+	if (NFSVNO_EXPORTED(exp)) {
+		if (((nd->nd_flag & ND_GSS) == 0 && nd->nd_cred->cr_uid == 0) ||
+		     NFSVNO_EXPORTANON(exp) ||
+		     (nd->nd_flag & ND_AUTHNONE) != 0) {
+			nd->nd_cred->cr_uid = credanon->cr_uid;
+			nd->nd_cred->cr_gid = credanon->cr_gid;
+			crsetgroups(nd->nd_cred, credanon->cr_ngroups,
+			    credanon->cr_groups);
+		} else if ((nd->nd_flag & ND_GSS) == 0) {
+			/*
+			 * If using AUTH_SYS, call nfsrv_getgrpscred() to see
+			 * if there is a replacement credential with a group
+			 * list set up by "nfsuserd -manage-gids".
+			 * If there is no replacement, nfsrv_getgrpscred()
+			 * simply returns its argument.
+			 */
+			nd->nd_cred = nfsrv_getgrpscred(nd->nd_cred);
+		}
 	}
 
 out:
@@ -2769,7 +2805,7 @@ nfsd_fhtovp(struct nfsrv_descript *nd, struct nfsrvfh *nfp, int lktype,
 	/*
 	 * Personally, I've never seen any point in requiring a
 	 * reserved port#, since only in the rare case where the
-	 * clients are all boxes with secure system priviledges,
+	 * clients are all boxes with secure system privileges,
 	 * does it provide any enhanced security, but... some people
 	 * believe it to be useful and keep putting this code back in.
 	 * (There is also some "security checker" out there that
@@ -2965,12 +3001,7 @@ nfsvno_advlock(struct vnode *vp, int ftype, u_int64_t first,
 
 	if (nfsrv_dolocallocks == 0)
 		goto out;
-
-	/* Check for VI_DOOMED here, so that VOP_ADVLOCK() isn't performed. */
-	if ((vp->v_iflag & VI_DOOMED) != 0) {
-		error = EPERM;
-		goto out;
-	}
+	ASSERT_VOP_UNLOCKED(vp, "nfsvno_advlock: vp locked");
 
 	fl.l_whence = SEEK_SET;
 	fl.l_type = ftype;
@@ -2994,14 +3025,12 @@ nfsvno_advlock(struct vnode *vp, int ftype, u_int64_t first,
 	fl.l_pid = (pid_t)0;
 	fl.l_sysid = (int)nfsv4_sysid;
 
-	NFSVOPUNLOCK(vp, 0);
 	if (ftype == F_UNLCK)
 		error = VOP_ADVLOCK(vp, (caddr_t)td->td_proc, F_UNLCK, &fl,
 		    (F_POSIX | F_REMOTE));
 	else
 		error = VOP_ADVLOCK(vp, (caddr_t)td->td_proc, F_SETLK, &fl,
 		    (F_POSIX | F_REMOTE));
-	NFSVOPLOCK(vp, LK_EXCLUSIVE | LK_RETRY);
 
 out:
 	NFSEXITCODE(error);
@@ -3042,7 +3071,7 @@ out:
 }
 
 /*
- * Nfs server psuedo system call for the nfsd's
+ * Nfs server pseudo system call for the nfsd's
  */
 /*
  * MPSAFE
@@ -3329,9 +3358,6 @@ nfsd_modevent(module_t mod, int type, void *data)
 		mtx_init(&nfsrc_udpmtx, "nfsuc", NULL, MTX_DEF);
 		mtx_init(&nfs_v4root_mutex, "nfs4rt", NULL, MTX_DEF);
 		mtx_init(&nfsv4root_mnt.mnt_mtx, "nfs4mnt", NULL, MTX_DEF);
-		for (i = 0; i < NFSSESSIONHASHSIZE; i++)
-			mtx_init(&nfssessionhash[i].mtx, "nfssm",
-			    NULL, MTX_DEF);
 		lockinit(&nfsv4root_mnt.mnt_explock, PVFS, "explock", 0, 0);
 		nfsrvd_initcache();
 		nfsd_init();
@@ -3379,9 +3405,12 @@ nfsd_modevent(module_t mod, int type, void *data)
 		mtx_destroy(&nfsrc_udpmtx);
 		mtx_destroy(&nfs_v4root_mutex);
 		mtx_destroy(&nfsv4root_mnt.mnt_mtx);
-		for (i = 0; i < NFSSESSIONHASHSIZE; i++)
+		for (i = 0; i < nfsrv_sessionhashsize; i++)
 			mtx_destroy(&nfssessionhash[i].mtx);
 		lockdestroy(&nfsv4root_mnt.mnt_explock);
+		free(nfsclienthash, M_NFSDCLIENT);
+		free(nfslockhash, M_NFSDLOCKFILE);
+		free(nfssessionhash, M_NFSDSESSION);
 		loaded = 0;
 		break;
 	default:

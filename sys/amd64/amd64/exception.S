@@ -153,9 +153,13 @@ IDTVEC(xmm)
 IDTVEC(tss)
 	TRAP_ERR(T_TSSFLT)
 IDTVEC(missing)
-	TRAP_ERR(T_SEGNPFLT)
+	subq	$TF_ERR,%rsp
+	movl	$T_SEGNPFLT,TF_TRAPNO(%rsp)
+	jmp	prot_addrf
 IDTVEC(stk)
-	TRAP_ERR(T_STKFLT)
+	subq	$TF_ERR,%rsp
+	movl	$T_STKFLT,TF_TRAPNO(%rsp)
+	jmp	prot_addrf
 IDTVEC(align)
 	TRAP_ERR(T_ALIGNFLT)
 
@@ -207,6 +211,8 @@ alltraps_pushregs_no_rdi:
 	 * interrupt. For all other trap types, just handle them in
 	 * the usual way.
 	 */
+	testb	$SEL_RPL_MASK,TF_CS(%rsp) /* Did we come from kernel? */
+	jnz	calltrap		/* ignore userland traps */
 	cmpl	$T_BPTFLT,TF_TRAPNO(%rsp)
 	jne	calltrap
 
@@ -221,7 +227,6 @@ alltraps_pushregs_no_rdi:
 	movq	$calltrap,dtrace_invop_calltrap_addr(%rip)
 
 	/* Jump to the code hooked in by DTrace. */
-	movq	dtrace_invop_jump_addr,%rax
 	jmpq	*dtrace_invop_jump_addr
 #endif
 	.globl	calltrap
@@ -318,6 +323,7 @@ IDTVEC(page)
 IDTVEC(prot)
 	subq	$TF_ERR,%rsp
 	movl	$T_PROTFLT,TF_TRAPNO(%rsp)
+prot_addrf:
 	movq	$0,TF_ADDR(%rsp)
 	movq	%rdi,TF_RDI(%rsp)	/* free up a GP register */
 	leaq	doreti_iret(%rip),%rdi
@@ -421,7 +427,7 @@ IDTVEC(fast_syscall)
 
 /*
  * Here for CYA insurance, in case a "syscall" instruction gets
- * issued from 32 bit compatability mode. MSR_CSTAR has to point
+ * issued from 32 bit compatibility mode. MSR_CSTAR has to point
  * to *something* if EFER_SCE is enabled.
  */
 IDTVEC(fast_syscall32)
@@ -653,6 +659,7 @@ MCOUNT_LABEL(eintr)
 	.text
 	SUPERALIGN_TEXT
 	.type	doreti,@function
+	.globl	doreti
 doreti:
 	FAKE_MCOUNT($bintr)		/* init "from" bintr -> doreti */
 	/*

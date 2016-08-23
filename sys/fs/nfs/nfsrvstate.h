@@ -48,40 +48,39 @@ LIST_HEAD(nfssessionhashhead, nfsdsession);
 /*
  * List head for nfsusrgrp.
  */
-LIST_HEAD(nfsuserhashhead, nfsusrgrp);
-TAILQ_HEAD(nfsuserlruhead, nfsusrgrp);
+TAILQ_HEAD(nfsuserhashhead, nfsusrgrp);
 
 #define	NFSCLIENTHASH(id)						\
-	(&nfsclienthash[(id).lval[1] % NFSCLIENTHASHSIZE])
+	(&nfsclienthash[(id).lval[1] % nfsrv_clienthashsize])
 #define	NFSSTATEHASH(clp, id)						\
-	(&((clp)->lc_stateid[(id).other[2] % NFSSTATEHASHSIZE]))
+	(&((clp)->lc_stateid[(id).other[2] % nfsrv_statehashsize]))
 #define	NFSUSERHASH(id)							\
-	(&nfsuserhash[(id) % NFSUSERHASHSIZE])
+	(&nfsuserhash[(id) % nfsrv_lughashsize])
 #define	NFSUSERNAMEHASH(p, l)						\
 	(&nfsusernamehash[((l)>=4?(*(p)+*((p)+1)+*((p)+2)+*((p)+3)):*(p)) \
-		% NFSUSERHASHSIZE])
+		% nfsrv_lughashsize])
 #define	NFSGROUPHASH(id)						\
-	(&nfsgrouphash[(id) % NFSGROUPHASHSIZE])
+	(&nfsgrouphash[(id) % nfsrv_lughashsize])
 #define	NFSGROUPNAMEHASH(p, l)						\
 	(&nfsgroupnamehash[((l)>=4?(*(p)+*((p)+1)+*((p)+2)+*((p)+3)):*(p)) \
-		% NFSGROUPHASHSIZE])
+		% nfsrv_lughashsize])
 
 struct nfssessionhash {
 	struct mtx			mtx;
 	struct nfssessionhashhead	list;
 };
 #define	NFSSESSIONHASH(f) 						\
-	(&nfssessionhash[nfsrv_hashsessionid(f) % NFSSESSIONHASHSIZE])
+	(&nfssessionhash[nfsrv_hashsessionid(f) % nfsrv_sessionhashsize])
 
 /*
  * Client server structure for V4. It is doubly linked into two lists.
  * The first is a hash table based on the clientid and the second is a
  * list of all clients maintained in LRU order.
- * The actual size malloc'd is large enough to accomodate the id string.
+ * The actual size malloc'd is large enough to accommodate the id string.
  */
 struct nfsclient {
 	LIST_ENTRY(nfsclient) lc_hash;		/* Clientid hash list */
-	struct nfsstatehead lc_stateid[NFSSTATEHASHSIZE]; /* stateid hash */
+	struct nfsstatehead *lc_stateid;	/* Stateid hash */
 	struct nfsstatehead lc_open;		/* Open owner list */
 	struct nfsstatehead lc_deleg;		/* Delegations */
 	struct nfsstatehead lc_olddeleg;	/* and old delegations */
@@ -97,10 +96,10 @@ struct nfsclient {
 	u_int32_t	lc_cbref;		/* Cnt of callbacks */
 	uid_t		lc_uid;			/* User credential */
 	gid_t		lc_gid;
-	u_int16_t	lc_namelen;
+	u_int16_t	lc_idlen;		/* Client ID and len */
+	u_int16_t	lc_namelen;		/* plus GSS principal and len */
 	u_char		*lc_name;
 	struct nfssockreq lc_req;		/* Callback info */
-	u_short		lc_idlen;		/* Length of id string */
 	u_int32_t	lc_flags;		/* LCL_ flag bits */
 	u_char		lc_verf[NFSX_VERF];	 /* client verifier */
 	u_char		lc_id[1];		/* Malloc'd correct size */
@@ -114,7 +113,7 @@ struct nfsclient {
  * Structure for an NFSv4.1 session.
  * Locking rules for this structure.
  * To add/delete one of these structures from the lists, you must lock
- * both: NFSLOCKSESSION(session hashhead) and NFSLOCKSTATE() in that order.
+ * both: NFSLOCKSTATE() and NFSLOCKSESSION(session hashhead) in that order.
  * To traverse the lists looking for one of these, you must hold one
  * of these two locks.
  * The exception is if the thread holds the exclusive root sleep lock.
@@ -264,14 +263,14 @@ struct nfslockfile {
  * names.
  */
 struct nfsusrgrp {
-	TAILQ_ENTRY(nfsusrgrp)	lug_lru;	/* LRU list */
-	LIST_ENTRY(nfsusrgrp)	lug_numhash;	/* Hash by id# */
-	LIST_ENTRY(nfsusrgrp)	lug_namehash;	/* and by name */
+	TAILQ_ENTRY(nfsusrgrp)	lug_numhash;	/* Hash by id# */
+	TAILQ_ENTRY(nfsusrgrp)	lug_namehash;	/* and by name */
 	time_t			lug_expiry;	/* Expiry time in sec */
 	union {
 		uid_t		un_uid;		/* id# */
 		gid_t		un_gid;
 	} lug_un;
+	struct ucred		*lug_cred;	/* Cred. with groups list */
 	int			lug_namelen;	/* Name length */
 	u_char			lug_name[1];	/* malloc'd correct length */
 };

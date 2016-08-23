@@ -121,7 +121,7 @@ static int
 ext2_is_dot_entry(struct componentname *cnp)
 {
 	if (cnp->cn_namelen <= 2 && cnp->cn_nameptr[0] == '.' &&
-	    (cnp->cn_nameptr[1] == '.' || cnp->cn_nameptr[1] == '0'))
+	    (cnp->cn_nameptr[1] == '.' || cnp->cn_nameptr[1] == '\0'))
 		return (1);
 	return (0);
 }
@@ -343,7 +343,6 @@ restart:
 	 * we watch for a place to put the new file in
 	 * case it doesn't already exist.
 	 */
-	ino = 0;
 	i_diroff = dp->i_diroff;
 	ss.slotstatus = FOUND;
 	ss.slotfreespace = ss.slotsize = ss.slotneeded = 0;
@@ -514,7 +513,7 @@ notfound:
 	/*
 	 * Insert name into cache (as non-existent) if appropriate.
 	 */
-	if ((cnp->cn_flags & MAKEENTRY) && nameiop != CREATE)
+	if ((cnp->cn_flags & MAKEENTRY) != 0)
 		cache_enter(vdp, NULL, cnp);
 	return (ENOENT);
 
@@ -541,7 +540,7 @@ found:
 	 * in the cache as to where the entry was found.
 	 */
 	if ((flags & ISLASTCN) && nameiop == LOOKUP)
-		dp->i_diroff = i_offset &~ (DIRBLKSIZ - 1);
+		dp->i_diroff = rounddown2(i_offset, DIRBLKSIZ);
 	/*
 	 * If deleting, and at end of pathname, return
 	 * parameters which can be used to remove file.
@@ -801,11 +800,13 @@ ext2_dirbad(struct inode *ip, doff_t offset, char *how)
 
 	mp = ITOV(ip)->v_mount;
 	if ((mp->mnt_flag & MNT_RDONLY) == 0)
-		panic("ext2_dirbad: %s: bad dir ino %lu at offset %ld: %s\n",
-			mp->mnt_stat.f_mntonname, (u_long)ip->i_number,(long)offset, how);
+		panic("ext2_dirbad: %s: bad dir ino %ju at offset %ld: %s\n",
+		    mp->mnt_stat.f_mntonname, (uintmax_t)ip->i_number,
+		    (long)offset, how);
 	else
-	(void)printf("%s: bad dir ino %lu at offset %ld: %s\n",
-	    mp->mnt_stat.f_mntonname, (u_long)ip->i_number, (long)offset, how);
+		(void)printf("%s: bad dir ino %ju at offset %ld: %s\n",
+		    mp->mnt_stat.f_mntonname, (uintmax_t)ip->i_number,
+		    (long)offset, how);
 
 }
 
@@ -887,7 +888,7 @@ ext2_direnter(struct inode *ip, struct vnode *dvp, struct componentname *cnp)
 	if (ext2_htree_has_idx(dp)) {
 		error = ext2_htree_add_entry(dvp, &newdir, cnp);
 		if (error) {
-			dp->i_flag &= ~IN_E4INDEX;
+			dp->i_flag &= ~IN_E3INDEX;
 			dp->i_flag |= IN_CHANGE | IN_UPDATE;
 		}
 		return (error);

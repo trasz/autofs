@@ -63,6 +63,7 @@
 #include <sys/syslog.h>
 #include <sys/unistd.h>
 #include <machine/cpu.h>
+#include <vm/uma.h>
 
 #include <net/netisr.h>
 #include <net/vnet.h>
@@ -758,7 +759,7 @@ ng_rmnode(node_p node, hook_p dummy1, void *dummy2, int dummy3)
 			/*
 			 * Well, blow me down if the node code hasn't declared
 			 * that it doesn't want to die.
-			 * Presumably it is a persistant node.
+			 * Presumably it is a persistent node.
 			 * If we REALLY want it to go away,
 			 *  e.g. hardware going away,
 			 * Our caller should set NGF_REALLY_DIE in nd_flags.
@@ -2055,7 +2056,7 @@ ng_acquire_read(node_p node, item_p item)
 			return (item);
 		}
 		cpu_spinwait();
-	};
+	}
 
 	/* Queue the request for later. */
 	ng_queue_rw(node, item, NGQRW_R);
@@ -2934,7 +2935,7 @@ ng_generic_msg(node_p here, item_p item, hook_p lasthook)
 	 * Sometimes a generic message may be statically allocated
 	 * to avoid problems with allocating when in tight memory situations.
 	 * Don't free it if it is so.
-	 * I break them appart here, because erros may cause a free if the item
+	 * I break them apart here, because erros may cause a free if the item
 	 * in which case we'd be doing it twice.
 	 * they are kept together above, to simplify freeing.
 	 */
@@ -2952,7 +2953,7 @@ uma_zone_t			ng_qzone;
 uma_zone_t			ng_qdzone;
 static int			numthreads = 0; /* number of queue threads */
 static int			maxalloc = 4096;/* limit the damage of a leak */
-static int			maxdata = 512;	/* limit the damage of a DoS */
+static int			maxdata = 4096;	/* limit the damage of a DoS */
 
 SYSCTL_INT(_net_graph, OID_AUTO, threads, CTLFLAG_RDTUN, &numthreads,
     0, "Number of queue processing threads");
@@ -3249,8 +3250,8 @@ static moduledata_t netgraph_mod = {
 };
 DECLARE_MODULE(netgraph, netgraph_mod, SI_SUB_NETGRAPH, SI_ORDER_FIRST);
 SYSCTL_NODE(_net, OID_AUTO, graph, CTLFLAG_RW, 0, "netgraph Family");
-SYSCTL_INT(_net_graph, OID_AUTO, abi_version, CTLFLAG_RD, 0, NG_ABI_VERSION,"");
-SYSCTL_INT(_net_graph, OID_AUTO, msg_version, CTLFLAG_RD, 0, NG_VERSION, "");
+SYSCTL_INT(_net_graph, OID_AUTO, abi_version, CTLFLAG_RD, SYSCTL_NULL_INT_PTR, NG_ABI_VERSION,"");
+SYSCTL_INT(_net_graph, OID_AUTO, msg_version, CTLFLAG_RD, SYSCTL_NULL_INT_PTR, NG_VERSION, "");
 
 #ifdef	NETGRAPH_DEBUG
 void
@@ -3814,7 +3815,7 @@ ng_uncallout(struct callout *c, node_p node)
 	item = c->c_arg;
 	/* Do an extra check */
 	if ((rval > 0) && (c->c_func == &ng_callout_trampoline) &&
-	    (NGI_NODE(item) == node)) {
+	    (item != NULL) && (NGI_NODE(item) == node)) {
 		/*
 		 * We successfully removed it from the queue before it ran
 		 * So now we need to unreference everything that was

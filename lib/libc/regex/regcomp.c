@@ -51,7 +51,6 @@ __FBSDID("$FreeBSD$");
 #include <limits.h>
 #include <stdlib.h>
 #include <regex.h>
-#include <runetype.h>
 #include <wchar.h>
 #include <wctype.h>
 
@@ -192,6 +191,7 @@ regcomp(regex_t * __restrict preg,
 	struct parse *p = &pa;
 	int i;
 	size_t len;
+	size_t maxlen;
 #ifdef REDEBUG
 #	define	GOODFLAGS(f)	(f)
 #else
@@ -213,7 +213,23 @@ regcomp(regex_t * __restrict preg,
 	g = (struct re_guts *)malloc(sizeof(struct re_guts));
 	if (g == NULL)
 		return(REG_ESPACE);
+	/*
+	 * Limit the pattern space to avoid a 32-bit overflow on buffer
+	 * extension.  Also avoid any signed overflow in case of conversion
+	 * so make the real limit based on a 31-bit overflow.
+	 *
+	 * Likely not applicable on 64-bit systems but handle the case
+	 * generically (who are we to stop people from using ~715MB+
+	 * patterns?).
+	 */
+	maxlen = ((size_t)-1 >> 1) / sizeof(sop) * 2 / 3;
+	if (len >= maxlen) {
+		free((char *)g);
+		return(REG_ESPACE);
+	}
 	p->ssize = len/(size_t)2*(size_t)3 + (size_t)1;	/* ugh */
+	assert(p->ssize >= len);
+
 	p->strip = (sop *)malloc(p->ssize * sizeof(sop));
 	p->slen = 0;
 	if (p->strip == NULL) {
@@ -561,7 +577,7 @@ p_simp_re(struct parse *p,
 	sopno subno;
 #	define	BACKSL	(1<<CHAR_BIT)
 
-	pos = HERE();		/* repetion op, if any, covers from here */
+	pos = HERE();		/* repetition op, if any, covers from here */
 
 	assert(MORE());		/* caller should have ensured this */
 	c = GETNEXT();
@@ -800,14 +816,14 @@ p_b_term(struct parse *p, cset *cs)
 		if (start == finish)
 			CHadd(p, cs, start);
 		else {
-			if (table->__collate_load_error) {
-				(void)REQUIRE((uch)start <= (uch)finish, REG_ERANGE);
+			if (table->__collate_load_error || MB_CUR_MAX > 1) {
+				(void)REQUIRE(start <= finish, REG_ERANGE);
 				CHaddrange(p, cs, start, finish);
 			} else {
-				(void)REQUIRE(__collate_range_cmp(table, start, finish) <= 0, REG_ERANGE);
+				(void)REQUIRE(__wcollate_range_cmp(start, finish) <= 0, REG_ERANGE);
 				for (i = 0; i <= UCHAR_MAX; i++) {
-					if (   __collate_range_cmp(table, start, i) <= 0
-					    && __collate_range_cmp(table, i, finish) <= 0
+					if (   __wcollate_range_cmp(start, i) <= 0
+					    && __wcollate_range_cmp(i, finish) <= 0
 					   )
 						CHadd(p, cs, i);
 				}
@@ -1405,8 +1421,8 @@ static void
 findmust(struct parse *p, struct re_guts *g)
 {
 	sop *scan;
-	sop *start;
-	sop *newstart;
+	sop *start = NULL;
+	sop *newstart = NULL;
 	sopno newlen;
 	sop s;
 	char *cp;
@@ -1709,15 +1725,17 @@ computematchjumps(struct parse *p, struct re_guts *g)
 	if (p->error != 0)
 		return;
 
-	pmatches = (int*) malloc(g->mlen * sizeof(unsigned int));
+	pmatches = (int*) malloc(g->mlen * sizeof(int));
 	if (pmatches == NULL) {
 		g->matchjump = NULL;
 		return;
 	}
 
-	g->matchjump = (int*) malloc(g->mlen * sizeof(unsigned int));
-	if (g->matchjump == NULL)	/* Not a fatal error */
+	g->matchjump = (int*) malloc(g->mlen * sizeof(int));
+	if (g->matchjump == NULL) {	/* Not a fatal error */
+		free(pmatches);
 		return;
+	}
 
 	/* Set maximum possible jump for each character in the pattern */
 	for (mindex = 0; mindex < g->mlen; mindex++)

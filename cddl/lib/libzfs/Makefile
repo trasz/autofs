@@ -6,10 +6,7 @@
 .PATH: ${.CURDIR}/../../../cddl/contrib/opensolaris/lib/libzfs/common
 
 LIB=	zfs
-DPADD=	${LIBMD} ${LIBPTHREAD} ${LIBUMEM} ${LIBUTIL} ${LIBM} ${LIBNVPAIR} \
-	${LIBAVL} ${LIBZFS_CORE}
-LDADD=	-lmd -lpthread -lumem -lutil -lm -lnvpair -lavl -lzfs_core
-
+LIBADD=	md pthread umem util uutil m avl bsdxml geom nvpair z zfs_core
 SRCS=	deviceid.c \
 	fsshare.c \
 	mkdirp.c \
@@ -34,7 +31,6 @@ SRCS+=	libzfs_changelist.c \
 	zfs_comutil.c \
 	zfs_deleg.c \
 	zfs_fletcher.c \
-	zfs_ioctl_compat.c \
 	zfs_namecheck.c \
 	zfs_prop.c \
 	zpool_prop.c \

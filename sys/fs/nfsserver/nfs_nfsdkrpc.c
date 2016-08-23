@@ -85,16 +85,16 @@ SYSCTL_DECL(_vfs_nfsd);
 SVCPOOL		*nfsrvd_pool;
 
 static int	nfs_privport = 0;
-SYSCTL_INT(_vfs_nfsd, OID_AUTO, nfs_privport, CTLFLAG_RW,
+SYSCTL_INT(_vfs_nfsd, OID_AUTO, nfs_privport, CTLFLAG_RWTUN,
     &nfs_privport, 0,
     "Only allow clients using a privileged port for NFSv2 and 3");
 
 static int	nfs_minvers = NFS_VER2;
-SYSCTL_INT(_vfs_nfsd, OID_AUTO, server_min_nfsvers, CTLFLAG_RW,
+SYSCTL_INT(_vfs_nfsd, OID_AUTO, server_min_nfsvers, CTLFLAG_RWTUN,
     &nfs_minvers, 0, "The lowest version of NFS handled by the server");
 
 static int	nfs_maxvers = NFS_VER4;
-SYSCTL_INT(_vfs_nfsd, OID_AUTO, server_max_nfsvers, CTLFLAG_RW,
+SYSCTL_INT(_vfs_nfsd, OID_AUTO, server_max_nfsvers, CTLFLAG_RWTUN,
     &nfs_maxvers, 0, "The highest version of NFS handled by the server");
 
 static int nfs_proc(struct nfsrv_descript *, u_int32_t, SVCXPRT *xprt,
@@ -117,7 +117,8 @@ nfssvc_program(struct svc_req *rqst, SVCXPRT *xprt)
 
 	memset(&nd, 0, sizeof(nd));
 	if (rqst->rq_vers == NFS_VER2) {
-		if (rqst->rq_proc > NFSV2PROC_STATFS) {
+		if (rqst->rq_proc > NFSV2PROC_STATFS ||
+		    newnfs_nfsv3_procid[rqst->rq_proc] == NFSPROC_NOOP) {
 			svcerr_noproc(rqst);
 			svc_freereq(rqst);
 			goto out;
@@ -230,10 +231,16 @@ nfssvc_program(struct svc_req *rqst, SVCXPRT *xprt)
 		 * Get a refcnt (shared lock) on nfsd_suspend_lock.
 		 * NFSSVC_SUSPENDNFSD will take an exclusive lock on
 		 * nfsd_suspend_lock to suspend these threads.
+		 * The call to nfsv4_lock() that precedes nfsv4_getref()
+		 * ensures that the acquisition of the exclusive lock
+		 * takes priority over acquisition of the shared lock by
+		 * waiting for any exclusive lock request to complete.
 		 * This must be done here, before the check of
 		 * nfsv4root exports by nfsvno_v4rootexport().
 		 */
 		NFSLOCKV4ROOTMUTEX();
+		nfsv4_lock(&nfsd_suspend_lock, 0, NULL, NFSV4ROOTLOCKMUTEXPTR,
+		    NULL);
 		nfsv4_getref(&nfsd_suspend_lock, NULL, NFSV4ROOTLOCKMUTEXPTR,
 		    NULL);
 		NFSUNLOCKV4ROOTMUTEX();
@@ -293,6 +300,8 @@ nfssvc_program(struct svc_req *rqst, SVCXPRT *xprt)
 	svc_freereq(rqst);
 
 out:
+	if (softdep_ast_cleanup != NULL)
+		softdep_ast_cleanup();
 	NFSEXITCODE(0);
 }
 
@@ -463,6 +472,7 @@ int
 nfsrvd_nfsd(struct thread *td, struct nfsd_nfsd_args *args)
 {
 	char principal[MAXHOSTNAMELEN + 5];
+	struct proc *p;
 	int error = 0;
 	bool_t ret2, ret3, ret4;
 
@@ -480,6 +490,10 @@ nfsrvd_nfsd(struct thread *td, struct nfsd_nfsd_args *args)
 	 */
 	NFSD_LOCK();
 	if (newnfs_numnfsd == 0) {
+		p = td->td_proc;
+		PROC_LOCK(p);
+		p->p_flag2 |= P2_AST_SU;
+		PROC_UNLOCK(p);
 		newnfs_numnfsd++;
 
 		NFSD_UNLOCK();
@@ -511,6 +525,9 @@ nfsrvd_nfsd(struct thread *td, struct nfsd_nfsd_args *args)
 		NFSD_LOCK();
 		newnfs_numnfsd--;
 		nfsrvd_init(1);
+		PROC_LOCK(p);
+		p->p_flag2 &= ~P2_AST_SU;
+		PROC_UNLOCK(p);
 	}
 	NFSD_UNLOCK();
 
@@ -533,6 +550,7 @@ nfsrvd_init(int terminating)
 	if (terminating) {
 		nfsd_master_proc = NULL;
 		NFSD_UNLOCK();
+		nfsrv_freeallbackchannel_xprts();
 		svcpool_destroy(nfsrvd_pool);
 		nfsrvd_pool = NULL;
 		NFSD_LOCK();

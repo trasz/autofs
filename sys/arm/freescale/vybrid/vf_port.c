@@ -49,7 +49,6 @@ __FBSDID("$FreeBSD$");
 #include <dev/ofw/ofw_bus_subr.h>
 
 #include <machine/bus.h>
-#include <machine/fdt.h>
 #include <machine/cpu.h>
 #include <machine/intr.h>
 
@@ -172,7 +171,7 @@ port_setup(int pnum, enum ev_type pevt, void (*ih)(void *), void *ih_user)
 		break;
 	default:
 		return (-1);
-	};
+	}
 
 	reg = READ4(sc, PORT_PCR(pnum));
 	reg &= ~(PCR_IRQC_M << PCR_IRQC_S);

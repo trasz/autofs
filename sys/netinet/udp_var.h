@@ -55,16 +55,20 @@ struct udpiphdr {
 struct inpcb;
 struct mbuf;
 
-typedef void(*udp_tun_func_t)(struct mbuf *, int off, struct inpcb *);
-
+typedef void(*udp_tun_func_t)(struct mbuf *, int, struct inpcb *,
+			      const struct sockaddr *, void *);
+typedef void(*udp_tun_icmp_t)(int, struct sockaddr *, void *, void *);
+			      
 /*
  * UDP control block; one per udp.
  */
 struct udpcb {
 	udp_tun_func_t	u_tun_func;	/* UDP kernel tunneling callback. */
+	udp_tun_icmp_t  u_icmp_func;	/* UDP kernel tunneling icmp callback */
 	u_int		u_flags;	/* Generic UDP flags. */
 	uint16_t	u_rxcslen;	/* Coverage for incoming datagrams. */
 	uint16_t	u_txcslen;	/* Coverage for outgoing datagrams. */
+	void 		*u_tun_ctx;	/* Tunneling callback context. */
 };
 
 #define	intoudpcb(ip)	((struct udpcb *)(ip)->inp_ppcb)
@@ -148,13 +152,13 @@ VNET_DECLARE(int, udp_blackhole);
 extern int			udp_log_in_vain;
 
 static __inline struct inpcbinfo *
-get_inpcbinfo(int protocol)
+udp_get_inpcbinfo(int protocol)
 {
 	return (protocol == IPPROTO_UDP) ? &V_udbinfo : &V_ulitecbinfo;
 }
 
 static __inline struct inpcbhead *
-get_pcblist(int protocol)
+udp_get_pcblist(int protocol)
 {
 	return (protocol == IPPROTO_UDP) ? &V_udb : &V_ulitecb;
 }
@@ -167,16 +171,13 @@ void		udplite_ctlinput(int, struct sockaddr *, void *);
 int		udp_ctloutput(struct socket *, struct sockopt *);
 void		udp_init(void);
 void		udplite_init(void);
-#ifdef VIMAGE
-void		udp_destroy(void);
-void		udplite_destroy(void);
-#endif
 int		udp_input(struct mbuf **, int *, int);
 void		udplite_input(struct mbuf *, int);
 struct inpcb	*udp_notify(struct inpcb *inp, int errno);
 int		udp_shutdown(struct socket *so);
 
-int		udp_set_kernel_tunneling(struct socket *so, udp_tun_func_t f);
+int		udp_set_kernel_tunneling(struct socket *so, udp_tun_func_t f,
+		    udp_tun_icmp_t i, void *ctx);
 
 #endif /* _KERNEL */
 

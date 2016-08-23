@@ -4,12 +4,13 @@
 #
 
 # PROVIDE: autounmountd
-# REQUIRE: nfsclient
+# REQUIRE: DAEMON
 # KEYWORD: nojail
 
 . /etc/rc.subr
 
 name="autounmountd"
+desc="daemon unmounting automounted filesystems"
 rcvar="autofs_enable"
 pidfile="/var/run/${name}.pid"
 command="/usr/sbin/${name}"

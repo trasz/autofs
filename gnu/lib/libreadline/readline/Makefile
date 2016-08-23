@@ -2,7 +2,7 @@
 
 LIB=    readline
 INTERNALLIB=	yes
-NO_MAN=	yes
+MAN=
 
 TILDESRC= tilde.c
 SRCS=     readline.c vi_mode.c funmap.c keymaps.c parens.c search.c \
@@ -16,14 +16,14 @@ INSTALLED_HEADERS= readline.h chardefs.h keymaps.h history.h tilde.h \
 CFLAGS+=	-I${.OBJDIR}/..
 SRCDIR=	${.CURDIR}/../../../../contrib/libreadline
 
+CLEANFILES+= ${INSTALLED_HEADERS}
+SRCS+= ${INSTALLED_HEADERS}
+
 .for _h in ${INSTALLED_HEADERS}
-CLEANFILES+=	${_h}
-DPSRCS+=	${.OBJDIR}/${_h}
-${.OBJDIR}/${_h}:	${SRCDIR}/${_h}
-	${INSTALL} ${.ALLSRC} ${.TARGET}
+${_h}:	${SRCDIR}/${_h} .NOMETA
+	ln -sf ${.ALLSRC} ${.TARGET}
 .endfor
 
-DPADD=	${LIBTERMCAPW}
-LDADD=	-ltermcapw
+LIBADD=	ncursesw
 
 .include <bsd.lib.mk>

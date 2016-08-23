@@ -1,8 +1,9 @@
 # $FreeBSD$
 
+PACKAGE=lib${LIB}
 LIB=		sbuf
 SHLIBDIR?= 	/lib
-SRCS=		subr_sbuf.c 
+SRCS=		subr_prf.c subr_sbuf.c
 
 SHLIB_MAJOR	= 6
 

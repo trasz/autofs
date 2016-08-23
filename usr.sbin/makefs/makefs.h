@@ -130,6 +130,7 @@ typedef struct {
 	int	needswap;	/* non-zero if byte swapping needed */
 	int	sectorsize;	/* sector size */
 	int	sparse;		/* sparse image, don't fill it with zeros */
+	off_t	roundup;	/* round image size up to this value */
 
 	void	*fs_specific;	/* File system specific additions. */
 } fsinfo_t;
@@ -171,6 +172,7 @@ void		cd9660_makefs(const char *, const char *, fsnode *, fsinfo_t *);
 extern	u_int		debug;
 extern	int		dupsok;
 extern	struct timespec	start_time;
+extern struct stat stampst;
 
 /*
  * If -x is specified, we want to exclude nodes which do not appear

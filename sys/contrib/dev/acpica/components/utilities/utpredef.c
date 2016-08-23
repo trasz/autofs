@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2013, Intel Corp.
+ * Copyright (C) 2000 - 2016, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -40,8 +40,6 @@
  * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGES.
  */
-
-#define __UTPREDEF_C__
 
 #include <contrib/dev/acpica/include/acpi.h>
 #include <contrib/dev/acpica/include/accommon.h>
@@ -168,7 +166,7 @@ AcpiUtGetExpectedReturnTypes (
 
     if (!ExpectedBtypes)
     {
-        ACPI_STRCPY (Buffer, "NONE");
+        strcpy (Buffer, "NONE");
         return;
     }
 
@@ -182,7 +180,7 @@ AcpiUtGetExpectedReturnTypes (
 
         if (ExpectedBtypes & ThisRtype)
         {
-            ACPI_STRCAT (Buffer, &UtRtypeNames[i][j]);
+            strcat (Buffer, &UtRtypeNames[i][j]);
             j = 0;              /* Use name separator from now on */
         }
 
@@ -256,8 +254,10 @@ AcpiUtMatchResourceName (
     const ACPI_PREDEFINED_INFO  *ThisName;
 
 
-    /* Quick check for a predefined name, first character must be underscore */
-
+    /*
+     * Quick check for a predefined name, first character must
+     * be underscore
+     */
     if (Name[0] != '_')
     {
         return (NULL);

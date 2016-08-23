@@ -9,8 +9,14 @@
         bin
         ..
         boot
+            kernel
+            ..
+            modules
+            ..
         ..
         lib
+            casper
+            ..
             geom
             ..
         ..
@@ -21,13 +27,21 @@
         usr
             bin
             ..
-            games
-            ..
             lib
+                clang
+                    3.8.0
+                        lib
+                            freebsd
+                            ..
+                        ..
+                    ..
+                ..
                 engines
                 ..
-            ..
-            lib32
+                i18n
+                ..
+                private
+                ..
             ..
             libexec
                 bsdinstall
@@ -42,6 +56,8 @@
                 ..
             ..
             sbin
+            ..
+            tests
             ..
         ..
     ..

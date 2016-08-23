@@ -166,7 +166,9 @@ struct ath_stats {
 	u_int32_t	ast_tx_node_psq_overflow;
 	u_int32_t	ast_rx_stbc;		/* RX STBC frame */
 	u_int32_t	ast_tx_nodeq_overflow;	/* node sw queue overflow */
-	u_int32_t	ast_pad[12];
+	u_int32_t	ast_tx_ldpc;		/* TX LDPC frame */
+	u_int32_t	ast_tx_stbc;		/* TX STBC frame */
+	u_int32_t	ast_pad[10];
 };
 
 #define	SIOCGATHSTATS	_IOWR('i', 137, struct ifreq)
@@ -301,8 +303,8 @@ struct ath_radiotap_vendor_hdr {		/* 30 bytes */
 	/* At this point it should be 4 byte aligned */
 	uint32_t	evm[ATH_RADIOTAP_MAX_EVM];	/* 5 * 4 = 20 */
 
-	uint8_t		rssi_ctl[ATH_RADIOTAP_MAX_CHAINS];	/* 4 */
-	uint8_t		rssi_ext[ATH_RADIOTAP_MAX_CHAINS];	/* 4 */
+	uint8_t		rssi_ctl[ATH_RADIOTAP_MAX_CHAINS];	/* 4 * 4 = 16 */
+	uint8_t		rssi_ext[ATH_RADIOTAP_MAX_CHAINS];	/* 4 * 4 = 16 */
 
 	uint8_t		vh_phyerr_code;	/* Phy error code, or 0xff */
 	uint8_t		vh_rs_status;	/* RX status */

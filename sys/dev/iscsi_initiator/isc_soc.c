@@ -52,6 +52,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/syslog.h>
 #include <sys/mbuf.h>
 #include <sys/user.h>
+#include <vm/uma.h>
 
 #include <cam/cam.h>
 #include <cam/cam_ccb.h>
@@ -110,7 +111,7 @@ isc_sendPDU(isc_session_t *sp, pduq_t *pq)
 	   | Add any AHS to the iSCSI hdr mbuf
 	   */
 	  if((mh->m_len + pp->ahs_len) < MHLEN) {
-	       MH_ALIGN(mh, mh->m_len + pp->ahs_len);
+	       M_ALIGN(mh, mh->m_len + pp->ahs_len);
 	       bcopy(&pp->ipdu, mh->m_data, mh->m_len);
 	       bcopy(pp->ahs_addr, mh->m_data + mh->m_len, pp->ahs_len);
 	       mh->m_len += pp->ahs_len;
@@ -119,7 +120,7 @@ isc_sendPDU(isc_session_t *sp, pduq_t *pq)
 	       panic("len AHS=%d too big, not impleneted yet", pp->ahs_len);
      }
      else {
-	  MH_ALIGN(mh, mh->m_len);
+	  M_ALIGN(mh, mh->m_len);
 	  bcopy(&pp->ipdu, mh->m_data, mh->m_len);
      }
      mh->m_pkthdr.len = mh->m_len;
@@ -221,7 +222,7 @@ isc_sendPDU(isc_session_t *sp, pduq_t *pq)
      if(pq->pdu.ds_addr &&  pp->ds_len) {
 	  iv->iov_base = pp->ds_addr;
 	  iv->iov_len = pp->ds_len;
-	  while(iv->iov_len & 03) // the specs say it must be int alligned
+	  while(iv->iov_len & 03) // the specs say it must be int aligned
 	       iv->iov_len++;
 	  uio->uio_resid += iv->iov_len ;
 	  iv++;

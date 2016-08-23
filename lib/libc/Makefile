@@ -1,9 +1,13 @@
 #	@(#)Makefile	8.2 (Berkeley) 2/3/94
 # $FreeBSD$
 
+PACKAGE=	clibs
 SHLIBDIR?= /lib
 
 .include <src.opts.mk>
+
+# Force building of libc_pic.a
+MK_TOOLCHAIN=	yes
 
 LIBC_SRCTOP?= ${.CURDIR}
 
@@ -26,6 +30,7 @@ LIBC_ARCH=${MACHINE_CPUARCH}
 LIB=c
 SHLIB_MAJOR= 7
 SHLIB_LDSCRIPT=libc.ldscript
+SHLIB_LDSCRIPT_LINKS=libxnet.so
 WARNS?=	2
 CFLAGS+=-I${LIBC_SRCTOP}/include -I${LIBC_SRCTOP}/../../include
 CFLAGS+=-I${LIBC_SRCTOP}/${LIBC_ARCH}
@@ -44,13 +49,11 @@ CFLAGS+=${CANCELPOINTS_CFLAGS}
 #
 # Link with static libcompiler_rt.a.
 #
-DPADD+=	${LIBCOMPILER_RT}
 LDFLAGS+= -nodefaultlibs
-LDADD+= -lcompiler_rt
+LIBADD+=	compiler_rt
 
 .if ${MK_SSP} != "no"
-DPADD+= ${LIBSSP_NONSHARED}
-LDADD+= -lssp_nonshared
+LIBADD+=	ssp_nonshared
 .endif
 
 # Extras that live in either libc.a or libc_nonshared.a
@@ -81,8 +84,10 @@ NOASM=
 .include "${LIBC_SRCTOP}/net/Makefile.inc"
 .include "${LIBC_SRCTOP}/nls/Makefile.inc"
 .include "${LIBC_SRCTOP}/posix1e/Makefile.inc"
-.if ${LIBC_ARCH} != "amd64" && \
+.if ${LIBC_ARCH} != "aarch64" && \
+    ${LIBC_ARCH} != "amd64" && \
     ${LIBC_ARCH} != "powerpc64" && \
+    ${LIBC_ARCH} != "riscv" && \
     ${LIBC_ARCH} != "sparc64" && \
     ${MACHINE_ARCH:Mmipsn32*} == "" && \
     ${MACHINE_ARCH:Mmips64*} == ""
@@ -96,12 +101,17 @@ NOASM=
 .include "${LIBC_SRCTOP}/stdtime/Makefile.inc"
 .include "${LIBC_SRCTOP}/string/Makefile.inc"
 .include "${LIBC_SRCTOP}/sys/Makefile.inc"
+.include "${LIBC_SRCTOP}/secure/Makefile.inc"
 .include "${LIBC_SRCTOP}/rpc/Makefile.inc"
 .include "${LIBC_SRCTOP}/uuid/Makefile.inc"
 .include "${LIBC_SRCTOP}/xdr/Makefile.inc"
-.if (${LIBC_ARCH} == "arm" && ${MACHINE_ARCH} != "armv6hf") ||\
+.if (${LIBC_ARCH} == "arm" && \
+	(${MACHINE_ARCH:Marmv6*} == "" || (defined(CPUTYPE) && ${CPUTYPE:M*soft*}))) || \
      ${LIBC_ARCH} == "mips"
 .include "${LIBC_SRCTOP}/softfloat/Makefile.inc"
+.endif
+.if ${LIBC_ARCH} == "i386" || ${LIBC_ARCH} == "amd64"
+.include "${LIBC_SRCTOP}/x86/sys/Makefile.inc"
 .endif
 .if ${MK_NIS} != "no"
 CFLAGS+= -DYP
@@ -151,14 +161,36 @@ KSRCS=	bcmp.c ffs.c ffsl.c fls.c flsl.c mcount.c strcat.c strchr.c \
 libkern: libkern.gen libkern.${LIBC_ARCH}
 
 libkern.gen: ${KQSRCS} ${KSRCS}
-	cp -p ${LIBC_SRCTOP}/quad/quad.h ${.ALLSRC} ${DESTDIR}/sys/libkern
+	${CP} ${LIBC_SRCTOP}/quad/quad.h ${.ALLSRC} ${DESTDIR}/sys/libkern
 
 libkern.${LIBC_ARCH}:: ${KMSRCS}
 .if defined(KMSRCS) && !empty(KMSRCS)
-	cp -p ${.ALLSRC} ${DESTDIR}/sys/libkern/${LIBC_ARCH}
+	${CP} ${.ALLSRC} ${DESTDIR}/sys/libkern/${LIBC_ARCH}
+.endif
+
+.if ${MK_TESTS} != "no"
+SUBDIR+=	tests
 .endif
 
 .include <bsd.lib.mk>
+
+.if !defined(_SKIP_BUILD)
+# We need libutil.h, get it directly to avoid
+# recording a build dependency
+CFLAGS+= -I${SRCTOP}/lib/libutil
+# Same issue with libm
+MSUN_ARCH_SUBDIR != ${MAKE} -B -C ${SRCTOP}/lib/msun -V ARCH_SUBDIR
+# unfortunately msun/src contains both private and public headers
+CFLAGS+= -I${SRCTOP}/lib/msun/${MSUN_ARCH_SUBDIR}
+.if ${MACHINE_CPUARCH} == "i386" || ${MACHINE_CPUARCH} == "amd64"
+CFLAGS+= -I${SRCTOP}/lib/msun/x86
+.endif
+CFLAGS+= -I${SRCTOP}/lib/msun/src
+# and we do not want to record a dependency on msun
+.if ${.MAKE.LEVEL} > 0
+GENDIRDEPS_FILTER+= N${RELDIR:H}/msun
+.endif
+.endif
 
 # Disable warnings in contributed sources.
 CWARNFLAGS:=	${.IMPSRC:Ngdtoa_*.c:C/^.+$/${CWARNFLAGS}/:C/^$/-w/}

@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2013, Intel Corp.
+ * Copyright (C) 2000 - 2016, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -40,8 +40,6 @@
  * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGES.
  */
-
-#define __EXNAMES_C__
 
 #include <contrib/dev/acpica/include/acpi.h>
 #include <contrib/dev/acpica/include/accommon.h>
@@ -162,6 +160,7 @@ AcpiExAllocateNameString (
     return_PTR (NameString);
 }
 
+
 /*******************************************************************************
  *
  * FUNCTION:    AcpiExNameSegment
@@ -191,8 +190,8 @@ AcpiExNameSegment (
 
 
     /*
-     * If first character is a digit, then we know that we aren't looking at a
-     * valid name segment
+     * If first character is a digit, then we know that we aren't looking
+     * at a valid name segment
      */
     CharBuf[0] = *AmlAddress;
 
@@ -205,7 +204,7 @@ AcpiExNameSegment (
     ACPI_DEBUG_PRINT ((ACPI_DB_LOAD, "Bytes from stream:\n"));
 
     for (Index = 0;
-        (Index < ACPI_NAME_SIZE) && (AcpiUtValidAcpiChar (*AmlAddress, 0));
+        (Index < ACPI_NAME_SIZE) && (AcpiUtValidNameChar (*AmlAddress, 0));
         Index++)
     {
         CharBuf[Index] = *AmlAddress++;
@@ -223,7 +222,7 @@ AcpiExNameSegment (
 
         if (NameString)
         {
-            ACPI_STRCAT (NameString, CharBuf);
+            strcat (NameString, CharBuf);
             ACPI_DEBUG_PRINT ((ACPI_DB_NAMES,
                 "Appended to - %s\n", NameString));
         }
@@ -396,7 +395,8 @@ AcpiExGetNameString (
             AmlAddress++;
             NumSegments = *AmlAddress;
 
-            NameString = AcpiExAllocateNameString (PrefixCount, NumSegments);
+            NameString = AcpiExAllocateNameString (
+                PrefixCount, NumSegments);
             if (!NameString)
             {
                 Status = AE_NO_MEMORY;

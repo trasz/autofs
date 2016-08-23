@@ -290,7 +290,7 @@ promise_meta_unused_range(struct promise_raid_conf **metaarr, int nsd,
 		     metaarr[i]->disk_sectors;
 		csize = sectors - coff;
 		i++;
-	};
+	}
 	return ((*size > 0) ? 1 : 0);
 }
 
@@ -893,7 +893,7 @@ g_raid_md_promise_start(struct g_raid_volume *vol)
 	struct g_raid_md_promise_perdisk *pd;
 	struct g_raid_md_promise_pervolume *pv;
 	struct promise_raid_conf *meta;
-	int i;
+	u_int i;
 
 	sc = vol->v_softc;
 	md = sc->sc_md;
@@ -1105,9 +1105,9 @@ g_raid_md_taste_promise(struct g_raid_md_object *md, struct g_class *mp,
 
 	/* Read metadata from device. */
 	meta = NULL;
-	vendor = 0xffff;
 	g_topology_unlock();
-	len = 2;
+	vendor = 0xffff;
+	len = sizeof(vendor);
 	if (pp->geom->rank == 1)
 		g_io_getattr("GEOM::hba_vendor", cp, &len, &vendor);
 	subdisks = promise_meta_read(cp, metaarr);

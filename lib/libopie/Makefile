@@ -2,6 +2,7 @@
 #
 # $FreeBSD$
 #
+PACKAGE=lib${LIB}
 OPIE_DIST?=	${.CURDIR}/../../contrib/opie
 DIST_DIR=	${OPIE_DIST}/${.CURDIR:T}
 SHLIB_MAJOR=    8
@@ -27,8 +28,7 @@ CFLAGS+=	-DINSECURE_OVERRIDE -DPATH_ACCESS_FILE=${ACCESSFILE}
 
 WARNS?=	0
 
-DPADD=	${LIBMD}
-LDADD=	-lmd
+LIBADD=	md
 
 MAN=	${OPIE_DIST}/opie.4 ${OPIE_DIST}/opiekeys.5 ${OPIE_DIST}/opieaccess.5
 

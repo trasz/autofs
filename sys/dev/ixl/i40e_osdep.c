@@ -1,6 +1,6 @@
 /******************************************************************************
 
-  Copyright (c) 2013-2014, Intel Corporation 
+  Copyright (c) 2013-2015, Intel Corporation 
   All rights reserved.
   
   Redistribution and use in source and binary forms, with or without 
@@ -32,7 +32,7 @@
 ******************************************************************************/
 /*$FreeBSD$*/
 
-#include <machine/stdarg.h>
+#include <sys/limits.h>
 
 #include "ixl.h"
 
@@ -49,22 +49,22 @@ i40e_dmamap_cb(void *arg, bus_dma_segment_t * segs, int nseg, int error)
 }
 
 i40e_status
-i40e_allocate_virt(struct i40e_hw *hw, struct i40e_virt_mem *m, u32 size)
+i40e_allocate_virt_mem(struct i40e_hw *hw, struct i40e_virt_mem *mem, u32 size)
 {
-	m->va = malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO);
-	return(m->va == NULL);
+	mem->va = malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO);
+	return(mem->va == NULL);
 }
 
 i40e_status
-i40e_free_virt(struct i40e_hw *hw, struct i40e_virt_mem *m)
+i40e_free_virt_mem(struct i40e_hw *hw, struct i40e_virt_mem *mem)
 {
-	free(m->va, M_DEVBUF);
+	free(mem->va, M_DEVBUF);
 	return(0);
 }
 
 i40e_status
-i40e_allocate_dma(struct i40e_hw *hw, struct i40e_dma_mem *dma,
-	bus_size_t size, u32 alignment)
+i40e_allocate_dma_mem(struct i40e_hw *hw, struct i40e_dma_mem *mem,
+	enum i40e_memory_type type __unused, u64 size, u32 alignment)
 {
 	device_t	dev = ((struct i40e_osdep *)hw->back)->dev;
 	int		err;
@@ -81,25 +81,25 @@ i40e_allocate_dma(struct i40e_hw *hw, struct i40e_dma_mem *dma,
 			       BUS_DMA_ALLOCNOW, /* flags */
 			       NULL,	/* lockfunc */
 			       NULL,	/* lockfuncarg */
-			       &dma->tag);
+			       &mem->tag);
 	if (err != 0) {
 		device_printf(dev,
 		    "i40e_allocate_dma: bus_dma_tag_create failed, "
 		    "error %u\n", err);
 		goto fail_0;
 	}
-	err = bus_dmamem_alloc(dma->tag, (void **)&dma->va,
-			     BUS_DMA_NOWAIT | BUS_DMA_ZERO, &dma->map);
+	err = bus_dmamem_alloc(mem->tag, (void **)&mem->va,
+			     BUS_DMA_NOWAIT | BUS_DMA_ZERO, &mem->map);
 	if (err != 0) {
 		device_printf(dev,
 		    "i40e_allocate_dma: bus_dmamem_alloc failed, "
 		    "error %u\n", err);
 		goto fail_1;
 	}
-	err = bus_dmamap_load(dma->tag, dma->map, dma->va,
+	err = bus_dmamap_load(mem->tag, mem->map, mem->va,
 			    size,
 			    i40e_dmamap_cb,
-			    &dma->pa,
+			    &mem->pa,
 			    BUS_DMA_NOWAIT);
 	if (err != 0) {
 		device_printf(dev,
@@ -107,28 +107,29 @@ i40e_allocate_dma(struct i40e_hw *hw, struct i40e_dma_mem *dma,
 		    "error %u\n", err);
 		goto fail_2;
 	}
-	dma->size = size;
-	bus_dmamap_sync(dma->tag, dma->map,
+	mem->nseg = 1;
+	mem->size = size;
+	bus_dmamap_sync(mem->tag, mem->map,
 	    BUS_DMASYNC_PREREAD|BUS_DMASYNC_PREWRITE);
 	return (0);
 fail_2:
-	bus_dmamem_free(dma->tag, dma->va, dma->map);
+	bus_dmamem_free(mem->tag, mem->va, mem->map);
 fail_1:
-	bus_dma_tag_destroy(dma->tag);
+	bus_dma_tag_destroy(mem->tag);
 fail_0:
-	dma->map = NULL;
-	dma->tag = NULL;
+	mem->map = NULL;
+	mem->tag = NULL;
 	return (err);
 }
 
 i40e_status
-i40e_free_dma(struct i40e_hw *hw, struct i40e_dma_mem *dma)
+i40e_free_dma_mem(struct i40e_hw *hw, struct i40e_dma_mem *mem)
 {
-	bus_dmamap_sync(dma->tag, dma->map,
+	bus_dmamap_sync(mem->tag, mem->map,
 	    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
-	bus_dmamap_unload(dma->tag, dma->map);
-	bus_dmamem_free(dma->tag, dma->va, dma->map);
-	bus_dma_tag_destroy(dma->tag);
+	bus_dmamap_unload(mem->tag, mem->map);
+	bus_dmamem_free(mem->tag, mem->va, mem->map);
+	bus_dma_tag_destroy(mem->tag);
 	return (0);
 }
 
@@ -136,7 +137,7 @@ void
 i40e_init_spinlock(struct i40e_spinlock *lock)
 {
 	mtx_init(&lock->mutex, "mutex",
-	    MTX_NETWORK_LOCK, MTX_DEF | MTX_DUPOK);
+	    "ixl spinlock", MTX_DEF | MTX_DUPOK);
 }
 
 void
@@ -154,26 +155,47 @@ i40e_release_spinlock(struct i40e_spinlock *lock)
 void
 i40e_destroy_spinlock(struct i40e_spinlock *lock)
 {
-	mtx_destroy(&lock->mutex);
+	if (mtx_initialized(&lock->mutex))
+		mtx_destroy(&lock->mutex);
+}
+
+void
+i40e_msec_pause(int msecs)
+{
+	int ticks_to_pause = (msecs * hz) / 1000;
+	int start_ticks = ticks;
+
+	if (cold || SCHEDULER_STOPPED()) {
+		i40e_msec_delay(msecs);
+		return;
+	}
+
+	while (1) {
+		kern_yield(PRI_USER);
+		int yielded_ticks = ticks - start_ticks;
+		if (yielded_ticks > ticks_to_pause)
+			break;
+		else if (yielded_ticks < 0
+		    && (yielded_ticks + INT_MAX + 1 > ticks_to_pause)) {
+			break;
+		}
+	}
 }
 
 /*
-** i40e_debug_d - OS dependent version of shared code debug printing
-*/
-void i40e_debug_d(void *hw, u32 mask, char *fmt, ...)
+ * Helper function for debug statement printing
+ */
+void
+i40e_debug_shared(struct i40e_hw *hw, enum i40e_debug_mask mask, char *fmt, ...)
 {
-        char buf[512];
-        va_list args;
+	va_list args;
 
-        if (!(mask & ((struct i40e_hw *)hw)->debug_mask))
-                return;
+	if (!(mask & ((struct i40e_hw *)hw)->debug_mask))
+		return;
 
 	va_start(args, fmt);
-        vsnprintf(buf, sizeof(buf), fmt, args);
+	device_printf(((struct i40e_osdep *)hw->back)->dev, fmt, args);
 	va_end(args);
-
-        /* the debug string is already formatted with a newline */
-        printf("%s", buf);
 }
 
 u16

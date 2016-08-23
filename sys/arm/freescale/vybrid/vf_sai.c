@@ -53,7 +53,6 @@ __FBSDID("$FreeBSD$");
 #include <dev/ofw/ofw_bus_subr.h>
 
 #include <machine/bus.h>
-#include <machine/fdt.h>
 #include <machine/cpu.h>
 #include <machine/intr.h>
 
@@ -430,11 +429,11 @@ find_edma_controller(struct sc_info *sc)
 	OF_getprop(node, "edma-mux-group", &dts_value, len);
 	edma_mux_group = fdt32_to_cpu(dts_value);
 	OF_getprop(node, "edma-controller", &dts_value, len);
-	edma_node = OF_xref_phandle(fdt32_to_cpu(dts_value));
+	edma_node = OF_node_from_xref(fdt32_to_cpu(dts_value));
 
 	if ((len = OF_getproplen(edma_node, "device-id")) <= 0) {
 		return (ENXIO);
-	};
+	}
 
 	OF_getprop(edma_node, "device-id", &dts_value, len);
 	edma_device_id = fdt32_to_cpu(dts_value);
@@ -448,16 +447,16 @@ find_edma_controller(struct sc_info *sc)
 			if (edma_sc->device_id == edma_device_id) {
 				/* found */
 				break;
-			};
+			}
 
 			edma_sc = NULL;
-		};
-	};
+		}
+	}
 
 	if (edma_sc == NULL) {
 		device_printf(sc->dev, "no eDMA. can't operate\n");
 		return (ENXIO);
-	};
+	}
 
 	sc->edma_sc = edma_sc;
 
@@ -466,7 +465,7 @@ find_edma_controller(struct sc_info *sc)
 	if (sc->edma_chnum < 0) {
 		/* cant setup eDMA */
 		return (ENXIO);
-	};
+	}
 
 	return (0);
 };

@@ -59,7 +59,6 @@ void
 smb_time_server2local(u_long seconds, int tzoff, struct timespec *tsp)
 {
 	tsp->tv_sec = seconds + tzoff * 60;
-	    /*+ tz_minuteswest * 60 + (wall_cmos_clock ? adjkerntz : 0)*/;
 }
 
 /*
@@ -170,8 +169,8 @@ smbfs_fname_tolocal(struct smb_vc *vcp, char *name, int *nmlen, int caseopt)
 		if (error) return error;
 		*/
 
-		error = iconv_conv_case
-			(vcp->vc_tolocal, (const char **)&ibuf, &ilen, &obuf, &olen, copt);
+		error = iconv_conv_case(vcp->vc_tolocal,
+		    __DECONST(const char **, &ibuf), &ilen, &obuf, &olen, copt);
 		if (error && SMB_UNICODE_STRINGS(vcp)) {
 			/*
 			 * If using unicode, leaving a file name as it was when

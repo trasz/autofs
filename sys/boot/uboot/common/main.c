@@ -28,6 +28,7 @@
 
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
+#include <sys/param.h>
 
 #include <stand.h>
 
@@ -43,6 +44,9 @@ __FBSDID("$FreeBSD$");
 struct uboot_devdesc currdev;
 struct arch_switch archsw;		/* MI/MD interface boundary */
 int devs_no;
+
+uintptr_t uboot_heap_start;
+uintptr_t uboot_heap_end;
 
 struct device_type { 
 	const char *name;
@@ -128,8 +132,8 @@ meminfo(void)
 	for (i = 0; i < 3; i++) {
 		size = memsize(si, t[i]);
 		if (size > 0)
-			printf("%s: %lldMB\n", ub_mem_type(t[i]),
-			    size / 1024 / 1024);
+			printf("%s: %juMB\n", ub_mem_type(t[i]),
+			    (uintmax_t)(size / 1024 / 1024));
 	}
 }
 
@@ -212,10 +216,11 @@ get_load_device(int *type, int *unit, int *slice, int *partition)
 
 	p = get_device_type(devstr, type);
 
-	/*
-	 * Empty device string, or unknown device name, or a bare, known 
-	 * device name. 
-	 */
+	/* Ignore optional spaces after the device name. */
+	while (*p == ' ')
+		p++;
+
+	/* Unknown device name, or a known name without unit number.  */
 	if ((*type == -1) || (*p == '\0')) {
 		return;
 	}
@@ -310,7 +315,7 @@ print_disk_probe_info()
 	else
 		strcpy(slice, "<auto>");
 
-	if (currdev.d_disk.partition > 0)
+	if (currdev.d_disk.partition >= 0)
 		sprintf(partition, "%d", currdev.d_disk.partition);
 	else
 		strcpy(partition, "<auto>");
@@ -377,25 +382,28 @@ probe_disks(int devidx, int load_type, int load_unit, int load_slice,
 		printf("\n");
 	}
 
-	printf("  Requested disk type/unit not found\n");
+	printf("  Requested disk type/unit/slice/partition not found\n");
 	return (-1);
 }
 
 int
-main(void)
+main(int argc, char **argv)
 {
 	struct api_signature *sig = NULL;
 	int load_type, load_unit, load_slice, load_partition;
 	int i;
-	const char * loaderdev;
+	const char *ldev;
 
 	/*
+	 * We first check if a command line argument was passed to us containing
+	 * API's signature address. If it wasn't then we try to search for the
+	 * API signature via the usual hinted address.
 	 * If we can't find the magic signature and related info, exit with a
 	 * unique error code that U-Boot reports as "## Application terminated,
 	 * rc = 0xnnbadab1". Hopefully 'badab1' looks enough like "bad api" to
 	 * provide a clue. It's better than 0xffffffff anyway.
 	 */
-	if (!api_search_sig(&sig))
+	if (!api_parse_cmdline_sig(argc, argv, &sig) && !api_search_sig(&sig))
 		return (0x01badab1);
 
 	syscall_ptr = sig->syscall;
@@ -413,13 +421,15 @@ main(void)
 	 * Initialise the heap as early as possible.  Once this is done,
 	 * alloc() is usable. The stack is buried inside us, so this is safe.
 	 */
-	setheap((void *)end, (void *)(end + 512 * 1024));
+	uboot_heap_start = round_page((uintptr_t)end);
+	uboot_heap_end   = uboot_heap_start + 512 * 1024;
+	setheap((void *)uboot_heap_start, (void *)uboot_heap_end);
 
 	/*
 	 * Set up console.
 	 */
 	cons_probe();
-	printf("Compatible U-Boot API signature found @%x\n", (uint32_t)sig);
+	printf("Compatible U-Boot API signature found @%p\n", sig);
 
 	printf("\n");
 	printf("%s, Revision %s\n", bootprog_name, bootprog_rev);
@@ -478,14 +488,15 @@ main(void)
 		return (0xbadef1ce);
 	}
 
-	env_setenv("currdev", EV_VOLATILE, uboot_fmtdev(&currdev),
-	    uboot_setcurrdev, env_nounset);
-	env_setenv("loaddev", EV_VOLATILE, uboot_fmtdev(&currdev),
-	    env_noset, env_nounset);
+	ldev = uboot_fmtdev(&currdev);
+	env_setenv("currdev", EV_VOLATILE, ldev, uboot_setcurrdev, env_nounset);
+	env_setenv("loaddev", EV_VOLATILE, ldev, env_noset, env_nounset);
+	printf("Booting from %s\n", ldev);
 
 	setenv("LINES", "24", 1);		/* optional */
 	setenv("prompt", "loader>", 1);
 
+	archsw.arch_loadaddr = uboot_loadaddr;
 	archsw.arch_getdev = uboot_getdev;
 	archsw.arch_copyin = uboot_copyin;
 	archsw.arch_copyout = uboot_copyout;
@@ -503,7 +514,7 @@ static int
 command_heap(int argc, char *argv[])
 {
 
-	printf("heap base at %p, top at %p, used %d\n", end, sbrk(0),
+	printf("heap base at %p, top at %p, used %td\n", end, sbrk(0),
 	    sbrk(0) - end);
 
 	return (CMD_OK);
@@ -555,6 +566,104 @@ command_sysinfo(int argc, char *argv[])
 	ub_dump_si(si);
 	return (CMD_OK);
 }
+
+enum ubenv_action {
+	UBENV_UNKNOWN,
+	UBENV_SHOW,
+	UBENV_IMPORT
+};
+
+static void
+handle_uboot_env_var(enum ubenv_action action, const char * var)
+{
+	char ldvar[128];
+	const char *val;
+	char *wrk;
+	int len;
+
+	/*
+	 * On an import with the variable name formatted as ldname=ubname,
+	 * import the uboot variable ubname into the loader variable ldname,
+	 * otherwise the historical behavior is to import to uboot.ubname.
+	 */
+	if (action == UBENV_IMPORT) { 
+		len = strcspn(var, "=");
+		if (len == 0) {
+			printf("name cannot start with '=': '%s'\n", var);
+			return;
+		}
+		if (var[len] == 0) {
+			strcpy(ldvar, "uboot.");
+			strncat(ldvar, var, sizeof(ldvar) - 7);
+		} else {
+			len = MIN(len, sizeof(ldvar) - 1);
+			strncpy(ldvar, var, len);
+			ldvar[len] = 0;
+			var = &var[len + 1];
+		}
+	}
+
+	/*
+	 * If the user prepended "uboot." (which is how they usually see these
+	 * names) strip it off as a convenience.
+	 */
+	if (strncmp(var, "uboot.", 6) == 0) {
+		var = &var[6];
+	}
+
+	/* If there is no variable name left, punt. */
+	if (var[0] == 0) {
+		printf("empty variable name\n");
+		return;
+	}
+
+	val = ub_env_get(var);
+	if (action == UBENV_SHOW) {
+		if (val == NULL)
+			printf("uboot.%s is not set\n", var);
+		else
+			printf("uboot.%s=%s\n", var, val);
+	} else if (action == UBENV_IMPORT) {
+		if (val != NULL) {
+			setenv(ldvar, val, 1);
+		}
+	}
+}
+
+static int
+command_ubenv(int argc, char *argv[])
+{
+	enum ubenv_action action;
+	const char *var;
+	int i;
+
+	action = UBENV_UNKNOWN;
+	if (argc > 1) {
+		if (strcasecmp(argv[1], "import") == 0)
+			action = UBENV_IMPORT;
+		else if (strcasecmp(argv[1], "show") == 0)
+			action = UBENV_SHOW;
+	}
+	if (action == UBENV_UNKNOWN) {
+		command_errmsg = "usage: 'ubenv <import|show> [var ...]";
+		return (CMD_ERROR);
+	}
+
+	if (argc > 2) {
+		for (i = 2; i < argc; i++)
+			handle_uboot_env_var(action, argv[i]);
+	} else {
+		var = NULL;
+		for (;;) {
+			if ((var = ub_env_enum(var)) == NULL)
+				break;
+			handle_uboot_env_var(action, var);
+		}
+	}
+
+	return (CMD_OK);
+}
+COMMAND_SET(ubenv, "ubenv", "show or import U-Boot env vars", command_ubenv);
 
 #ifdef LOADER_FDT_SUPPORT
 /*

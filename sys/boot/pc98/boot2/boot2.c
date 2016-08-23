@@ -35,6 +35,8 @@ __FBSDID("$FreeBSD$");
 
 #include "boot2.h"
 #include "lib.h"
+#include "paths.h"
+#include "rbx.h"
 
 /* Define to 0 to omit serial support */
 #ifndef SERIAL
@@ -54,46 +56,6 @@ __FBSDID("$FreeBSD$");
 
 #define SECOND		1	/* Circa that many ticks in a second. */
 
-#define RBX_ASKNAME	0x0	/* -a */
-#define RBX_SINGLE	0x1	/* -s */
-/* 0x2 is reserved for log2(RB_NOSYNC). */
-/* 0x3 is reserved for log2(RB_HALT). */
-/* 0x4 is reserved for log2(RB_INITNAME). */
-#define RBX_DFLTROOT	0x5	/* -r */
-#define RBX_KDB 	0x6	/* -d */
-/* 0x7 is reserved for log2(RB_RDONLY). */
-/* 0x8 is reserved for log2(RB_DUMP). */
-/* 0x9 is reserved for log2(RB_MINIROOT). */
-#define RBX_CONFIG	0xa	/* -c */
-#define RBX_VERBOSE	0xb	/* -v */
-#define RBX_SERIAL	0xc	/* -h */
-#define RBX_CDROM	0xd	/* -C */
-/* 0xe is reserved for log2(RB_POWEROFF). */
-#define RBX_GDB 	0xf	/* -g */
-#define RBX_MUTE	0x10	/* -m */
-/* 0x11 is reserved for log2(RB_SELFTEST). */
-/* 0x12 is reserved for boot programs. */
-/* 0x13 is reserved for boot programs. */
-#define RBX_PAUSE	0x14	/* -p */
-#define RBX_QUIET	0x15	/* -q */
-#define RBX_NOINTR	0x1c	/* -n */
-/* 0x1d is reserved for log2(RB_MULTIPLE) and is just misnamed here. */
-#define RBX_DUAL	0x1d	/* -D */
-/* 0x1f is reserved for log2(RB_BOOTINFO). */
-
-/* pass: -a, -s, -r, -d, -c, -v, -h, -C, -g, -m, -p, -D */
-#define RBX_MASK	(OPT_SET(RBX_ASKNAME) | OPT_SET(RBX_SINGLE) | \
-			OPT_SET(RBX_DFLTROOT) | OPT_SET(RBX_KDB ) | \
-			OPT_SET(RBX_CONFIG) | OPT_SET(RBX_VERBOSE) | \
-			OPT_SET(RBX_SERIAL) | OPT_SET(RBX_CDROM) | \
-			OPT_SET(RBX_GDB ) | OPT_SET(RBX_MUTE) | \
-			OPT_SET(RBX_PAUSE) | OPT_SET(RBX_DUAL))
-
-#define PATH_DOTCONFIG	"/boot.config"
-#define PATH_CONFIG	"/boot/config"
-#define PATH_BOOT3	"/boot/loader"
-#define PATH_KERNEL	"/boot/kernel/kernel"
-
 #define ARGS		0x900
 #define NOPT		14
 #define NDEV		3
@@ -104,9 +66,6 @@ __FBSDID("$FreeBSD$");
 #define TYPE_AD		0
 #define TYPE_DA		1
 #define TYPE_FD		2
-
-#define OPT_SET(opt)	(1 << (opt))
-#define OPT_CHECK(opt)	((opts) & OPT_SET(opt))
 
 extern uint32_t _end;
 
@@ -145,13 +104,14 @@ static struct dsk {
 } dsk;
 static char cmd[512], cmddup[512], knamebuf[1024];
 static const char *kname;
-static uint32_t opts;
+uint32_t opts;
 static struct bootinfo bootinfo;
 #if SERIAL
 static int comspeed = SIOSPD;
 static uint8_t ioctrl = IO_KEYBOARD;
 #endif
 
+int main(void);
 void exit(int);
 static void load(void);
 static int parse(void);
@@ -326,7 +286,7 @@ bd_getbigeom(int bunit)
     v86.addr = 0x1b;
     v86.eax = 0x8400 | unit;
     v86int();
-    if (v86.efl & 0x1)
+    if (V86_CY(v86.efl))
 	return 0x4F020F;	/* 1200KB FD C:80 H:2 S:15 */
     return ((v86.ecx & 0xffff) << 16) | (v86.edx & 0xffff);
 }
@@ -414,7 +374,7 @@ main(void)
      */
 
     if (!kname) {
-	kname = PATH_BOOT3;
+	kname = PATH_LOADER;
 	if (autoboot && !keyhit(3*SECOND)) {
 	    load();
 	    kname = PATH_KERNEL;
@@ -462,7 +422,8 @@ load(void)
     caddr_t p;
     ufs_ino_t ino;
     uint32_t addr;
-    int i, j;
+    int k;
+    uint8_t i, j;
 
     if (!(ino = lookup(kname))) {
 	if (!ls)
@@ -483,7 +444,7 @@ load(void)
 	    return;
     } else if (IS_ELF(hdr.eh)) {
 	fs_off = hdr.eh.e_phoff;
-	for (j = i = 0; i < hdr.eh.e_phnum && j < 2; i++) {
+	for (j = k = 0; k < hdr.eh.e_phnum && j < 2; k++) {
 	    if (xfsread(ino, ep + j, sizeof(ep[0])))
 		return;
 	    if (ep[j].p_type == PT_LOAD)
@@ -533,6 +494,7 @@ parse()
     const char *cp;
     unsigned int drv;
     int c, i, j;
+    size_t k;
 
     while ((c = *arg++)) {
 	if (c == ' ' || c == '\t' || c == '\n')
@@ -618,10 +580,11 @@ parse()
 		dsk.daua = dsk.disk | dsk.unit;
 		dsk_meta = 0;
 	    }
-	    if ((i = ep - arg)) {
-		if ((size_t)i >= sizeof(knamebuf))
+	    k = ep - arg;
+	    if (k > 0) {
+		if (k >= sizeof(knamebuf))
 		    return -1;
-		memcpy(knamebuf, arg, i + 1);
+		memcpy(knamebuf, arg, k + 1);
 		kname = knamebuf;
 	    }
 	}
@@ -639,6 +602,7 @@ dskread(void *buf, unsigned lba, unsigned nblk)
     unsigned i;
     uint8_t sl;
     u_char *p;
+    const char *reason;
 
     if (!dsk_meta) {
 	sec = dmadat->secbuf;
@@ -660,8 +624,8 @@ dskread(void *buf, unsigned lba, unsigned nblk)
 	if (sl != WHOLE_DISK_SLICE) {
 	    dp += sl - BASE_SLICE;
 	    if (dp->dp_mid != DOSMID_386BSD) {
-		printf("Invalid %s\n", "slice");
-		return -1;
+		reason = "slice";
+		goto error;
 	    }
 	    dsk.start = dp->dp_scyl * dsk.head * dsk.sec +
 		dp->dp_shd * dsk.sec + dp->dp_ssect;
@@ -671,14 +635,14 @@ dskread(void *buf, unsigned lba, unsigned nblk)
 	d = (void *)(sec + LABELOFFSET);
 	if (d->d_magic != DISKMAGIC || d->d_magic2 != DISKMAGIC) {
 	    if (dsk.part != RAW_PART) {
-		printf("Invalid %s\n", "label");
-		return -1;
+		reason = "label";
+		goto error;
 	    }
 	} else {
 	    if (dsk.part >= d->d_npartitions ||
 		!d->d_partitions[dsk.part].p_size) {
-		printf("Invalid %s\n", "partition");
-		return -1;
+		reason = "partition";
+		goto error;
 	    }
 	    dsk.start += d->d_partitions[dsk.part].p_offset;
 	    dsk.start -= d->d_partitions[RAW_PART].p_offset;
@@ -690,6 +654,9 @@ dskread(void *buf, unsigned lba, unsigned nblk)
 	    return i;
     }
     return 0;
+error:
+    printf("Invalid %s\n", reason);
+    return -1;
 }
 
 static void
@@ -750,8 +717,10 @@ drvread(void *buf, unsigned lba)
     head = x / dsk.sec;
     sec = x % dsk.sec;
 
-    if (!OPT_CHECK(RBX_QUIET))
-	printf("%c\b", c = c << 8 | c >> 24);
+    if (!OPT_CHECK(RBX_QUIET)) {
+	xputc(c = c << 8 | c >> 24);
+	xputc('\b');
+    }
     v86.ctl = V86_ADDR | V86_CALLF | V86_FLAGS;
     v86.addr = READORG;		/* call to read in boot1 */
     v86.ecx = cyl;

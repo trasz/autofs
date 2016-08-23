@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright (c) 2014 Integros [integros.com]
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -139,7 +140,7 @@ typedef struct zil_bp_node {
 	avl_node_t	zn_node;
 } zil_bp_node_t;
 
-#define	ZIL_MAX_LOG_DATA (SPA_MAXBLOCKSIZE - sizeof (zil_chain_t) - \
+#define	ZIL_MAX_LOG_DATA (SPA_OLD_MAXBLOCKSIZE - sizeof (zil_chain_t) - \
     sizeof (lr_write_t))
 
 #ifdef	__cplusplus

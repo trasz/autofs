@@ -4,23 +4,29 @@
 
 .include <src.opts.mk>
 
+PACKAGE=examples
+FILESDIR=	${SHAREDIR}/examples
+
+.for _XFILE in ${XFILES}
+FILESGROUPS+=	${_XFILE}
+PACKAGE_${_XFILE}?=examples
+${_XFILE}DIR=	${SHAREDIR}/examples/${_XFILE:H}
+.endfor
+
 LDIRS=	BSD_daemon \
 	FreeBSD_version \
 	IPv6 \
-	bhyve \
 	bootforth \
 	csh \
 	diskless \
 	drivers \
 	etc \
 	find_interface \
-	hast \
 	ibcs2 \
 	indent \
 	ipfw \
 	jails \
 	kld \
-	libusb20 \
 	libvgl \
 	mdoc \
 	netgraph \
@@ -30,7 +36,9 @@ LDIRS=	BSD_daemon \
 	printing \
 	ses \
 	scsi_target \
-	sunrpc
+	sunrpc \
+	uefisign \
+	ypldap
 
 XFILES=	BSD_daemon/FreeBSD.pfa \
 	BSD_daemon/README \
@@ -42,7 +50,6 @@ XFILES=	BSD_daemon/FreeBSD.pfa \
 	FreeBSD_version/Makefile \
 	FreeBSD_version/README \
 	IPv6/USAGE \
-	bhyve/vmrun.sh \
 	bootforth/README \
 	bootforth/boot.4th \
 	bootforth/frames.4th \
@@ -64,11 +71,6 @@ XFILES=	BSD_daemon/FreeBSD.pfa \
 	find_interface/Makefile \
 	find_interface/README \
 	find_interface/find_interface.c \
-	hast/ucarp.sh \
-	hast/ucarp_down.sh \
-	hast/ucarp_up.sh \
-	hast/vip-down.sh \
-	hast/vip-up.sh \
 	ibcs2/README \
 	ibcs2/hello.uu \
 	indent/indent.pro \
@@ -100,12 +102,6 @@ XFILES=	BSD_daemon/FreeBSD.pfa \
 	kld/syscall/module/syscall.c \
 	kld/syscall/test/Makefile \
 	kld/syscall/test/call.c \
-	libusb20/Makefile \
-	libusb20/README \
-	libusb20/util.c \
-	libusb20/util.h \
-	libusb20/bulk.c \
-	libusb20/control.c \
 	libvgl/Makefile \
 	libvgl/demo.c \
 	mdoc/POSIX-copyright \
@@ -196,11 +192,38 @@ XFILES=	BSD_daemon/FreeBSD.pfa \
 	sunrpc/sort/Makefile \
 	sunrpc/sort/rsort.c \
 	sunrpc/sort/sort.x \
-	sunrpc/sort/sort_proc.c
+	sunrpc/sort/sort_proc.c \
+	uefisign/uefikeys \
+	ypldap/ypldap.conf
 
 BINDIR= ${SHAREDIR}/examples
 
-NO_OBJ=
+.if ${MK_HAST} != "no"
+LDIRS+=		hast
+XFILES+=	hast/ucarp.sh \
+		hast/ucarp_down.sh \
+		hast/ucarp_up.sh \
+		hast/vip-down.sh \
+		hast/vip-up.sh
+.endif
+
+.if ${MK_USB} != "no"
+LDIRS+=		libusb20
+XFILES+=	libusb20/Makefile \
+		libusb20/README \
+		libusb20/util.c \
+		libusb20/util.h \
+		libusb20/bulk.c \
+		libusb20/control.c
+.endif
+
+.if ${MACHINE_CPUARCH} == "amd64"
+.if ${MK_BHYVE} != "no"
+LDIRS+=		bhyve
+XFILES+=	bhyve/vmrun.sh
+PACKAGE_bhyve/vmrun.sh=	bhyve
+.endif
+.endif
 
 # Define SHARED to indicate whether you want symbolic links to the system
 # source (``symlinks''), or a separate copy (``copies''); (latter useful
@@ -208,6 +231,7 @@ NO_OBJ=
 SHARED?=	copies
 
 beforeinstall: ${SHARED} etc-examples
+META_TARGETS+=	copies symlinks
 .ORDER: ${SHARED} etc-examples
 
 copies:
@@ -219,7 +243,7 @@ copies:
 	mtree -deU ${MTREE_FOLLOWS_SYMLINKS} \
 	    -f ${.CURDIR}/../../etc/mtree/BSD.usr.dist -p ${DESTDIR}/usr
 .for file in ${XFILES}
-	${INSTALL} -o ${SHAREOWN} -g ${SHAREGRP} -m ${SHAREMODE} \
+	${INSTALL} -T package=${PACKAGE_${file}:Uexamples} -o ${SHAREOWN} -g ${SHAREGRP} -m ${SHAREMODE} \
 		${.CURDIR}/${file} ${DESTDIR}${BINDIR}/${file}
 .endfor
 
@@ -231,7 +255,7 @@ symlinks:
 
 etc-examples:
 .if ${SHARED} != "symlinks"
-	(cd ${.CURDIR}/../../etc; ${MAKE} etc-examples)
+	${_+_}(cd ${.CURDIR}/../../etc; ${MAKE} etc-examples)
 .endif
 
 .if ${SHARED} != "symlinks"
@@ -242,13 +266,12 @@ SUBDIR+=ipfilter
 .if ${MK_PF} != "no"
 SUBDIR+=pf
 .endif
-.if ${MK_DMAGENT} != "no"
-SUBDIR+=dma
-.endif
 .endif
 
 .if ${MK_TESTS} != "no"
 SUBDIR+=tests
 .endif
 
-.include <bsd.subdir.mk>
+SUBDIR_PARALLEL=
+
+.include <bsd.prog.mk>

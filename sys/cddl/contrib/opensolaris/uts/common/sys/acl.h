@@ -33,8 +33,8 @@
 
 #if defined(_KERNEL)
 /*
- * When compiling OpenSolaris kernel code, this file is getting
- * included instead of FreeBSD one.  Pull the original sys/acl.h as well.
+ * When compiling OpenSolaris kernel code, this file is included instead of the
+ * FreeBSD one.  Include the original sys/acl.h as well.
  */
 #undef _SYS_ACL_H
 #include_next <sys/acl.h>
@@ -189,11 +189,12 @@ typedef struct ace_object {
     ACE_DIRECTORY_INHERIT_ACE | \
     ACE_NO_PROPAGATE_INHERIT_ACE | \
     ACE_INHERIT_ONLY_ACE | \
+    ACE_INHERITED_ACE | \
     ACE_IDENTIFIER_GROUP)
 
 #define	ACE_TYPE_FLAGS		(ACE_OWNER|ACE_GROUP|ACE_EVERYONE| \
     ACE_IDENTIFIER_GROUP)
-#define	ACE_INHERIT_FLAGS	(ACE_FILE_INHERIT_ACE| \
+#define	ACE_INHERIT_FLAGS	(ACE_FILE_INHERIT_ACE| ACL_INHERITED_ACE| \
     ACE_DIRECTORY_INHERIT_ACE|ACE_NO_PROPAGATE_INHERIT_ACE|ACE_INHERIT_ONLY_ACE)
 
 /* cmd args to acl(2) for aclent_t  */

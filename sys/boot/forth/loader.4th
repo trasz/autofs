@@ -1,4 +1,5 @@
-\ Copyright (c) 1999 Daniel C. Sobral <dcs@freebsd.org>
+\ Copyright (c) 1999 Daniel C. Sobral <dcs@FreeBSD.org>
+\ Copyright (c) 2011-2015 Devin Teske <dteske@FreeBSD.org>
 \ All rights reserved.
 \
 \ Redistribution and use in source and binary forms, with or without
@@ -24,6 +25,8 @@
 \
 \ $FreeBSD$
 
+only forth definitions
+
 s" arch-i386" environment? [if] [if]
 	s" loader_version" environment?  [if]
 		11 < [if]
@@ -42,15 +45,16 @@ s" arch-i386" environment? [if] [if]
 include /boot/support.4th
 include /boot/color.4th
 include /boot/delay.4th
+include /boot/check-password.4th
 
-only forth also support-functions also builtins definitions
+only forth definitions
 
 : bootmsg ( -- )
-  loader_color? if
-    ." [37;44mBooting...[0m" cr
-  else
-    ." Booting..." cr
-  then
+  loader_color? dup ( -- bool bool )
+  if 7 fg 4 bg then
+  ." Booting..."
+  if me then
+  cr
 ;
 
 : try-menu-unset
@@ -76,6 +80,8 @@ only forth also support-functions also builtins definitions
     drop
   then
 ;
+
+only forth also support-functions also builtins definitions
 
 : boot
   0= if ( interpreted ) get_arguments then
@@ -120,19 +126,17 @@ only forth also support-functions also builtins definitions
   ?dup 0= if 0 1 autoboot then
 ;
 
-also forth definitions also builtins
+also forth definitions previous
 
 builtin: boot
 builtin: boot-conf
 
 only forth definitions also support-functions
 
-include /boot/check-password.4th
-
 \ ***** start
 \
 \       Initializes support.4th global variables, sets loader_conf_files,
-\       processes conf files, and, if any one such file was succesfully
+\       processes conf files, and, if any one such file was successfully
 \       read to the end, loads kernel and modules.
 
 : start  ( -- ) ( throws: abort & user-defined )
@@ -140,16 +144,17 @@ include /boot/check-password.4th
   include_conf_files
   include_nextboot_file
   \ Will *NOT* try to load kernel and modules if no configuration file
-  \ was succesfully loaded!
+  \ was successfully loaded!
   any_conf_read? if
     s" loader_delay" getenv -1 = if
+      load_xen_throw
       load_kernel
       load_modules
     else
       drop
       ." Loading Kernel and Modules (Ctrl-C to Abort)" cr
       s" also support-functions" evaluate
-      s" set delay_command='load_kernel load_modules'" evaluate
+      s" set delay_command='load_xen_throw load_kernel load_modules'" evaluate
       s" set delay_showdots" evaluate
       delay_execute
     then
@@ -225,6 +230,13 @@ include /boot/check-password.4th
 
 : .? 2 spaces 2swap 15 #type 2 spaces type cr ;
 
+\ Execute the ? command to print all the commands defined in
+\ C, then list the ones we support here. Please note that this
+\ doesn't use pager_* routines that the C implementation of ?
+\ does, so these will always appear, even if you stop early
+\ there. And they may cause the commands to scroll off the
+\ screen if the number of commands modulus LINES is close
+\ to LINEs....
 : ?
   ['] ? execute
   s" boot-conf" s" load kernel and modules, then autoboot" .?
@@ -244,5 +256,4 @@ include /boot/check-password.4th
   then
 ; immediate \ interpret immediately for access to `source' (aka tib)
 
-only forth also
-
+only forth definitions

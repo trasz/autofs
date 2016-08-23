@@ -108,6 +108,7 @@ struct cuse_server {
 	TAILQ_HEAD(, cuse_client) hcli;
 	struct cv cv;
 	struct selinfo selinfo;
+	pid_t	pid;
 	int	is_closing;
 	int	refs;
 };
@@ -142,6 +143,7 @@ static struct cuse_server *cuse_alloc_unit[CUSE_DEVICES_MAX];
 static int cuse_alloc_unit_id[CUSE_DEVICES_MAX];
 static struct cuse_memory cuse_mem[CUSE_ALLOC_UNIT_MAX];
 
+static void cuse_server_wakeup_all_client_locked(struct cuse_server *pcs);
 static void cuse_client_kqfilter_read_detach(struct knote *kn);
 static void cuse_client_kqfilter_write_detach(struct knote *kn);
 static int cuse_client_kqfilter_read_event(struct knote *kn, long hint);
@@ -509,7 +511,7 @@ cuse_client_is_closing(struct cuse_client *pcc)
 
 static void
 cuse_client_send_command_locked(struct cuse_client_command *pccmd,
-    unsigned long data_ptr, unsigned long arg, int fflags, int ioflag)
+    uintptr_t data_ptr, unsigned long arg, int fflags, int ioflag)
 {
 	unsigned long cuse_fflags = 0;
 	struct cuse_server *pcs;
@@ -648,6 +650,8 @@ cuse_server_free(void *arg)
 		return;
 	}
 	cuse_server_is_closing(pcs);
+	/* final client wakeup, if any */
+	cuse_server_wakeup_all_client_locked(pcs);
 
 	TAILQ_REMOVE(&cuse_server_head, pcs, entry);
 
@@ -688,6 +692,10 @@ cuse_server_open(struct cdev *dev, int fflags, int devtype, struct thread *td)
 		free(pcs, M_CUSE);
 		return (ENOMEM);
 	}
+
+	/* store current process ID */
+	pcs->pid = curproc->p_pid;
+
 	TAILQ_INIT(&pcs->head);
 	TAILQ_INIT(&pcs->hdev);
 	TAILQ_INIT(&pcs->hcli);
@@ -716,6 +724,9 @@ cuse_server_close(struct cdev *dev, int fflag, int devtype, struct thread *td)
 
 	cuse_lock();
 	cuse_server_is_closing(pcs);
+	/* final client wakeup, if any */
+	cuse_server_wakeup_all_client_locked(pcs);
+
 	knlist_clear(&pcs->selinfo.si_note, 1);
 	cuse_unlock();
 
@@ -920,6 +931,18 @@ cuse_server_wakeup_locked(struct cuse_server *pcs)
 	KNOTE_LOCKED(&pcs->selinfo.si_note, 0);
 }
 
+static void
+cuse_server_wakeup_all_client_locked(struct cuse_server *pcs)
+{
+	struct cuse_client *pcc;
+
+	TAILQ_FOREACH(pcc, &pcs->hcli, entry) {
+		pcc->cflags |= (CUSE_CLI_KNOTE_NEED_READ |
+		    CUSE_CLI_KNOTE_NEED_WRITE);
+	}
+	cuse_server_wakeup_locked(pcs);
+}
+
 static int
 cuse_free_unit_by_id_locked(struct cuse_server *pcs, int id)
 {
@@ -1114,7 +1137,7 @@ cuse_server_ioctl(struct cdev *dev, unsigned long cmd,
 		if (pccmd != NULL) {
 			pcc = pccmd->client;
 			for (n = 0; n != CUSE_CMD_MAX; n++) {
-				pcc->cmds[n].sub.per_file_handle = *(unsigned long *)data;
+				pcc->cmds[n].sub.per_file_handle = *(uintptr_t *)data;
 			}
 		} else {
 			error = ENXIO;
@@ -1226,11 +1249,7 @@ cuse_server_ioctl(struct cdev *dev, unsigned long cmd,
 		 * We don't know which direction caused the event.
 		 * Wakeup both!
 		 */
-		TAILQ_FOREACH(pcc, &pcs->hcli, entry) {
-			pcc->cflags |= (CUSE_CLI_KNOTE_NEED_READ |
-			    CUSE_CLI_KNOTE_NEED_WRITE);
-		}
-		cuse_server_wakeup_locked(pcs);
+		cuse_server_wakeup_all_client_locked(pcs);
 		cuse_unlock();
 		break;
 
@@ -1343,9 +1362,15 @@ cuse_client_open(struct cdev *dev, int fflags, int devtype, struct thread *td)
 	if (pcsd != NULL) {
 		pcs = pcsd->server;
 		pcd = pcsd->user_dev;
+		/*
+		 * Check that the refcount didn't wrap and that the
+		 * same process is not both client and server. This
+		 * can easily lead to deadlocks when destroying the
+		 * CUSE character device nodes:
+		 */
 		pcs->refs++;
-		if (pcs->refs < 0) {
-			/* overflow */
+		if (pcs->refs < 0 || pcs->pid == curproc->p_pid) {
+			/* overflow or wrong PID */
 			pcs->refs--;
 			pcsd = NULL;
 		}
@@ -1522,7 +1547,7 @@ cuse_client_read(struct cdev *dev, struct uio *uio, int ioflag)
 
 		cuse_lock();
 		cuse_client_send_command_locked(pccmd,
-		    (unsigned long)uio->uio_iov->iov_base,
+		    (uintptr_t)uio->uio_iov->iov_base,
 		    (unsigned long)(unsigned int)len, pcc->fflags, ioflag);
 
 		error = cuse_client_receive_command_locked(pccmd, 0, 0);
@@ -1582,7 +1607,7 @@ cuse_client_write(struct cdev *dev, struct uio *uio, int ioflag)
 
 		cuse_lock();
 		cuse_client_send_command_locked(pccmd,
-		    (unsigned long)uio->uio_iov->iov_base,
+		    (uintptr_t)uio->uio_iov->iov_base,
 		    (unsigned long)(unsigned int)len, pcc->fflags, ioflag);
 
 		error = cuse_client_receive_command_locked(pccmd, 0, 0);
@@ -1631,7 +1656,7 @@ cuse_client_ioctl(struct cdev *dev, unsigned long cmd,
 
 	cuse_cmd_lock(pccmd);
 
-	if (cmd & IOC_IN)
+	if (cmd & (IOC_IN | IOC_VOID))
 		memcpy(pcc->ioctl_buffer, data, len);
 
 	/*
@@ -1677,7 +1702,7 @@ cuse_client_poll(struct cdev *dev, int events, struct thread *td)
 
 	error = cuse_client_get(&pcc);
 	if (error != 0)
-		return (POLLNVAL);
+		goto pollnval;
 
 	temp = 0;
 
@@ -1705,8 +1730,10 @@ cuse_client_poll(struct cdev *dev, int events, struct thread *td)
 	error = cuse_client_receive_command_locked(pccmd, 0, 0);
 	cuse_unlock();
 
+	cuse_cmd_unlock(pccmd);
+
 	if (error < 0) {
-		revents = POLLNVAL;
+		goto pollnval;
 	} else {
 		revents = 0;
 		if (error & CUSE_POLL_READ)
@@ -1716,10 +1743,12 @@ cuse_client_poll(struct cdev *dev, int events, struct thread *td)
 		if (error & CUSE_POLL_ERROR)
 			revents |= (events & POLLHUP);
 	}
-
-	cuse_cmd_unlock(pccmd);
-
 	return (revents);
+
+ pollnval:
+	/* XXX many clients don't understand POLLNVAL */
+	return (events & (POLLHUP | POLLPRI | POLLIN |
+	    POLLRDNORM | POLLOUT | POLLWRNORM));
 }
 
 static int

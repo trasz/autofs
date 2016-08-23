@@ -114,6 +114,7 @@ __FBSDID("$FreeBSD$");
 #define HTTP_REDIRECT(xyz) ((xyz) == HTTP_MOVED_PERM \
 			    || (xyz) == HTTP_MOVED_TEMP \
 			    || (xyz) == HTTP_TEMP_REDIRECT \
+			    || (xyz) == HTTP_PERM_REDIRECT \
 			    || (xyz) == HTTP_USE_PROXY \
 			    || (xyz) == HTTP_SEE_OTHER)
 
@@ -130,8 +131,8 @@ struct httpio
 	int		 chunked;	/* chunked mode */
 	char		*buf;		/* chunk buffer */
 	size_t		 bufsize;	/* size of chunk buffer */
-	ssize_t		 buflen;	/* amount of data currently in buffer */
-	int		 bufpos;	/* current read offset in buffer */
+	size_t		 buflen;	/* amount of data currently in buffer */
+	size_t		 bufpos;	/* current read offset in buffer */
 	int		 eof;		/* end-of-file flag */
 	int		 error;		/* error flag */
 	size_t		 chunksize;	/* remaining size of current chunk */
@@ -215,6 +216,7 @@ http_fillbuf(struct httpio *io, size_t len)
 	if (io->eof)
 		return (0);
 
+	/* not chunked: just fetch the requested amount */
 	if (io->chunked == 0) {
 		if (http_growbuf(io, len) == -1)
 			return (-1);
@@ -227,6 +229,7 @@ http_fillbuf(struct httpio *io, size_t len)
 		return (io->buflen);
 	}
 
+	/* chunked, but we ran out: get the next chunk header */
 	if (io->chunksize == 0) {
 		switch (http_new_chunk(io)) {
 		case -1:
@@ -238,6 +241,7 @@ http_fillbuf(struct httpio *io, size_t len)
 		}
 	}
 
+	/* fetch the requested amount, but no more than the current chunk */
 	if (len > io->chunksize)
 		len = io->chunksize;
 	if (http_growbuf(io, len) == -1)
@@ -246,16 +250,15 @@ http_fillbuf(struct httpio *io, size_t len)
 		io->error = errno;
 		return (-1);
 	}
+	io->bufpos = 0;
 	io->buflen = nbytes;
-	io->chunksize -= io->buflen;
+	io->chunksize -= nbytes;
 
 	if (io->chunksize == 0) {
 		if (fetch_read(io->conn, &ch, 1) != 1 || ch != '\r' ||
 		    fetch_read(io->conn, &ch, 1) != 1 || ch != '\n')
 			return (-1);
 	}
-
-	io->bufpos = 0;
 
 	return (io->buflen);
 }
@@ -873,7 +876,7 @@ http_parse_mtime(const char *p, time_t *mtime)
 	char locale[64], *r;
 	struct tm tm;
 
-	strncpy(locale, setlocale(LC_TIME, NULL), sizeof(locale));
+	strlcpy(locale, setlocale(LC_TIME, NULL), sizeof(locale));
 	setlocale(LC_TIME, "C");
 	r = strptime(p, "%a, %d %b %Y %H:%M:%S GMT", &tm);
 	/*
@@ -1330,7 +1333,6 @@ static int
 http_authorize(conn_t *conn, const char *hdr, http_auth_challenges_t *cs,
 	       http_auth_params_t *parms, struct url *url)
 {
-	http_auth_challenge_t *basic = NULL;
 	http_auth_challenge_t *digest = NULL;
 	int i;
 
@@ -1340,10 +1342,8 @@ http_authorize(conn_t *conn, const char *hdr, http_auth_challenges_t *cs,
 		return (-1);
 	}
 
-	/* Look for a Digest and a Basic challenge */
+	/* Look for a Digest */
 	for (i = 0; i < cs->count; i++) {
-		if (cs->challenges[i]->scheme == HTTPAS_BASIC)
-			basic = cs->challenges[i];
 		if (cs->challenges[i]->scheme == HTTPAS_DIGEST)
 			digest = cs->challenges[i];
 	}
@@ -1379,8 +1379,12 @@ http_connect(struct url *URL, struct url *purl, const char *flags)
 {
 	struct url *curl;
 	conn_t *conn;
+	hdr_t h;
+	http_headerbuf_t headerbuf;
+	const char *p;
 	int verbose;
 	int af, val;
+	int serrno;
 
 #ifdef INET6
 	af = AF_UNSPEC;
@@ -1401,6 +1405,7 @@ http_connect(struct url *URL, struct url *purl, const char *flags)
 	if ((conn = fetch_connect(curl->host, curl->port, af, verbose)) == NULL)
 		/* fetch_connect() has already set an error code */
 		return (NULL);
+	init_http_headerbuf(&headerbuf);
 	if (strcasecmp(URL->scheme, SCHEME_HTTPS) == 0 && purl) {
 		http_cmd(conn, "CONNECT %s:%d HTTP/1.1",
 		    URL->host, URL->port);
@@ -1408,24 +1413,46 @@ http_connect(struct url *URL, struct url *purl, const char *flags)
 		    URL->host, URL->port);
 		http_cmd(conn, "");
 		if (http_get_reply(conn) != HTTP_OK) {
-			fetch_close(conn);
-			return (NULL);
+			http_seterr(conn->err);
+			goto ouch;
 		}
-		http_get_reply(conn);
+		/* Read and discard the rest of the proxy response */
+		if (fetch_getln(conn) < 0) {
+			fetch_syserr();
+			goto ouch;
+		}
+		do {
+			switch ((h = http_next_header(conn, &headerbuf, &p))) {
+			case hdr_syserror:
+				fetch_syserr();
+				goto ouch;
+			case hdr_error:
+				http_seterr(HTTP_PROTOCOL_ERROR);
+				goto ouch;
+			default:
+				/* ignore */ ;
+			}
+		} while (h < hdr_end);
 	}
 	if (strcasecmp(URL->scheme, SCHEME_HTTPS) == 0 &&
 	    fetch_ssl(conn, URL, verbose) == -1) {
-		fetch_close(conn);
 		/* grrr */
 		errno = EAUTH;
 		fetch_syserr();
-		return (NULL);
+		goto ouch;
 	}
 
 	val = 1;
 	setsockopt(conn->sd, IPPROTO_TCP, TCP_NOPUSH, &val, sizeof(val));
 
+	clean_http_headerbuf(&headerbuf);
 	return (conn);
+ouch:
+	serrno = errno;
+	clean_http_headerbuf(&headerbuf);
+	fetch_close(conn);
+	errno = serrno;
+	return (NULL);
 }
 
 static struct url *
@@ -1625,16 +1652,17 @@ http_request_body(struct url *URL, const char *op, struct url_stat *us,
 			http_auth_params_t aparams;
 			init_http_auth_params(&aparams);
 			if (*purl->user || *purl->pwd) {
-				aparams.user = purl->user ?
-					strdup(purl->user) : strdup("");
-				aparams.password = purl->pwd?
-					strdup(purl->pwd) : strdup("");
+				aparams.user = strdup(purl->user);
+				aparams.password = strdup(purl->pwd);
 			} else if ((p = getenv("HTTP_PROXY_AUTH")) != NULL &&
 				   *p != '\0') {
 				if (http_authfromenv(p, &aparams) < 0) {
 					http_seterr(HTTP_NEED_PROXY_AUTH);
 					goto ouch;
 				}
+			} else if (fetch_netrc_auth(purl) == 0) {
+				aparams.user = strdup(purl->user);
+				aparams.password = strdup(purl->pwd);
 			}
 			http_authorize(conn, "Proxy-Authorization",
 				       &proxy_challenges, &aparams, url);
@@ -1654,22 +1682,21 @@ http_request_body(struct url *URL, const char *op, struct url_stat *us,
 			http_auth_params_t aparams;
 			init_http_auth_params(&aparams);
 			if (*url->user || *url->pwd) {
-				aparams.user = url->user ?
-					strdup(url->user) : strdup("");
-				aparams.password = url->pwd ?
-					strdup(url->pwd) : strdup("");
+				aparams.user = strdup(url->user);
+				aparams.password = strdup(url->pwd);
 			} else if ((p = getenv("HTTP_AUTH")) != NULL &&
 				   *p != '\0') {
 				if (http_authfromenv(p, &aparams) < 0) {
 					http_seterr(HTTP_NEED_AUTH);
 					goto ouch;
 				}
+			} else if (fetch_netrc_auth(url) == 0) {
+				aparams.user = strdup(url->user);
+				aparams.password = strdup(url->pwd);
 			} else if (fetchAuthMethod &&
 				   fetchAuthMethod(url) == 0) {
-				aparams.user = url->user ?
-					strdup(url->user) : strdup("");
-				aparams.password = url->pwd ?
-					strdup(url->pwd) : strdup("");
+				aparams.user = strdup(url->user);
+				aparams.password = strdup(url->pwd);
 			} else {
 				http_seterr(HTTP_NEED_AUTH);
 				goto ouch;
@@ -1741,6 +1768,8 @@ http_request_body(struct url *URL, const char *op, struct url_stat *us,
 			break;
 		case HTTP_MOVED_PERM:
 		case HTTP_MOVED_TEMP:
+		case HTTP_TEMP_REDIRECT:
+		case HTTP_PERM_REDIRECT:
 		case HTTP_SEE_OTHER:
 		case HTTP_USE_PROXY:
 			/*

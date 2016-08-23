@@ -293,6 +293,7 @@ struct usb_device *usb_alloc_device(device_t parent_dev, struct usb_bus *bus,
 struct usb_fs_privdata *usb_make_dev(struct usb_device *, const char *,
 		    int, int, int, uid_t, gid_t, int);
 void	usb_destroy_dev(struct usb_fs_privdata *);
+void	usb_destroy_dev_sync(struct usb_fs_privdata *);
 #endif
 usb_error_t	usb_probe_and_attach(struct usb_device *udev,
 		    uint8_t iface_index);
@@ -313,6 +314,9 @@ void	usb_set_device_state(struct usb_device *, enum usb_dev_state);
 enum usb_dev_state usb_get_device_state(struct usb_device *);
 
 uint8_t	usbd_enum_lock(struct usb_device *);
+#if USB_HAVE_UGEN
+uint8_t	usbd_enum_lock_sig(struct usb_device *);
+#endif
 void	usbd_enum_unlock(struct usb_device *);
 void	usbd_sr_lock(struct usb_device *);
 void	usbd_sr_unlock(struct usb_device *);

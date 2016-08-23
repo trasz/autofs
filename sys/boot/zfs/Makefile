@@ -5,19 +5,17 @@ INTERNALLIB=
 
 SRCS+=		zfs.c
 
+SRCS+=		skein.c skein_block.c
+.PATH:		${.CURDIR}/../../crypto/skein
+
 CFLAGS+=	-DBOOTPROG=\"zfsloader\"
 CFLAGS+=	-I${.CURDIR}/../common -I${.CURDIR}/../.. -I.
 CFLAGS+=	-I${.CURDIR}/../../../lib/libstand
 CFLAGS+=	-I${.CURDIR}/../../cddl/boot/zfs
+CFLAGS+=	-I${.CURDIR}/../../crypto/skein
 
-CFLAGS+=	-ffreestanding
 .if ${MACHINE_CPUARCH} == "i386" || ${MACHINE_CPUARCH} == "amd64"
 CFLAGS+=	-march=i386
-CFLAGS.gcc+=	-mpreferred-stack-boundary=2
-CFLAGS+=	-mno-mmx -mno-3dnow -mno-sse -mno-sse2 -mno-sse3 -msoft-float
-.endif
-.if ${MACHINE_CPUARCH} == "powerpc" || ${MACHINE_CPUARCH} == "arm"
-CFLAGS+=	-msoft-float
 .endif
 .if ${MACHINE_CPUARCH} == "amd64"
 CFLAGS+=	-m32
@@ -27,10 +25,11 @@ CFLAGS+=	-Wformat -Wall
 
 .if ${MACHINE_CPUARCH} == "amd64"
 CLEANFILES+=    machine
-machine:
+machine: .NOMETA
 	ln -sf ${.CURDIR}/../../i386/include machine
 .endif
 
+.include <bsd.stand.mk>
 .include <bsd.lib.mk>
 
 .if ${MACHINE_CPUARCH} == "amd64"

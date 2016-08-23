@@ -94,7 +94,6 @@ __FBSDID("$FreeBSD$");
 #include <machine/mips_opcode.h>
 #include <machine/asm.h>
 #include <machine/cpuregs.h>
-#include <machine/param.h>
 #include <machine/intr_machdep.h>
 #include <machine/clock.h>	/* for DELAY */
 #include <machine/bus.h>
@@ -141,8 +140,8 @@ static int	nlge_ioctl(struct ifnet *, u_long, caddr_t);
 static int	nlge_tx(struct ifnet *ifp, struct mbuf *m);
 static void 	nlge_rx(struct nlge_softc *sc, vm_paddr_t paddr, int len);
 
-static int	nlge_mii_write(struct device *, int, int, int);
-static int	nlge_mii_read(struct device *, int, int);
+static int	nlge_mii_write(device_t, int, int, int);
+static int	nlge_mii_read(device_t, int, int);
 static void	nlge_mac_mii_statchg(device_t);
 static int	nlge_mediachange(struct ifnet *ifp);
 static void	nlge_mediastatus(struct ifnet *ifp, struct ifmediareq *ifmr);
@@ -697,7 +696,9 @@ nlge_msgring_handler(int bucket, int size, int code, int stid,
 			printf("ERROR: Tx fb error (%d) on port %d\n", tx_error,
 			    port);
 		}
-		tx_error ? ifp->if_oerrors++ : ifp->if_opackets++;
+		tx_error ?
+		    if_inc_counter(ifp, IFCOUNTER_OERRORS, 1) :
+		    if_inc_counter(ifp, IFCOUNTER_OPACKETS, 1);
 	} else if (ctrl == CTRL_SNGL || ctrl == CTRL_START) {
 		/* Rx Packet */
 
@@ -776,7 +777,7 @@ fail:
 			NLGE_UNLOCK(sc);
 		}
 		m_freem(m);
-		ifp->if_iqdrops++;
+		if_inc_counter(ifp, IFCOUNTER_IQDROPS, 1);
 	}
 	return (error);
 }
@@ -825,12 +826,12 @@ nlge_rx(struct nlge_softc *sc, vm_paddr_t paddr, int len)
 	m->m_pkthdr.len = m->m_len = len;
 	m->m_pkthdr.rcvif = ifp;
 
-	ifp->if_ipackets++;
+	if_inc_counter(ifp, IFCOUNTER_IPACKETS, 1);
 	(*ifp->if_input)(ifp, m);
 }
 
 static int
-nlge_mii_write(struct device *dev, int phyaddr, int regidx, int regval)
+nlge_mii_write(device_t dev, int phyaddr, int regidx, int regval)
 {
 	struct nlge_softc *sc;
 
@@ -842,7 +843,7 @@ nlge_mii_write(struct device *dev, int phyaddr, int regidx, int regval)
 }
 
 static int
-nlge_mii_read(struct device *dev, int phyaddr, int regidx)
+nlge_mii_read(device_t dev, int phyaddr, int regidx)
 {
 	struct nlge_softc *sc;
 	int val;
@@ -1152,7 +1153,7 @@ nlna_config_pde(struct nlna_softc *sc)
 	cpumask = 0x1;
 #ifdef SMP
 	/*
-         * rge may be called before SMP start in a BOOTP/NFSROOT
+         * nlna may be called before SMP start in a BOOTP/NFSROOT
          * setup. we will distribute packets to other cpus only when
          * the SMP is started.
 	 */
@@ -2403,7 +2404,7 @@ dump_fmn_cpu_credits_for_gmac(struct xlr_board_info *board, int gmac_id)
 	int j, k, r, c;
 	int n_gmac_buckets;
 
-	n_gmac_buckets = sizeof (gmac_bucket_ids) / sizeof (gmac_bucket_ids[0]);
+	n_gmac_buckets = nitems(gmac_bucket_ids);
 	for (j = 0; j < 8; j++) { 		// for each cpu
 		cc = board->credit_configs[j];
 		printf("Credits for Station CPU_%d ---> GMAC buckets (tx path)\n", j);
@@ -2517,7 +2518,7 @@ dump_mii_regs(struct nlge_softc *sc)
 	if (sc->mii_base == NULL || sc->mii_bus == NULL)
 		return;
 
-	n_regs = sizeof (mii_regs) / sizeof (mii_regs[0]);
+	n_regs = nitems(mii_regs);
 	for (i = 0; i < n_regs; i++) {
 		printf("[mii_0x%x] = %x\n", mii_regs[i],
 		    nlge_mii_read_internal(sc->mii_base, sc->phy_addr,

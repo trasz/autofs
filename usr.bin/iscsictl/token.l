@@ -62,7 +62,9 @@ tgtChapName		{ return MUTUAL_USER; }
 tgtChapSecret		{ return MUTUAL_SECRET; }
 AuthMethod		{ return AUTH_METHOD; }
 SessionType		{ return SESSION_TYPE; }
+enable			{ return ENABLE; }
 protocol		{ return PROTOCOL; }
+offload			{ return OFFLOAD; }
 port			{ return IGNORED; }
 MaxConnections		{ return IGNORED; }
 TargetAlias		{ return IGNORED; }
@@ -90,6 +92,7 @@ chapDigest		{ return IGNORED; }
 =			{ return EQUALS; }
 ;			{ return SEMICOLON; }
 #.*$			/* ignore comments */;
+\r\n			{ lineno++; }
 \n			{ lineno++; }
 [ \t]+			/* ignore whitespace */;
 .			{ yylval.str = strdup(yytext); return STR; }

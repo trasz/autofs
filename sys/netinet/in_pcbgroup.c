@@ -40,9 +40,13 @@ __FBSDID("$FreeBSD$");
 #include <sys/mbuf.h>
 #include <sys/mutex.h>
 #include <sys/smp.h>
+#include <sys/socket.h>
 #include <sys/socketvar.h>
 
+#include <net/rss_config.h>
+
 #include <netinet/in.h>
+
 #include <netinet/in_pcb.h>
 #include <netinet/in_rss.h>
 #ifdef INET6
@@ -416,7 +420,7 @@ in_pcbgroup_update_internal(struct inpcbinfo *pcbinfo,
 	if (newpcbgroup != NULL && oldpcbgroup != newpcbgroup) {
 #ifdef INET6
 		if (inp->inp_vflag & INP_IPV6)
-			hashkey_faddr = inp->in6p_faddr.s6_addr32[3]; /* XXX */
+			hashkey_faddr = INP6_PCBHASHKEY(&inp->in6p_faddr);
 		else
 #endif
 			hashkey_faddr = inp->inp_faddr.s_addr;

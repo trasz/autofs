@@ -35,6 +35,8 @@
 #ifndef _IPOIB_H
 #define _IPOIB_H
 
+#define	LINUXKPI_PARAM_PREFIX ipoib_
+
 #include "opt_inet.h"
 #include "opt_inet6.h"
 #include "opt_ofed.h"
@@ -80,6 +82,7 @@
 #include <linux/workqueue.h>
 #include <linux/kref.h>
 #include <linux/mutex.h>
+#include <linux/rbtree.h>
 
 #include <asm/atomic.h>
 
@@ -313,12 +316,15 @@ struct ipoib_ethtool_st {
  */
 struct ipoib_dev_priv {
 	spinlock_t lock;
+	spinlock_t drain_lock;
 
 	struct ifnet *dev;
 
 	u8 broadcastaddr[INFINIBAND_ALEN];
 
 	unsigned long flags;
+
+	int gone;
 
 	struct mutex vlan_mutex;
 

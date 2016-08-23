@@ -1012,10 +1012,6 @@ sk_jumbo_newbuf(sc_if, idx)
 	m = m_getjcl(M_NOWAIT, MT_DATA, M_PKTHDR, MJUM9BYTES);
 	if (m == NULL)
 		return (ENOBUFS);
-	if ((m->m_flags & M_EXT) == 0) {
-		m_freem(m);
-		return (ENOBUFS);
-	}
 	m->m_pkthdr.len = m->m_len = MJUM9BYTES;
 	/*
 	 * Adjust alignment so packet payload begins on a
@@ -1837,8 +1833,6 @@ sk_detach(dev)
 		ether_ifdetach(ifp);
 		SK_IF_LOCK(sc_if);
 	}
-	if (ifp)
-		if_free(ifp);
 	/*
 	 * We're generally called from skc_detach() which is using
 	 * device_delete_child() to get to here. It's already trashed
@@ -1852,6 +1846,8 @@ sk_detach(dev)
 	sk_dma_jumbo_free(sc_if);
 	sk_dma_free(sc_if);
 	SK_IF_UNLOCK(sc_if);
+	if (ifp)
+		if_free(ifp);
 
 	return(0);
 }
@@ -2556,7 +2552,7 @@ sk_watchdog(arg)
 	sk_txeof(sc_if);
 	if (sc_if->sk_cdata.sk_tx_cnt != 0) {
 		if_printf(sc_if->sk_ifp, "watchdog timeout\n");
-		ifp->if_oerrors++;
+		if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 		ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
 		sk_init_locked(sc_if);
 	}
@@ -2771,7 +2767,7 @@ sk_rxeof(sc_if)
 		    SK_RXBYTES(sk_ctl) < SK_MIN_FRAMELEN ||
 		    SK_RXBYTES(sk_ctl) > SK_MAX_FRAMELEN ||
 		    sk_rxvalid(sc, rxstat, SK_RXBYTES(sk_ctl)) == 0) {
-			ifp->if_ierrors++;
+			if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 			sk_discard_rxbuf(sc_if, cons);
 			continue;
 		}
@@ -2779,14 +2775,14 @@ sk_rxeof(sc_if)
 		m = rxd->rx_m;
 		csum = le32toh(cur_rx->sk_csum);
 		if (sk_newbuf(sc_if, cons) != 0) {
-			ifp->if_iqdrops++;
+			if_inc_counter(ifp, IFCOUNTER_IQDROPS, 1);
 			/* reuse old buffer */
 			sk_discard_rxbuf(sc_if, cons);
 			continue;
 		}
 		m->m_pkthdr.rcvif = ifp;
 		m->m_pkthdr.len = m->m_len = SK_RXBYTES(sk_ctl);
-		ifp->if_ipackets++;
+		if_inc_counter(ifp, IFCOUNTER_IPACKETS, 1);
 		if ((ifp->if_capenable & IFCAP_RXCSUM) != 0)
 			sk_rxcksum(ifp, m, csum);
 		SK_IF_UNLOCK(sc_if);
@@ -2839,7 +2835,7 @@ sk_jumbo_rxeof(sc_if)
 		    SK_RXBYTES(sk_ctl) < SK_MIN_FRAMELEN ||
 		    SK_RXBYTES(sk_ctl) > SK_JUMBO_FRAMELEN ||
 		    sk_rxvalid(sc, rxstat, SK_RXBYTES(sk_ctl)) == 0) {
-			ifp->if_ierrors++;
+			if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 			sk_discard_jumbo_rxbuf(sc_if, cons);
 			continue;
 		}
@@ -2847,14 +2843,14 @@ sk_jumbo_rxeof(sc_if)
 		m = jrxd->rx_m;
 		csum = le32toh(cur_rx->sk_csum);
 		if (sk_jumbo_newbuf(sc_if, cons) != 0) {
-			ifp->if_iqdrops++;
+			if_inc_counter(ifp, IFCOUNTER_IQDROPS, 1);
 			/* reuse old buffer */
 			sk_discard_jumbo_rxbuf(sc_if, cons);
 			continue;
 		}
 		m->m_pkthdr.rcvif = ifp;
 		m->m_pkthdr.len = m->m_len = SK_RXBYTES(sk_ctl);
-		ifp->if_ipackets++;
+		if_inc_counter(ifp, IFCOUNTER_IPACKETS, 1);
 		if ((ifp->if_capenable & IFCAP_RXCSUM) != 0)
 			sk_rxcksum(ifp, m, csum);
 		SK_IF_UNLOCK(sc_if);
@@ -2905,7 +2901,7 @@ sk_txeof(sc_if)
 		    BUS_DMASYNC_POSTWRITE);
 		bus_dmamap_unload(sc_if->sk_cdata.sk_tx_tag, txd->tx_dmamap);
 
-		ifp->if_opackets++;
+		if_inc_counter(ifp, IFCOUNTER_OPACKETS, 1);
 		m_freem(txd->tx_m);
 		txd->tx_m = NULL;
 		STAILQ_REMOVE_HEAD(&sc_if->sk_cdata.sk_txbusyq, tx_q);
@@ -3279,7 +3275,7 @@ sk_init_xmac(sc_if)
 	 * that jumbo frames larger than 8192 bytes will be
 	 * truncated. Disabling all bad frame filtering causes
 	 * the RX FIFO to operate in streaming mode, in which
-	 * case the XMAC will start transfering frames out of the
+	 * case the XMAC will start transferring frames out of the
 	 * RX FIFO as soon as the FIFO threshold is reached.
 	 */
 	if (ifp->if_mtu > SK_MAX_FRAMELEN) {

@@ -51,7 +51,7 @@ __FBSDID("$FreeBSD$");
 
 #include <dev/ofw/ofw_bus.h>
 #include <dev/ofw/ofw_bus_subr.h>
-#include <powerpc/ofw/ofw_pci.h>
+#include <dev/ofw/ofwpci.h>
 
 #include <vm/vm.h>
 #include <vm/pmap.h>
@@ -176,7 +176,7 @@ cpcht_attach(device_t dev)
 	node = ofw_bus_get_node(dev);
 	sc = device_get_softc(dev);
 
-	if (OF_getprop(node, "reg", reg, sizeof(reg)) < 12)
+	if (OF_getencprop(node, "reg", reg, sizeof(reg)) < 12)
 		return (ENXIO);
 
 	if (OF_getproplen(node, "ranges") <= 0)
@@ -219,7 +219,7 @@ cpcht_configure_htbridge(device_t dev, phandle_t child)
 	u_int b, f, s;
 
 	sc = device_get_softc(dev);
-	if (OF_getprop(child, "reg", &pcir, sizeof(pcir)) == -1)
+	if (OF_getencprop(child, "reg", (pcell_t *)&pcir, sizeof(pcir)) == -1)
 		return;
 
 	b = OFW_PCI_PHYS_HI_BUS(pcir.phys_hi);

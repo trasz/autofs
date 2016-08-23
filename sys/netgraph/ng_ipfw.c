@@ -90,7 +90,7 @@ static struct ng_type ng_ipfw_typestruct = {
 	.disconnect =	ng_ipfw_disconnect,
 };
 NETGRAPH_INIT(ipfw, &ng_ipfw_typestruct);
-MODULE_DEPEND(ng_ipfw, ipfw, 2, 2, 2);
+MODULE_DEPEND(ng_ipfw, ipfw, 3, 3, 3);
 
 /* Information we store for each hook */
 struct ng_ipfw_hook_priv {
@@ -117,7 +117,7 @@ ng_ipfw_mod_event(module_t mod, int event, void *data)
 		    != 0) {
 			log(LOG_ERR, "%s: can't create ng_ipfw node", __func__);
                 	break;
-		};
+		}
 
 		/* Try to name node */
 		if (ng_name_node(fw_node, "ipfw") != 0)
@@ -240,7 +240,7 @@ ng_ipfw_rcvdata(hook_p hook, item_p item)
 	if (tag == NULL) {
 		NG_FREE_M(m);
 		return (EINVAL);	/* XXX: find smth better */
-	};
+	}
 
 	if (m->m_len < sizeof(struct ip) &&
 	    (m = m_pullup(m, sizeof(struct ip))) == NULL)

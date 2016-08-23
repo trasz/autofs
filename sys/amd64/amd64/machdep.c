@@ -151,17 +151,13 @@ CTASSERT(offsetof(struct pcpu, pc_curthread) == 0);
 
 extern u_int64_t hammer_time(u_int64_t, u_int64_t);
 
-extern void printcpuinfo(void);	/* XXX header file */
-extern void identify_cpu(void);
-extern void panicifcpuunsupported(void);
-
 #define	CS_SECURE(cs)		(ISPL(cs) == SEL_UPL)
 #define	EFL_SECURE(ef, oef)	((((ef) ^ (oef)) & ~PSL_USERCHANGE) == 0)
 
 static void cpu_startup(void *);
 static void get_fpcontext(struct thread *td, mcontext_t *mcp,
     char *xfpusave, size_t xfpusave_len);
-static int  set_fpcontext(struct thread *td, const mcontext_t *mcp,
+static int  set_fpcontext(struct thread *td, mcontext_t *mcp,
     char *xfpustate, size_t xfpustate_len);
 SYSINIT(cpu, SI_SUB_CPU, SI_ORDER_FIRST, cpu_startup, NULL);
 
@@ -181,6 +177,7 @@ struct init_ops init_ops = {
 	.mp_bootaddress =		mp_bootaddress,
 	.start_all_aps =		native_start_all_aps,
 #endif
+	.msi_init =			msi_init,
 };
 
 /*
@@ -188,11 +185,14 @@ struct init_ops init_ops = {
  * the physical address at which the kernel is loaded.
  */
 extern char kernphys[];
-#ifdef DDB
-extern vm_offset_t ksym_start, ksym_end;
-#endif
 
 struct msgbuf *msgbufp;
+
+/*
+ * Physical address of the EFI System Table. Stashed from the metadata hints
+ * passed into the kernel and used by the EFI code to call runtime services.
+ */
+vm_paddr_t efi_systbl;
 
 /* Intel ICH registers */
 #define ICH_PMBASE	0x400
@@ -217,8 +217,8 @@ vm_paddr_t phys_avail[PHYSMAP_SIZE + 2];
 vm_paddr_t dump_avail[PHYSMAP_SIZE + 2];
 
 /* must be 2 less so 0 0 can signal end of chunks */
-#define PHYS_AVAIL_ARRAY_END ((sizeof(phys_avail) / sizeof(phys_avail[0])) - 2)
-#define DUMP_AVAIL_ARRAY_END ((sizeof(dump_avail) / sizeof(dump_avail[0])) - 2)
+#define	PHYS_AVAIL_ARRAY_END (nitems(phys_avail) - 2)
+#define	DUMP_AVAIL_ARRAY_END (nitems(dump_avail) - 2)
 
 struct kva_md_info kmi;
 
@@ -250,13 +250,15 @@ cpu_startup(dummy)
 	 * We do this by disabling a bit in the SMI_EN (SMI Control and
 	 * Enable register) of the Intel ICH LPC Interface Bridge. 
 	 */
-	sysenv = getenv("smbios.system.product");
+	sysenv = kern_getenv("smbios.system.product");
 	if (sysenv != NULL) {
 		if (strncmp(sysenv, "MacBook1,1", 10) == 0 ||
 		    strncmp(sysenv, "MacBook3,1", 10) == 0 ||
+		    strncmp(sysenv, "MacBook4,1", 10) == 0 ||
 		    strncmp(sysenv, "MacBookPro1,1", 13) == 0 ||
 		    strncmp(sysenv, "MacBookPro1,2", 13) == 0 ||
 		    strncmp(sysenv, "MacBookPro3,1", 13) == 0 ||
+		    strncmp(sysenv, "MacBookPro4,1", 13) == 0 ||
 		    strncmp(sysenv, "Macmini1,1", 10) == 0) {
 			if (bootverbose)
 				printf("Disabling LEGACY_USB_EN bit on "
@@ -280,7 +282,7 @@ cpu_startup(dummy)
 	 * Display physical memory if SMBIOS reports reasonable amount.
 	 */
 	memsize = 0;
-	sysenv = getenv("smbios.memory.enabled");
+	sysenv = kern_getenv("smbios.memory.enabled");
 	if (sysenv != NULL) {
 		memsize = (uintmax_t)strtoul(sysenv, (char **)NULL, 10) << 10;
 		freeenv(sysenv);
@@ -387,7 +389,7 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
 	/* Allocate space for the signal handler context. */
 	if ((td->td_pflags & TDP_ALTSTACK) != 0 && !oonstack &&
 	    SIGISMEMBER(psp->ps_sigonstack, sig)) {
-		sp = td->td_sigstk.ss_sp + td->td_sigstk.ss_size;
+		sp = (char *)td->td_sigstk.ss_sp + td->td_sigstk.ss_size;
 #if defined(COMPAT_43)
 		td->td_sigstk.ss_flags |= SS_ONSTACK;
 #endif
@@ -401,10 +403,6 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
 	sp -= sizeof(struct sigframe);
 	/* Align to 16 bytes. */
 	sfp = (struct sigframe *)((unsigned long)sp & ~0xFul);
-
-	/* Translate the signal if appropriate. */
-	if (p->p_sysent->sv_sigtbl && sig <= p->p_sysent->sv_sigsize)
-		sig = p->p_sysent->sv_sigtbl[_SIG_IDX(sig)];
 
 	/* Build the argument list for the signal handler. */
 	regs->tf_rdi = sig;			/* arg 1 in %rdi */
@@ -447,6 +445,7 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
 	regs->tf_rflags &= ~(PSL_T | PSL_D);
 	regs->tf_cs = _ucodesel;
 	regs->tf_ds = _udatasel;
+	regs->tf_ss = _udatasel;
 	regs->tf_es = _udatasel;
 	regs->tf_fs = _ufssel;
 	regs->tf_gs = _ugssel;
@@ -580,384 +579,6 @@ freebsd4_sigreturn(struct thread *td, struct freebsd4_sigreturn_args *uap)
 	return sys_sigreturn(td, (struct sigreturn_args *)uap);
 }
 #endif
-
-
-/*
- * Machine dependent boot() routine
- *
- * I haven't seen anything to put here yet
- * Possibly some stuff might be grafted back here from boot()
- */
-void
-cpu_boot(int howto)
-{
-}
-
-/*
- * Flush the D-cache for non-DMA I/O so that the I-cache can
- * be made coherent later.
- */
-void
-cpu_flush_dcache(void *ptr, size_t len)
-{
-	/* Not applicable */
-}
-
-/* Get current clock frequency for the given cpu id. */
-int
-cpu_est_clockrate(int cpu_id, uint64_t *rate)
-{
-	uint64_t tsc1, tsc2;
-	uint64_t acnt, mcnt, perf;
-	register_t reg;
-
-	if (pcpu_find(cpu_id) == NULL || rate == NULL)
-		return (EINVAL);
-
-	/*
-	 * If TSC is P-state invariant and APERF/MPERF MSRs do not exist,
-	 * DELAY(9) based logic fails.
-	 */
-	if (tsc_is_invariant && !tsc_perf_stat)
-		return (EOPNOTSUPP);
-
-#ifdef SMP
-	if (smp_cpus > 1) {
-		/* Schedule ourselves on the indicated cpu. */
-		thread_lock(curthread);
-		sched_bind(curthread, cpu_id);
-		thread_unlock(curthread);
-	}
-#endif
-
-	/* Calibrate by measuring a short delay. */
-	reg = intr_disable();
-	if (tsc_is_invariant) {
-		wrmsr(MSR_MPERF, 0);
-		wrmsr(MSR_APERF, 0);
-		tsc1 = rdtsc();
-		DELAY(1000);
-		mcnt = rdmsr(MSR_MPERF);
-		acnt = rdmsr(MSR_APERF);
-		tsc2 = rdtsc();
-		intr_restore(reg);
-		perf = 1000 * acnt / mcnt;
-		*rate = (tsc2 - tsc1) * perf;
-	} else {
-		tsc1 = rdtsc();
-		DELAY(1000);
-		tsc2 = rdtsc();
-		intr_restore(reg);
-		*rate = (tsc2 - tsc1) * 1000;
-	}
-
-#ifdef SMP
-	if (smp_cpus > 1) {
-		thread_lock(curthread);
-		sched_unbind(curthread);
-		thread_unlock(curthread);
-	}
-#endif
-
-	return (0);
-}
-
-/*
- * Shutdown the CPU as much as possible
- */
-void
-cpu_halt(void)
-{
-	for (;;)
-		halt();
-}
-
-void (*cpu_idle_hook)(sbintime_t) = NULL;	/* ACPI idle hook. */
-static int	cpu_ident_amdc1e = 0;	/* AMD C1E supported. */
-static int	idle_mwait = 1;		/* Use MONITOR/MWAIT for short idle. */
-SYSCTL_INT(_machdep, OID_AUTO, idle_mwait, CTLFLAG_RWTUN, &idle_mwait,
-    0, "Use MONITOR/MWAIT for short idle");
-
-#define	STATE_RUNNING	0x0
-#define	STATE_MWAIT	0x1
-#define	STATE_SLEEPING	0x2
-
-static void
-cpu_idle_acpi(sbintime_t sbt)
-{
-	int *state;
-
-	state = (int *)PCPU_PTR(monitorbuf);
-	*state = STATE_SLEEPING;
-
-	/* See comments in cpu_idle_hlt(). */
-	disable_intr();
-	if (sched_runnable())
-		enable_intr();
-	else if (cpu_idle_hook)
-		cpu_idle_hook(sbt);
-	else
-		__asm __volatile("sti; hlt");
-	*state = STATE_RUNNING;
-}
-
-static void
-cpu_idle_hlt(sbintime_t sbt)
-{
-	int *state;
-
-	state = (int *)PCPU_PTR(monitorbuf);
-	*state = STATE_SLEEPING;
-
-	/*
-	 * Since we may be in a critical section from cpu_idle(), if
-	 * an interrupt fires during that critical section we may have
-	 * a pending preemption.  If the CPU halts, then that thread
-	 * may not execute until a later interrupt awakens the CPU.
-	 * To handle this race, check for a runnable thread after
-	 * disabling interrupts and immediately return if one is
-	 * found.  Also, we must absolutely guarentee that hlt is
-	 * the next instruction after sti.  This ensures that any
-	 * interrupt that fires after the call to disable_intr() will
-	 * immediately awaken the CPU from hlt.  Finally, please note
-	 * that on x86 this works fine because of interrupts enabled only
-	 * after the instruction following sti takes place, while IF is set
-	 * to 1 immediately, allowing hlt instruction to acknowledge the
-	 * interrupt.
-	 */
-	disable_intr();
-	if (sched_runnable())
-		enable_intr();
-	else
-		__asm __volatile("sti; hlt");
-	*state = STATE_RUNNING;
-}
-
-/*
- * MWAIT cpu power states.  Lower 4 bits are sub-states.
- */
-#define	MWAIT_C0	0xf0
-#define	MWAIT_C1	0x00
-#define	MWAIT_C2	0x10
-#define	MWAIT_C3	0x20
-#define	MWAIT_C4	0x30
-
-static void
-cpu_idle_mwait(sbintime_t sbt)
-{
-	int *state;
-
-	state = (int *)PCPU_PTR(monitorbuf);
-	*state = STATE_MWAIT;
-
-	/* See comments in cpu_idle_hlt(). */
-	disable_intr();
-	if (sched_runnable()) {
-		enable_intr();
-		*state = STATE_RUNNING;
-		return;
-	}
-	cpu_monitor(state, 0, 0);
-	if (*state == STATE_MWAIT)
-		__asm __volatile("sti; mwait" : : "a" (MWAIT_C1), "c" (0));
-	else
-		enable_intr();
-	*state = STATE_RUNNING;
-}
-
-static void
-cpu_idle_spin(sbintime_t sbt)
-{
-	int *state;
-	int i;
-
-	state = (int *)PCPU_PTR(monitorbuf);
-	*state = STATE_RUNNING;
-
-	/*
-	 * The sched_runnable() call is racy but as long as there is
-	 * a loop missing it one time will have just a little impact if any
-	 * (and it is much better than missing the check at all).
-	 */
-	for (i = 0; i < 1000; i++) {
-		if (sched_runnable())
-			return;
-		cpu_spinwait();
-	}
-}
-
-/*
- * C1E renders the local APIC timer dead, so we disable it by
- * reading the Interrupt Pending Message register and clearing
- * both C1eOnCmpHalt (bit 28) and SmiOnCmpHalt (bit 27).
- * 
- * Reference:
- *   "BIOS and Kernel Developer's Guide for AMD NPT Family 0Fh Processors"
- *   #32559 revision 3.00+
- */
-#define	MSR_AMDK8_IPM		0xc0010055
-#define	AMDK8_SMIONCMPHALT	(1ULL << 27)
-#define	AMDK8_C1EONCMPHALT	(1ULL << 28)
-#define	AMDK8_CMPHALT		(AMDK8_SMIONCMPHALT | AMDK8_C1EONCMPHALT)
-
-static void
-cpu_probe_amdc1e(void)
-{
-
-	/*
-	 * Detect the presence of C1E capability mostly on latest
-	 * dual-cores (or future) k8 family.
-	 */
-	if (cpu_vendor_id == CPU_VENDOR_AMD &&
-	    (cpu_id & 0x00000f00) == 0x00000f00 &&
-	    (cpu_id & 0x0fff0000) >=  0x00040000) {
-		cpu_ident_amdc1e = 1;
-	}
-}
-
-void (*cpu_idle_fn)(sbintime_t) = cpu_idle_acpi;
-
-void
-cpu_idle(int busy)
-{
-	uint64_t msr;
-	sbintime_t sbt = -1;
-
-	CTR2(KTR_SPARE2, "cpu_idle(%d) at %d",
-	    busy, curcpu);
-#ifdef MP_WATCHDOG
-	ap_watchdog(PCPU_GET(cpuid));
-#endif
-	/* If we are busy - try to use fast methods. */
-	if (busy) {
-		if ((cpu_feature2 & CPUID2_MON) && idle_mwait) {
-			cpu_idle_mwait(busy);
-			goto out;
-		}
-	}
-
-	/* If we have time - switch timers into idle mode. */
-	if (!busy) {
-		critical_enter();
-		sbt = cpu_idleclock();
-	}
-
-	/* Apply AMD APIC timer C1E workaround. */
-	if (cpu_ident_amdc1e && cpu_disable_deep_sleep) {
-		msr = rdmsr(MSR_AMDK8_IPM);
-		if (msr & AMDK8_CMPHALT)
-			wrmsr(MSR_AMDK8_IPM, msr & ~AMDK8_CMPHALT);
-	}
-
-	/* Call main idle method. */
-	cpu_idle_fn(sbt);
-
-	/* Switch timers back into active mode. */
-	if (!busy) {
-		cpu_activeclock();
-		critical_exit();
-	}
-out:
-	CTR2(KTR_SPARE2, "cpu_idle(%d) at %d done",
-	    busy, curcpu);
-}
-
-int
-cpu_idle_wakeup(int cpu)
-{
-	struct pcpu *pcpu;
-	int *state;
-
-	pcpu = pcpu_find(cpu);
-	state = (int *)pcpu->pc_monitorbuf;
-	/*
-	 * This doesn't need to be atomic since missing the race will
-	 * simply result in unnecessary IPIs.
-	 */
-	if (*state == STATE_SLEEPING)
-		return (0);
-	if (*state == STATE_MWAIT)
-		*state = STATE_RUNNING;
-	return (1);
-}
-
-/*
- * Ordered by speed/power consumption.
- */
-struct {
-	void	*id_fn;
-	char	*id_name;
-} idle_tbl[] = {
-	{ cpu_idle_spin, "spin" },
-	{ cpu_idle_mwait, "mwait" },
-	{ cpu_idle_hlt, "hlt" },
-	{ cpu_idle_acpi, "acpi" },
-	{ NULL, NULL }
-};
-
-static int
-idle_sysctl_available(SYSCTL_HANDLER_ARGS)
-{
-	char *avail, *p;
-	int error;
-	int i;
-
-	avail = malloc(256, M_TEMP, M_WAITOK);
-	p = avail;
-	for (i = 0; idle_tbl[i].id_name != NULL; i++) {
-		if (strstr(idle_tbl[i].id_name, "mwait") &&
-		    (cpu_feature2 & CPUID2_MON) == 0)
-			continue;
-		if (strcmp(idle_tbl[i].id_name, "acpi") == 0 &&
-		    cpu_idle_hook == NULL)
-			continue;
-		p += sprintf(p, "%s%s", p != avail ? ", " : "",
-		    idle_tbl[i].id_name);
-	}
-	error = sysctl_handle_string(oidp, avail, 0, req);
-	free(avail, M_TEMP);
-	return (error);
-}
-
-SYSCTL_PROC(_machdep, OID_AUTO, idle_available, CTLTYPE_STRING | CTLFLAG_RD,
-    0, 0, idle_sysctl_available, "A", "list of available idle functions");
-
-static int
-idle_sysctl(SYSCTL_HANDLER_ARGS)
-{
-	char buf[16];
-	int error;
-	char *p;
-	int i;
-
-	p = "unknown";
-	for (i = 0; idle_tbl[i].id_name != NULL; i++) {
-		if (idle_tbl[i].id_fn == cpu_idle_fn) {
-			p = idle_tbl[i].id_name;
-			break;
-		}
-	}
-	strncpy(buf, p, sizeof(buf));
-	error = sysctl_handle_string(oidp, buf, sizeof(buf), req);
-	if (error != 0 || req->newptr == NULL)
-		return (error);
-	for (i = 0; idle_tbl[i].id_name != NULL; i++) {
-		if (strstr(idle_tbl[i].id_name, "mwait") &&
-		    (cpu_feature2 & CPUID2_MON) == 0)
-			continue;
-		if (strcmp(idle_tbl[i].id_name, "acpi") == 0 &&
-		    cpu_idle_hook == NULL)
-			continue;
-		if (strcmp(idle_tbl[i].id_name, buf))
-			continue;
-		cpu_idle_fn = idle_tbl[i].id_fn;
-		return (0);
-	}
-	return (EINVAL);
-}
-
-SYSCTL_PROC(_machdep, OID_AUTO, idle, CTLTYPE_STRING | CTLFLAG_RW, 0, 0,
-    idle_sysctl, "A", "currently selected idle function");
 
 /*
  * Reset registers to default values on exec.
@@ -1183,12 +804,7 @@ struct soft_segment_descriptor gdt_segs[] = {
 };
 
 void
-setidt(idx, func, typ, dpl, ist)
-	int idx;
-	inthand_t *func;
-	int typ;
-	int dpl;
-	int ist;
+setidt(int idx, inthand_t *func, int typ, int dpl, int ist)
 {
 	struct gate_descriptor *ip;
 
@@ -1263,11 +879,26 @@ DB_SHOW_COMMAND(sysregs, db_show_sysregs)
 	db_printf("cr2\t0x%016lx\n", rcr2());
 	db_printf("cr3\t0x%016lx\n", rcr3());
 	db_printf("cr4\t0x%016lx\n", rcr4());
-	db_printf("EFER\t%016lx\n", rdmsr(MSR_EFER));
-	db_printf("FEATURES_CTL\t%016lx\n", rdmsr(MSR_IA32_FEATURE_CONTROL));
-	db_printf("DEBUG_CTL\t%016lx\n", rdmsr(MSR_DEBUGCTLMSR));
-	db_printf("PAT\t%016lx\n", rdmsr(MSR_PAT));
-	db_printf("GSBASE\t%016lx\n", rdmsr(MSR_GSBASE));
+	if (rcr4() & CR4_XSAVE)
+		db_printf("xcr0\t0x%016lx\n", rxcr(0));
+	db_printf("EFER\t0x%016lx\n", rdmsr(MSR_EFER));
+	if (cpu_feature2 & (CPUID2_VMX | CPUID2_SMX))
+		db_printf("FEATURES_CTL\t%016lx\n",
+		    rdmsr(MSR_IA32_FEATURE_CONTROL));
+	db_printf("DEBUG_CTL\t0x%016lx\n", rdmsr(MSR_DEBUGCTLMSR));
+	db_printf("PAT\t0x%016lx\n", rdmsr(MSR_PAT));
+	db_printf("GSBASE\t0x%016lx\n", rdmsr(MSR_GSBASE));
+}
+
+DB_SHOW_COMMAND(dbregs, db_show_dbregs)
+{
+
+	db_printf("dr0\t0x%016lx\n", rdr0());
+	db_printf("dr1\t0x%016lx\n", rdr1());
+	db_printf("dr2\t0x%016lx\n", rdr2());
+	db_printf("dr3\t0x%016lx\n", rdr3());
+	db_printf("dr6\t0x%016lx\n", rdr6());
+	db_printf("dr7\t0x%016lx\n", rdr7());	
 }
 #endif
 
@@ -1359,8 +990,10 @@ add_physmap_entry(uint64_t base, uint64_t length, vm_paddr_t *physmap,
 	/*
 	 * Find insertion point while checking for overlap.  Start off by
 	 * assuming the new entry will be added to the end.
+	 *
+	 * NB: physmap_idx points to the next free slot.
 	 */
-	insert_idx = physmap_idx + 2;
+	insert_idx = physmap_idx;
 	for (i = 0; i <= physmap_idx; i += 2) {
 		if (base < physmap[i + 1]) {
 			if (base + length <= physmap[i]) {
@@ -1398,7 +1031,7 @@ add_physmap_entry(uint64_t base, uint64_t length, vm_paddr_t *physmap,
 	 * Move the last 'N' entries down to make room for the new
 	 * entry if needed.
 	 */
-	for (i = physmap_idx; i > insert_idx; i -= 2) {
+	for (i = (physmap_idx - 2); i > insert_idx; i -= 2) {
 		physmap[i] = physmap[i - 2];
 		physmap[i + 1] = physmap[i - 1];
 	}
@@ -1457,7 +1090,8 @@ add_efi_map_entries(struct efi_map_header *efihdr, vm_paddr_t *physmap,
 		"ACPIMemoryNVS",
 		"MemoryMappedIO",
 		"MemoryMappedIOPortSpace",
-		"PalCode"
+		"PalCode",
+		"PersistentMemory"
 	};
 
 	/*
@@ -1478,7 +1112,7 @@ add_efi_map_entries(struct efi_map_header *efihdr, vm_paddr_t *physmap,
 	for (i = 0, p = map; i < ndesc; i++,
 	    p = efi_next_descriptor(p, efihdr->descriptor_size)) {
 		if (boothowto & RB_VERBOSE) {
-			if (p->md_type <= EFI_MD_TYPE_PALCODE)
+			if (p->md_type < nitems(types))
 				type = types[p->md_type];
 			else
 				type = "<INVALID>";
@@ -1500,6 +1134,12 @@ add_efi_map_entries(struct efi_map_header *efihdr, vm_paddr_t *physmap,
 				printf("RP ");
 			if (p->md_attr & EFI_MD_ATTR_XP)
 				printf("XP ");
+			if (p->md_attr & EFI_MD_ATTR_NV)
+				printf("NV ");
+			if (p->md_attr & EFI_MD_ATTR_MORE_RELIABLE)
+				printf("MORE_RELIABLE ");
+			if (p->md_attr & EFI_MD_ATTR_RO)
+				printf("RO ");
 			if (p->md_attr & EFI_MD_ATTR_RT)
 				printf("RUNTIME");
 			printf("\n");
@@ -1561,6 +1201,8 @@ native_parse_memmap(caddr_t kmdp, vm_paddr_t *physmap, int *physmap_idx)
 	}
 }
 
+#define	PAGES_PER_GB	(1024 * 1024 * 1024 / PAGE_SIZE)
+
 /*
  * Populate the (physmap) array with base/bound pairs describing the
  * available physical memory in the system, then test this memory and
@@ -1579,25 +1221,30 @@ getmemsize(caddr_t kmdp, u_int64_t first)
 	u_long physmem_start, physmem_tunable, memtest;
 	pt_entry_t *pte;
 	quad_t dcons_addr, dcons_size;
+	int page_counter;
 
 	bzero(physmap, sizeof(physmap));
-	basemem = 0;
 	physmap_idx = 0;
 
 	init_ops.parse_memmap(kmdp, physmap, &physmap_idx);
+	physmap_idx -= 2;
 
 	/*
 	 * Find the 'base memory' segment for SMP
 	 */
 	basemem = 0;
 	for (i = 0; i <= physmap_idx; i += 2) {
-		if (physmap[i] == 0x00000000) {
+		if (physmap[i] <= 0xA0000) {
 			basemem = physmap[i + 1] / 1024;
 			break;
 		}
 	}
-	if (basemem == 0)
-		panic("BIOS smap did not include a basemem segment!");
+	if (basemem == 0 || basemem > 640) {
+		if (bootverbose)
+			printf(
+		"Memory map doesn't contain a basemem segment, faking it");
+		basemem = 640;
+	}
 
 	/*
 	 * Make hole for "AP -> long mode" bootstrap code.  The
@@ -1605,8 +1252,12 @@ getmemsize(caddr_t kmdp, u_int64_t first)
 	 * is configured to support APs and APs for the system start
 	 * in 32bit mode (e.g. SMP bare metal).
 	 */
-	if (init_ops.mp_bootaddress)
+	if (init_ops.mp_bootaddress) {
+		if (physmap[1] >= 0x100000000)
+			panic(
+	"Basemem segment is not suitable for AP bootstrap code!");
 		physmap[1] = init_ops.mp_bootaddress(physmap[1] / 1024);
+	}
 
 	/*
 	 * Maxmem isn't the "maximum memory", it's one larger than the
@@ -1658,12 +1309,14 @@ getmemsize(caddr_t kmdp, u_int64_t first)
 	 */
 	physmem_start = (vm_guest > VM_GUEST_NO ? 1 : 16) << PAGE_SHIFT;
 	TUNABLE_ULONG_FETCH("hw.physmem.start", &physmem_start);
-	if (physmem_start < PAGE_SIZE)
-		physmap[0] = PAGE_SIZE;
-	else if (physmem_start >= physmap[1])
-		physmap[0] = round_page(physmap[1] - PAGE_SIZE);
-	else
-		physmap[0] = round_page(physmem_start);
+	if (physmap[0] < physmem_start) {
+		if (physmem_start < PAGE_SIZE)
+			physmap[0] = PAGE_SIZE;
+		else if (physmem_start >= physmap[1])
+			physmap[0] = round_page(physmap[1] - PAGE_SIZE);
+		else
+			physmap[0] = round_page(physmem_start);
+	}
 	pa_indx = 0;
 	da_indx = 1;
 	phys_avail[pa_indx++] = physmap[0];
@@ -1682,6 +1335,9 @@ getmemsize(caddr_t kmdp, u_int64_t first)
 	 * physmap is in bytes, so when converting to page boundaries,
 	 * round up the start address and round down the end address.
 	 */
+	page_counter = 0;
+	if (memtest != 0)
+		printf("Testing system memory");
 	for (i = 0; i <= physmap_idx; i += 2) {
 		vm_paddr_t end;
 
@@ -1710,6 +1366,14 @@ getmemsize(caddr_t kmdp, u_int64_t first)
 			page_bad = FALSE;
 			if (memtest == 0)
 				goto skip_memtest;
+
+			/*
+			 * Print a "." every GB to show we're making
+			 * progress.
+			 */
+			page_counter++;
+			if ((page_counter % PAGES_PER_GB) == 0)
+				printf(".");
 
 			/*
 			 * map page into kernel: valid, read/write,non-cacheable
@@ -1798,6 +1462,8 @@ do_next:
 	}
 	*pte = 0;
 	invltlb();
+	if (memtest != 0)
+		printf("\n");
 
 	/*
 	 * XXX
@@ -1825,6 +1491,11 @@ static caddr_t
 native_parse_preload_data(u_int64_t modulep)
 {
 	caddr_t kmdp;
+	char *envp;
+#ifdef DDB
+	vm_offset_t ksym_start;
+	vm_offset_t ksym_end;
+#endif
 
 	preload_metadata = (caddr_t)(uintptr_t)(modulep + KERNBASE);
 	preload_bootstrap_relocate(KERNBASE);
@@ -1832,11 +1503,16 @@ native_parse_preload_data(u_int64_t modulep)
 	if (kmdp == NULL)
 		kmdp = preload_search_by_type("elf64 kernel");
 	boothowto = MD_FETCH(kmdp, MODINFOMD_HOWTO, int);
-	kern_envp = MD_FETCH(kmdp, MODINFOMD_ENVP, char *) + KERNBASE;
+	envp = MD_FETCH(kmdp, MODINFOMD_ENVP, char *);
+	if (envp != NULL)
+		envp += KERNBASE;
+	init_static_kenv(envp, 0);
 #ifdef DDB
 	ksym_start = MD_FETCH(kmdp, MODINFOMD_SSYM, uintptr_t);
 	ksym_end = MD_FETCH(kmdp, MODINFOMD_ESYM, uintptr_t);
+	db_fetch_ksymtab(ksym_start, ksym_end);
 #endif
+	efi_systbl = MD_FETCH(kmdp, MODINFOMD_FW_HANDLE, vm_paddr_t);
 
 	return (kmdp);
 }
@@ -1853,12 +1529,6 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
 	char *env;
 	size_t kstack0_sz;
 
-	thread0.td_kstack = physfree + KERNBASE;
-	thread0.td_kstack_pages = KSTACK_PAGES;
-	kstack0_sz = thread0.td_kstack_pages * PAGE_SIZE;
-	bzero((void *)thread0.td_kstack, kstack0_sz);
-	physfree += kstack0_sz;
-
 	/*
  	 * This may be done better later if it gets more high level
  	 * components in it. If so just link td->td_proc here.
@@ -1869,6 +1539,12 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
 
 	/* Init basic tunables, hz etc */
 	init_param1();
+
+	thread0.td_kstack = physfree + KERNBASE;
+	thread0.td_kstack_pages = kstack_pages;
+	kstack0_sz = thread0.td_kstack_pages * PAGE_SIZE;
+	bzero((void *)thread0.td_kstack, kstack0_sz);
+	physfree += kstack0_sz;
 
 	/*
 	 * make gdt memory segments
@@ -1957,42 +1633,12 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
 	/*
 	 * Use vt(4) by default for UEFI boot (during the sc(4)/vt(4)
 	 * transition).
+	 * Once bootblocks have updated, we can test directly for
+	 * efi_systbl != NULL here...
 	 */
-	if (kmdp != NULL && preload_search_info(kmdp,
-	    MODINFO_METADATA | MODINFOMD_EFI_MAP) != NULL)
+	if (preload_search_info(kmdp, MODINFO_METADATA | MODINFOMD_EFI_MAP)
+	    != NULL)
 		vty_set_preferred(VTY_VT);
-
-	/*
-	 * Initialize the console before we print anything out.
-	 */
-	cninit();
-
-#ifdef DEV_ISA
-#ifdef DEV_ATPIC
-	elcr_probe();
-	atpic_startup();
-#else
-	/* Reset and mask the atpics and leave them shut down. */
-	atpic_reset();
-
-	/*
-	 * Point the ICU spurious interrupt vectors at the APIC spurious
-	 * interrupt handler.
-	 */
-	setidt(IDT_IO_INTS + 7, IDTVEC(spuriousint), SDT_SYSIGT, SEL_KPL, 0);
-	setidt(IDT_IO_INTS + 15, IDTVEC(spuriousint), SDT_SYSIGT, SEL_KPL, 0);
-#endif
-#else
-#error "have you forgotten the isa device?";
-#endif
-
-	kdb_init();
-
-#ifdef KDB
-	if (boothowto & RB_KDB)
-		kdb_enter(KDB_WHY_BOOTFLAGS,
-		    "Boot flags requested debugger");
-#endif
 
 	identify_cpu();		/* Final stage of CPU initialization */
 	initializecpu();	/* Initialize CPU registers */
@@ -2030,6 +1676,35 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
 
 	/* now running on new page tables, configured,and u/iom is accessible */
 
+	cninit();
+
+#ifdef DEV_ISA
+#ifdef DEV_ATPIC
+	elcr_probe();
+	atpic_startup();
+#else
+	/* Reset and mask the atpics and leave them shut down. */
+	atpic_reset();
+
+	/*
+	 * Point the ICU spurious interrupt vectors at the APIC spurious
+	 * interrupt handler.
+	 */
+	setidt(IDT_IO_INTS + 7, IDTVEC(spuriousint), SDT_SYSIGT, SEL_KPL, 0);
+	setidt(IDT_IO_INTS + 15, IDTVEC(spuriousint), SDT_SYSIGT, SEL_KPL, 0);
+#endif
+#else
+#error "have you forgotten the isa device?";
+#endif
+
+	kdb_init();
+
+#ifdef KDB
+	if (boothowto & RB_KDB)
+		kdb_enter(KDB_WHY_BOOTFLAGS,
+		    "Boot flags requested debugger");
+#endif
+
 	msgbufinit(msgbufp, msgbufsize);
 	fpuinit();
 
@@ -2066,10 +1741,9 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
 
 	/* setup proc 0's pcb */
 	thread0.td_pcb->pcb_flags = 0;
-	thread0.td_pcb->pcb_cr3 = KPML4phys; /* PCID 0 is reserved for kernel */
 	thread0.td_frame = &proc0_tf;
 
-        env = getenv("kernelname");
+        env = kern_getenv("kernelname");
 	if (env != NULL)
 		strlcpy(kernelname, env, sizeof(kernelname));
 
@@ -2125,6 +1799,26 @@ smap_sysctl_handler(SYSCTL_HANDLER_ARGS)
 }
 SYSCTL_PROC(_machdep, OID_AUTO, smap, CTLTYPE_OPAQUE|CTLFLAG_RD, NULL, 0,
     smap_sysctl_handler, "S,bios_smap_xattr", "Raw BIOS SMAP data");
+
+static int
+efi_map_sysctl_handler(SYSCTL_HANDLER_ARGS)
+{
+	struct efi_map_header *efihdr;
+	caddr_t kmdp;
+	uint32_t efisize;
+
+	kmdp = preload_search_by_type("elf kernel");
+	if (kmdp == NULL)
+		kmdp = preload_search_by_type("elf64 kernel");
+	efihdr = (struct efi_map_header *)preload_search_info(kmdp,
+	    MODINFO_METADATA | MODINFOMD_EFI_MAP);
+	if (efihdr == NULL)
+		return (0);
+	efisize = *((uint32_t *)efihdr - 1);
+	return (SYSCTL_OUT(req, efihdr, efisize));
+}
+SYSCTL_PROC(_machdep, OID_AUTO, efi_map, CTLTYPE_OPAQUE|CTLFLAG_RD, NULL, 0,
+    efi_map_sysctl_handler, "S,efi_map_header", "Raw EFI Memory Map");
 
 void
 spinlock_enter(void)
@@ -2431,7 +2125,7 @@ get_mcontext(struct thread *td, mcontext_t *mcp, int flags)
  * touch the cs selector.
  */
 int
-set_mcontext(struct thread *td, const mcontext_t *mcp)
+set_mcontext(struct thread *td, mcontext_t *mcp)
 {
 	struct pcb *pcb;
 	struct trapframe *tp;
@@ -2518,7 +2212,7 @@ get_fpcontext(struct thread *td, mcontext_t *mcp, char *xfpusave,
 }
 
 static int
-set_fpcontext(struct thread *td, const mcontext_t *mcp, char *xfpustate,
+set_fpcontext(struct thread *td, mcontext_t *mcp, char *xfpustate,
     size_t xfpustate_len)
 {
 	struct savefpu *fpstate;

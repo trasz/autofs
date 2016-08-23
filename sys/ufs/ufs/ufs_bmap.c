@@ -44,6 +44,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/proc.h>
 #include <sys/vnode.h>
 #include <sys/mount.h>
+#include <sys/racct.h>
 #include <sys/resourcevar.h>
 #include <sys/stat.h>
 
@@ -114,7 +115,6 @@ ufs_bmaparray(vp, bn, bnp, nbp, runp, runb)
 	struct buf *bp;
 	struct ufsmount *ump;
 	struct mount *mp;
-	struct vnode *devvp;
 	struct indir a[NIADDR+1], *ap;
 	ufs2_daddr_t daddr;
 	ufs_lbn_t metalbn;
@@ -125,7 +125,6 @@ ufs_bmaparray(vp, bn, bnp, nbp, runp, runb)
 	ip = VTOI(vp);
 	mp = vp->v_mount;
 	ump = VFSTOUFS(mp);
-	devvp = ump->um_devvp;
 
 	if (runp) {
 		maxrun = mp->mnt_iosize_max / mp->mnt_stat.f_iosize - 1;
@@ -225,6 +224,13 @@ ufs_bmaparray(vp, bn, bnp, nbp, runp, runb)
 			vfs_busy_pages(bp, 0);
 			bp->b_iooffset = dbtob(bp->b_blkno);
 			bstrategy(bp);
+#ifdef RACCT
+			if (racct_enable) {
+				PROC_LOCK(curproc);
+				racct_add_buf(curproc, bp, 0);
+				PROC_UNLOCK(curproc);
+			}
+#endif /* RACCT */
 			curthread->td_ru.ru_inblock++;
 			error = bufwait(bp);
 			if (error) {

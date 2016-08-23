@@ -23,8 +23,9 @@
  * Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+
 /*
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2014, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  */
 
@@ -155,6 +156,8 @@
 %type	<l_node>	probe_specifier_list
 %type	<l_node>	probe_specifier
 %type	<l_node>	statement_list
+%type	<l_node>	statement_list_impl
+%type	<l_node>	statement_or_block
 %type	<l_node>	statement
 %type	<l_node>	declaration
 %type	<l_node>	init_declarator_list
@@ -206,6 +209,8 @@
 %type	<l_tok>		assignment_operator
 %type	<l_tok>		unary_operator
 %type	<l_tok>		struct_or_union
+
+%type	<l_str>		dtrace_keyword_ident
 
 %%
 
@@ -317,9 +322,11 @@ probe_definition:
 				    "or actions following probe description\n");
 			}
 			$$ = dt_node_clause($1, NULL, NULL);
+			yybegin(YYS_CLAUSE);
 		}
 	|	probe_specifiers '{' statement_list '}' {
 			$$ = dt_node_clause($1, NULL, $3);
+			yybegin(YYS_CLAUSE);
 		}
 	|	probe_specifiers DT_TOK_DIV expression DT_TOK_EPRED {
 			dnerror($3, D_SYNTAX, "expected actions { } following "
@@ -328,6 +335,7 @@ probe_definition:
 	|	probe_specifiers DT_TOK_DIV expression DT_TOK_EPRED
 		    '{' statement_list '}' {
 			$$ = dt_node_clause($1, $3, $6);
+			yybegin(YYS_CLAUSE);
 		}
 	;
 
@@ -347,12 +355,30 @@ probe_specifier:
 	|	DT_TOK_INT   { $$ = dt_node_pdesc_by_id($1); }
 	;
 
-statement_list:	statement { $$ = $1; }
-	|	statement_list ';' statement { $$ = LINK($1, $3); }
+statement_list_impl: /* empty */ { $$ = NULL; }
+	|	statement_list_impl statement { $$ = LINK($1, $2); }
 	;
 
-statement:	/* empty */ { $$ = NULL; }
-	|	expression { $$ = dt_node_statement($1); }
+statement_list:
+		statement_list_impl { $$ = $1; }
+	|	statement_list_impl expression {
+			$$ = LINK($1, dt_node_statement($2));
+		}
+	;
+
+statement_or_block:
+		statement
+	|	'{' statement_list '}' { $$ = $2; }
+
+statement:	';' { $$ = NULL; }
+	|	expression ';' { $$ = dt_node_statement($1); }
+	|	DT_KEY_IF DT_TOK_LPAR expression DT_TOK_RPAR statement_or_block {
+			$$ = dt_node_if($3, $5, NULL);
+		}
+	|	DT_KEY_IF DT_TOK_LPAR expression DT_TOK_RPAR
+		statement_or_block DT_KEY_ELSE statement_or_block {
+			$$ = dt_node_if($3, $5, $7);
+		}
 	;
 
 argument_expression_list:
@@ -391,10 +417,16 @@ postfix_expression:
 	|	postfix_expression DT_TOK_DOT DT_TOK_TNAME {
 			$$ = OP2(DT_TOK_DOT, $1, dt_node_ident($3));
 		}
+	|	postfix_expression DT_TOK_DOT dtrace_keyword_ident {
+			$$ = OP2(DT_TOK_DOT, $1, dt_node_ident($3));
+		}
 	|	postfix_expression DT_TOK_PTR DT_TOK_IDENT {
 			$$ = OP2(DT_TOK_PTR, $1, dt_node_ident($3));
 		}
 	|	postfix_expression DT_TOK_PTR DT_TOK_TNAME {
+			$$ = OP2(DT_TOK_PTR, $1, dt_node_ident($3));
+		}
+	|	postfix_expression DT_TOK_PTR dtrace_keyword_ident {
 			$$ = OP2(DT_TOK_PTR, $1, dt_node_ident($3));
 		}
 	|	postfix_expression DT_TOK_ADDADD {
@@ -409,6 +441,10 @@ postfix_expression:
 		}
 	|	DT_TOK_OFFSETOF DT_TOK_LPAR type_name DT_TOK_COMMA 
 		    DT_TOK_TNAME DT_TOK_RPAR {
+			$$ = dt_node_offsetof($3, $5);
+		}
+	|	DT_TOK_OFFSETOF DT_TOK_LPAR type_name DT_TOK_COMMA
+		    dtrace_keyword_ident DT_TOK_RPAR {
 			$$ = dt_node_offsetof($3, $5);
 		}
 	|	DT_TOK_XLATE DT_TOK_LT type_name DT_TOK_GT
@@ -833,6 +869,17 @@ function:	DT_TOK_LPAR { dt_scope_push(NULL, CTF_ERR); }
 function_parameters:
 		/* empty */ 		{ $$ = NULL; }
 	|	parameter_type_list	{ $$ = $1; }
+	;
+
+dtrace_keyword_ident:
+	  DT_KEY_PROBE { $$ = DUP("probe"); }
+	| DT_KEY_PROVIDER { $$ = DUP("provider"); }
+	| DT_KEY_SELF { $$ = DUP("self"); }
+	| DT_KEY_STRING { $$ = DUP("string"); }
+	| DT_TOK_STRINGOF { $$ = DUP("stringof"); }
+	| DT_KEY_USERLAND { $$ = DUP("userland"); }
+	| DT_TOK_XLATE { $$ = DUP("xlate"); }
+	| DT_KEY_XLATOR { $$ = DUP("translator"); }
 	;
 
 %%

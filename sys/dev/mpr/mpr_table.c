@@ -118,6 +118,7 @@ struct mpr_table_lookup mpr_linkrate_names[] = {
 	{"1.5Gbps",			0x08},
 	{"3.0Gbps",			0x09},
 	{"6.0Gbps",			0x0a},
+	{"12.0Gbps",			0x0b},
 	{NULL, 0},
 	{"LinkRate Unknown",		0x00}
 };
@@ -341,9 +342,8 @@ mpr_print_evt_sas(struct mpr_softc *sc, MPI2_EVENT_NOTIFICATION_REPLY *event)
 			    "PHY[%d].LinkRate: %s (0x%x)\n", phynum,
 			    mpr_describe_table(mpr_linkrate_names,
 			    (phy->LinkRate >> 4) & 0xf), phy->LinkRate);
-			mpr_dprint_field(sc,MPR_EVENT,"PHY[%d].PhyStatus: "
-			    "%s\n", phynum,
-			    mpr_describe_table(mpr_phystatus_names,
+			mpr_dprint_field(sc,MPR_EVENT,"PHY[%d].PhyStatus: %s\n",
+			    phynum, mpr_describe_table(mpr_phystatus_names,
 			    phy->PhyStatus));
 		}
 		break;

@@ -7,11 +7,12 @@ LIB=	nvpair
 
 SRCS=	libnvpair.c \
 	nvpair_alloc_system.c \
-	nvpair_alloc_fixed.c \
-	nvpair.c \
-	fnvpair.c
+	nvpair_json.c \
+	opensolaris_fnvpair.c \
+	opensolaris_nvpair.c \
+	opensolaris_nvpair_alloc_fixed.c
 
-WARNS?=	0
+WARNS?=	1
 CFLAGS+= -I${.CURDIR}/../../../cddl/compat/opensolaris/include
 CFLAGS+= -I${.CURDIR}/../../../cddl/contrib/opensolaris/lib/libzpool/common
 CFLAGS+= -I${.CURDIR}/../../../sys/cddl/compat/opensolaris

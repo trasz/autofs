@@ -58,8 +58,6 @@ static struct sysentvec elf64_freebsd_sysvec = {
 	.sv_size	= SYS_MAXSYSCALL,
 	.sv_table	= sysent,
 	.sv_mask	= 0,
-	.sv_sigsize	= 0,
-	.sv_sigtbl	= NULL,
 	.sv_errsize	= 0,
 	.sv_errtbl	= NULL,
 	.sv_transtrap	= NULL,
@@ -67,7 +65,6 @@ static struct sysentvec elf64_freebsd_sysvec = {
 	.sv_sendsig	= sendsig,
 	.sv_sigcode	= NULL,
 	.sv_szsigcode	= NULL,
-	.sv_prepsyscall	= NULL,
 	.sv_name	= "FreeBSD ELF64",
 	.sv_coredump	= __elfN(coredump),
 	.sv_imgact_try	= NULL,
@@ -87,6 +84,8 @@ static struct sysentvec elf64_freebsd_sysvec = {
 	.sv_fetch_syscall_args = cpu_fetch_syscall_args,
 	.sv_syscallnames = syscallnames,
 	.sv_schedtail	= NULL,
+	.sv_thread_detach = NULL,
+	.sv_trap	= NULL,
 };
 
 static Elf64_Brandinfo freebsd_brand_info = {
@@ -343,6 +342,7 @@ elf_reloc(linker_file_t lf, Elf_Addr relocbase, const void *data, int type,
 	Elf_Addr value;
 	Elf_Addr mask;
 	Elf_Addr addr;
+	int error;
 
 	if (type != ELF_RELOC_RELA)
 		return (-1);
@@ -357,8 +357,7 @@ elf_reloc(linker_file_t lf, Elf_Addr relocbase, const void *data, int type,
 		return (0);
 
 	if (rtype == R_SPARC_JMP_SLOT || rtype == R_SPARC_COPY ||
-	    rtype >= sizeof(reloc_target_bitmask) /
-	    sizeof(*reloc_target_bitmask)) {
+	    rtype >= nitems(reloc_target_bitmask)) {
 		printf("kldload: unexpected relocation type %ld\n", rtype);
 		return (-1);
 	}
@@ -371,8 +370,8 @@ elf_reloc(linker_file_t lf, Elf_Addr relocbase, const void *data, int type,
 	value = rela->r_addend;
 
 	if (RELOC_RESOLVE_SYMBOL(rtype)) {
-		addr = lookup(lf, symidx, 1);
-		if (addr == 0)
+		error = lookup(lf, symidx, 1, &addr);
+		if (error != 0)
 			return (-1);
 		value += addr;
 		if (RELOC_BARE_SYMBOL(rtype))

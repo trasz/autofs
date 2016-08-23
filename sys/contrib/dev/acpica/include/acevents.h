@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2013, Intel Corp.
+ * Copyright (C) 2000 - 2016, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -144,9 +144,10 @@ AcpiEvFinishGpe (
 ACPI_STATUS
 AcpiEvCreateGpeBlock (
     ACPI_NAMESPACE_NODE     *GpeDevice,
-    ACPI_GENERIC_ADDRESS    *GpeBlockAddress,
+    UINT64                  Address,
+    UINT8                   SpaceId,
     UINT32                  RegisterCount,
-    UINT8                   GpeBlockBaseNumber,
+    UINT16                  GpeBlockBaseNumber,
     UINT32                  InterruptNumber,
     ACPI_GPE_BLOCK_INFO     **ReturnGpeBlock);
 
@@ -196,19 +197,16 @@ AcpiEvWalkGpeList (
     ACPI_GPE_CALLBACK       GpeWalkCallback,
     void                    *Context);
 
-BOOLEAN
-AcpiEvValidGpeEvent (
-    ACPI_GPE_EVENT_INFO     *GpeEventInfo);
-
 ACPI_STATUS
 AcpiEvGetGpeDevice (
     ACPI_GPE_XRUPT_INFO     *GpeXruptInfo,
     ACPI_GPE_BLOCK_INFO     *GpeBlock,
     void                    *Context);
 
-ACPI_GPE_XRUPT_INFO *
+ACPI_STATUS
 AcpiEvGetGpeXruptBlock (
-    UINT32                  InterruptNumber);
+    UINT32                  InterruptNumber,
+    ACPI_GPE_XRUPT_INFO     **GpeXruptBlock);
 
 ACPI_STATUS
 AcpiEvDeleteGpeXrupt (
@@ -224,6 +222,11 @@ AcpiEvDeleteGpeHandlers (
 /*
  * evhandler - Address space handling
  */
+ACPI_OPERAND_OBJECT *
+AcpiEvFindRegionHandler (
+    ACPI_ADR_SPACE_TYPE     SpaceId,
+    ACPI_OPERAND_OBJECT     *HandlerObj);
+
 BOOLEAN
 AcpiEvHasDefaultHandler (
     ACPI_NAMESPACE_NODE     *Node,
@@ -266,17 +269,18 @@ AcpiEvAttachRegion (
 
 void
 AcpiEvDetachRegion (
-    ACPI_OPERAND_OBJECT    *RegionObj,
+    ACPI_OPERAND_OBJECT     *RegionObj,
     BOOLEAN                 AcpiNsIsLocked);
 
-ACPI_STATUS
+void
 AcpiEvExecuteRegMethods (
     ACPI_NAMESPACE_NODE     *Node,
-    ACPI_ADR_SPACE_TYPE     SpaceId);
+    ACPI_ADR_SPACE_TYPE     SpaceId,
+    UINT32                  Function);
 
 ACPI_STATUS
 AcpiEvExecuteRegMethod (
-    ACPI_OPERAND_OBJECT    *RegionObj,
+    ACPI_OPERAND_OBJECT     *RegionObj,
     UINT32                  Function);
 
 

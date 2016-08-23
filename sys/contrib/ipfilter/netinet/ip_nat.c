@@ -133,8 +133,6 @@ static const char rcsid[] = "@(#)$FreeBSD$";
 #define	NBUMPSIDEDF(y,x)do { softn->ipf_nat_stats.ns_side[y].x++; \
 			     DT1(x, fr_info_t *, fin); } while (0)
 
-frentry_t	ipfnatblock;
-
 static ipftuneable_t ipf_nat_tuneables[] = {
 	/* nat */
 	{ { (void *)offsetof(ipf_nat_softc_t, ipf_nat_lock) },
@@ -275,9 +273,6 @@ static	void	ipf_nat_tabmove __P((ipf_nat_softc_t *, nat_t *));
 int
 ipf_nat_main_load()
 {
-	bzero((char *)&ipfnatblock, sizeof(ipfnatblock));
-	ipfnatblock.fr_flags = FR_BLOCK|FR_QUICK;
-	ipfnatblock.fr_ref = 1;
 
 	return 0;
 }
@@ -2946,10 +2941,11 @@ ipf_nat_newrdr(fin, nat, ni)
 	 */
 	if (np->in_flags & IPN_SPLIT) {
 		in.s_addr = np->in_dnip;
+		inb.s_addr = htonl(in.s_addr);
 
 		if ((np->in_flags & (IPN_ROUNDR|IPN_STICKY)) == IPN_STICKY) {
 			hm = ipf_nat_hostmap(softn, NULL, fin->fin_src,
-					     fin->fin_dst, in, (u_32_t)dport);
+					     fin->fin_dst, inb, (u_32_t)dport);
 			if (hm != NULL) {
 				in.s_addr = hm->hm_ndstip.s_addr;
 				move = 0;
@@ -3050,13 +3046,14 @@ ipf_nat_newrdr(fin, nat, ni)
 		return -1;
 	}
 
+	inb.s_addr = htonl(in.s_addr);
 	nat->nat_ndstaddr = htonl(in.s_addr);
 	nat->nat_odstip = fin->fin_dst;
 	nat->nat_nsrcip = fin->fin_src;
 	nat->nat_osrcip = fin->fin_src;
 	if ((nat->nat_hm == NULL) && ((np->in_flags & IPN_STICKY) != 0))
 		nat->nat_hm = ipf_nat_hostmap(softn, np, fin->fin_src,
-					      fin->fin_dst, in, (u_32_t)dport);
+					      fin->fin_dst, inb, (u_32_t)dport);
 
 	if (flags & IPN_TCPUDP) {
 		nat->nat_odport = dport;
@@ -5121,7 +5118,7 @@ ipf_nat_out(fin, nat, natadd, nflags)
 		ipf_fix_outcksum(0, &fin->fin_ip->ip_sum, msumd, 0);
 	}
 #if !defined(_KERNEL) || defined(MENTAT) || defined(__sgi) || \
-    defined(linux) || defined(BRIDGE_IPF)
+    defined(linux) || defined(BRIDGE_IPF) || defined(__FreeBSD__)
 	else {
 		/*
 		 * Strictly speaking, this isn't necessary on BSD
@@ -5219,7 +5216,7 @@ ipf_nat_out(fin, nat, natadd, nflags)
 		}
 
 		ip = MTOD(m, ip_t *);
-		ip->ip_id = htons(ipf_nextipid(fin));
+		ip_fillid(ip);
 		s2 = ntohs(ip->ip_id);
 
 		s1 = ip->ip_len;
@@ -5233,7 +5230,7 @@ ipf_nat_out(fin, nat, natadd, nflags)
 		uh->uh_ulen += fin->fin_plen;
 		uh->uh_ulen = htons(uh->uh_ulen);
 #if !defined(_KERNEL) || defined(MENTAT) || defined(__sgi) || \
-    defined(linux) || defined(BRIDGE_IPF)
+    defined(linux) || defined(BRIDGE_IPF) || defined(__FreeBSD__)
 		ipf_fix_outcksum(0, &ip->ip_sum, sumd, 0);
 #endif
 
@@ -5664,7 +5661,7 @@ ipf_nat_in(fin, nat, natadd, nflags)
 		}
 
 		ip = MTOD(m, ip_t *);
-		ip->ip_id = htons(ipf_nextipid(fin));
+		ip_fillid(ip);
 		sum1 = ntohs(ip->ip_len);
 		ip->ip_len = ntohs(ip->ip_len);
 		ip->ip_len += fin->fin_plen;
@@ -8073,13 +8070,13 @@ ipf_nat_rehash(softc, t, p)
 	 * the outbound lookup table and the hash chain length for each.
 	 */
 	KMALLOCS(newtab[0], nat_t **, newsize * sizeof(nat_t *));
-	if (newtab == NULL) {
+	if (newtab[0] == NULL) {
 		error = 60063;
 		goto badrehash;
 	}
 
 	KMALLOCS(newtab[1], nat_t **, newsize * sizeof(nat_t *));
-	if (newtab == NULL) {
+	if (newtab[1] == NULL) {
 		error = 60064;
 		goto badrehash;
 	}

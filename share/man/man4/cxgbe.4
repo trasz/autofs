@@ -31,7 +31,7 @@
 .\"
 .\" $FreeBSD$
 .\"
-.Dd March 20, 2014
+.Dd December 2, 2015
 .Dt CXGBE 4
 .Os
 .Sh NAME
@@ -170,6 +170,16 @@ number of CPU cores in the system, whichever is less.
 .It Va hw.cxgbe.nofldrxq1g
 The number of TOE rx queues to use for a 1Gb port.
 The default is 1.
+.It Va hw.cxgbe.num_vis
+The number of virtual interfaces (VIs) created for each port.
+Each virtual interface creates a separate network interface.
+The first virtual interface on each port is required and represents
+the primary network interface on the port.
+Additional virtual interfaces on a port are named vcxgbe (T4) or
+vcxl (T5) and only use a single rx and tx queue.
+Additional virtual interfaces use a single pair of queues
+for rx and tx as well an additional pair of queues for TOE rx and tx.
+The default is 1.
 .It Va hw.cxgbe.holdoff_timer_idx_10G
 .It Va hw.cxgbe.holdoff_timer_idx_1G
 The timer index value to use to delay interrupts.
@@ -226,7 +236,7 @@ long as it is compatible with the driver and is a different version than
 the one already on the card.
 The default is 1.
 .It Va hw.cxgbe.fl_pktshift
-The number of bytes of padding inserted before the begining of an Ethernet
+The number of bytes of padding inserted before the beginning of an Ethernet
 frame in the receive buffer.
 The default value of 2 ensures that the Ethernet payload (usually the IP header)
 is at a 4 byte aligned address.
@@ -240,8 +250,19 @@ The default is -1 which lets the driver pick a pad boundary.
 Controls the hardware response to congestion.
 -1 disables congestion feedback and is not recommended.
 0 instructs the hardware to backpressure its pipeline on congestion.
-This usually results in the port emitting pause frames.
+This usually results in the port emitting PAUSE frames.
 1 instructs the hardware to drop frames destined for congested queues.
+.It Va hw.cxgbe.pause_settings
+PAUSE frame settings.
+Bit 0 is rx_pause, bit 1 is tx_pause.
+rx_pause = 1 instructs the hardware to heed incoming PAUSE frames, 0 instructs
+it to ignore them.
+tx_pause = 1 allows the hardware to emit PAUSE frames when its receive FIFO
+reaches a high threshold, 0 prohibits the hardware from emitting PAUSE frames.
+The default is 3 (both rx_pause and tx_pause = 1).
+This tunable establishes the default PAUSE settings for all ports.
+Settings can be displayed and controlled on a per-port basis via the
+dev.cxgbe.X.pause_settings (dev.cxl.X.pause_settings for T5 cards) sysctl.
 .It Va hw.cxgbe.buffer_packing
 Allow the hardware to deliver multiple frames in the same receive buffer
 opportunistically.
@@ -249,11 +270,13 @@ The default is -1 which lets the driver decide.
 0 or 1 explicitly disable or enable this feature.
 .It Va hw.cxgbe.allow_mbufs_in_cluster
 1 allows the driver to lay down one or more mbufs within the receive buffer
-opportunistically.  This is the default.
+opportunistically.
+This is the default.
 0 prohibits the driver from doing so.
 .It Va hw.cxgbe.largest_rx_cluster
 .It Va hw.cxgbe.safest_rx_cluster
-Sizes of rx clusters.  Each of these must be set to one of the sizes available
+Sizes of rx clusters.
+Each of these must be set to one of the sizes available
 (usually 2048, 4096, 9216, and 16384) and largest_rx_cluster must be greater
 than or equal to safest_rx_cluster.
 The defaults are 16384 and 4096 respectively.

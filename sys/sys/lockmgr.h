@@ -127,8 +127,6 @@ _lockmgr_args_rw(struct lock *lk, u_int flags, struct rwlock *ilk,
 #define	lockmgr_rw(lk, flags, ilk)					\
 	_lockmgr_args_rw((lk), (flags), (ilk), LK_WMESG_DEFAULT,	\
 	    LK_PRIO_DEFAULT, LK_TIMO_DEFAULT, LOCK_FILE, LOCK_LINE)
-#define	lockmgr_waiters(lk)						\
-	((lk)->lk_lock & LK_ALL_WAITERS)
 #ifdef INVARIANTS
 #define	lockmgr_assert(lk, what)					\
 	_lockmgr_assert((lk), (what), LOCK_FILE, LOCK_LINE)
@@ -158,6 +156,8 @@ _lockmgr_args_rw(struct lock *lk, u_int flags, struct rwlock *ilk,
 #define	LK_RETRY	0x000400
 #define	LK_SLEEPFAIL	0x000800
 #define	LK_TIMELOCK	0x001000
+#define	LK_NODDLKTREAT	0x002000
+#define	LK_VNHELD	0x004000
 
 /*
  * Operations for lockmgr().

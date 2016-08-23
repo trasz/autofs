@@ -47,9 +47,9 @@
 #include "util/alloc.h"
 #include "util/regional.h"
 #include "util/net_help.h"
-#include "ldns/rrdef.h"
-#include "ldns/sbuffer.h"
-#include "ldns/wire2str.h"
+#include "sldns/rrdef.h"
+#include "sldns/sbuffer.h"
+#include "sldns/wire2str.h"
 
 void
 ub_packed_rrset_parsedelete(struct ub_packed_rrset_key* pkey,
@@ -57,11 +57,9 @@ ub_packed_rrset_parsedelete(struct ub_packed_rrset_key* pkey,
 {
 	if(!pkey)
 		return;
-	if(pkey->entry.data)
-		free(pkey->entry.data);
+	free(pkey->entry.data);
 	pkey->entry.data = NULL;
-	if(pkey->rk.dname)
-		free(pkey->rk.dname);
+	free(pkey->rk.dname);
 	pkey->rk.dname = NULL;
 	pkey->id = 0;
 	alloc_special_release(alloc, pkey);

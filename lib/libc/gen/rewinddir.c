@@ -45,15 +45,15 @@ __FBSDID("$FreeBSD$");
 #include "telldir.h"
 
 void
-rewinddir(dirp)
-	DIR *dirp;
+rewinddir(DIR *dirp)
 {
 
 	if (__isthreaded)
 		_pthread_mutex_lock(&dirp->dd_lock);
+	dirp->dd_flags &= ~__DTF_SKIPREAD; /* current contents are invalid */
 	if (dirp->dd_flags & __DTF_READALL)
 		_filldir(dirp, false);
-	else if (dirp->dd_seek != 0) {
+	else {
 		(void) lseek(dirp->dd_fd, 0, SEEK_SET);
 		dirp->dd_seek = 0;
 	}

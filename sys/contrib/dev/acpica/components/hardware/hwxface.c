@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2013, Intel Corp.
+ * Copyright (C) 2000 - 2016, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -40,6 +40,8 @@
  * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGES.
  */
+
+#define EXPORT_ACPI_INTERFACES
 
 #include <contrib/dev/acpica/include/acpi.h>
 #include <contrib/dev/acpica/include/accommon.h>
@@ -90,9 +92,15 @@ AcpiReset (
          * For I/O space, write directly to the OSL. This bypasses the port
          * validation mechanism, which may block a valid write to the reset
          * register.
+         *
+         * NOTE:
+         * The ACPI spec requires the reset register width to be 8, so we
+         * hardcode it here and ignore the FADT value. This maintains
+         * compatibility with other ACPI implementations that have allowed
+         * BIOS code with bad register width values to go unnoticed.
          */
         Status = AcpiOsWritePort ((ACPI_IO_ADDRESS) ResetReg->Address,
-                    AcpiGbl_FADT.ResetValue, ResetReg->BitWidth);
+            AcpiGbl_FADT.ResetValue, ACPI_RESET_REGISTER_WIDTH);
     }
     else
     {
@@ -161,7 +169,7 @@ AcpiRead (
     if (Reg->SpaceId == ACPI_ADR_SPACE_SYSTEM_MEMORY)
     {
         Status = AcpiOsReadMemory ((ACPI_PHYSICAL_ADDRESS)
-                    Address, ReturnValue, Reg->BitWidth);
+            Address, ReturnValue, Reg->BitWidth);
         if (ACPI_FAILURE (Status))
         {
             return (Status);
@@ -179,7 +187,7 @@ AcpiRead (
         }
 
         Status = AcpiHwReadPort ((ACPI_IO_ADDRESS)
-                    Address, &ValueLo, Width);
+            Address, &ValueLo, Width);
         if (ACPI_FAILURE (Status))
         {
             return (Status);
@@ -190,7 +198,7 @@ AcpiRead (
             /* Read the top 32 bits */
 
             Status = AcpiHwReadPort ((ACPI_IO_ADDRESS)
-                        (Address + 4), &ValueHi, 32);
+                (Address + 4), &ValueHi, 32);
             if (ACPI_FAILURE (Status))
             {
                 return (Status);
@@ -255,7 +263,7 @@ AcpiWrite (
     if (Reg->SpaceId == ACPI_ADR_SPACE_SYSTEM_MEMORY)
     {
         Status = AcpiOsWriteMemory ((ACPI_PHYSICAL_ADDRESS)
-                    Address, Value, Reg->BitWidth);
+            Address, Value, Reg->BitWidth);
         if (ACPI_FAILURE (Status))
         {
             return (Status);
@@ -270,7 +278,7 @@ AcpiWrite (
         }
 
         Status = AcpiHwWritePort ((ACPI_IO_ADDRESS)
-                    Address, ACPI_LODWORD (Value), Width);
+            Address, ACPI_LODWORD (Value), Width);
         if (ACPI_FAILURE (Status))
         {
             return (Status);
@@ -279,7 +287,7 @@ AcpiWrite (
         if (Reg->BitWidth == 64)
         {
             Status = AcpiHwWritePort ((ACPI_IO_ADDRESS)
-                        (Address + 4), ACPI_HIDWORD (Value), 32);
+                (Address + 4), ACPI_HIDWORD (Value), 32);
             if (ACPI_FAILURE (Status))
             {
                 return (Status);
@@ -350,7 +358,7 @@ AcpiReadBitRegister (
     /* Read the entire parent register */
 
     Status = AcpiHwRegisterRead (BitRegInfo->ParentRegister,
-                &RegisterValue);
+        &RegisterValue);
     if (ACPI_FAILURE (Status))
     {
         return_ACPI_STATUS (Status);
@@ -359,7 +367,7 @@ AcpiReadBitRegister (
     /* Normalize the value that was read, mask off other bits */
 
     Value = ((RegisterValue & BitRegInfo->AccessBitMask)
-                >> BitRegInfo->BitPosition);
+        >> BitRegInfo->BitPosition);
 
     ACPI_DEBUG_PRINT ((ACPI_DB_IO,
         "BitReg %X, ParentReg %X, Actual %8.8X, ReturnValue %8.8X\n",
@@ -431,7 +439,7 @@ AcpiWriteBitRegister (
          * interested in
          */
         Status = AcpiHwRegisterRead (BitRegInfo->ParentRegister,
-                    &RegisterValue);
+            &RegisterValue);
         if (ACPI_FAILURE (Status))
         {
             goto UnlockAndExit;
@@ -445,7 +453,7 @@ AcpiWriteBitRegister (
             BitRegInfo->AccessBitMask, Value);
 
         Status = AcpiHwRegisterWrite (BitRegInfo->ParentRegister,
-                    RegisterValue);
+            RegisterValue);
     }
     else
     {
@@ -465,7 +473,7 @@ AcpiWriteBitRegister (
         if (RegisterValue)
         {
             Status = AcpiHwRegisterWrite (ACPI_REGISTER_PM1_STATUS,
-                        RegisterValue);
+                RegisterValue);
         }
     }
 
@@ -557,12 +565,19 @@ AcpiGetSleepTypeData (
      * Evaluate the \_Sx namespace object containing the register values
      * for this state
      */
-    Info->RelativePathname = ACPI_CAST_PTR (
-        char, AcpiGbl_SleepStateNames[SleepState]);
+    Info->RelativePathname = AcpiGbl_SleepStateNames[SleepState];
+
     Status = AcpiNsEvaluate (Info);
     if (ACPI_FAILURE (Status))
     {
-        goto Cleanup;
+        if (Status == AE_NOT_FOUND)
+        {
+            /* The _Sx states are optional, ignore NOT_FOUND */
+
+            goto FinalCleanup;
+        }
+
+        goto WarningCleanup;
     }
 
     /* Must have a return object */
@@ -572,7 +587,7 @@ AcpiGetSleepTypeData (
         ACPI_ERROR ((AE_INFO, "No Sleep State object returned from [%s]",
             Info->RelativePathname));
         Status = AE_AML_NO_RETURN_VALUE;
-        goto Cleanup;
+        goto WarningCleanup;
     }
 
     /* Return object must be of type Package */
@@ -581,7 +596,7 @@ AcpiGetSleepTypeData (
     {
         ACPI_ERROR ((AE_INFO, "Sleep State return object is not a Package"));
         Status = AE_AML_OPERAND_TYPE;
-        goto Cleanup1;
+        goto ReturnValueCleanup;
     }
 
     /*
@@ -628,16 +643,18 @@ AcpiGetSleepTypeData (
         break;
     }
 
-Cleanup1:
+ReturnValueCleanup:
     AcpiUtRemoveReference (Info->ReturnObject);
 
-Cleanup:
+WarningCleanup:
     if (ACPI_FAILURE (Status))
     {
         ACPI_EXCEPTION ((AE_INFO, Status,
-            "While evaluating Sleep State [%s]", Info->RelativePathname));
+            "While evaluating Sleep State [%s]",
+            Info->RelativePathname));
     }
 
+FinalCleanup:
     ACPI_FREE (Info);
     return_ACPI_STATUS (Status);
 }

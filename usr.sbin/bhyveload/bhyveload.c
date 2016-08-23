@@ -152,7 +152,6 @@ struct cb_file {
 static int
 cb_open(void *arg, const char *filename, void **hp)
 {
-	struct stat st;
 	struct cb_file *cf;
 	char path[PATH_MAX];
 
@@ -169,7 +168,7 @@ cb_open(void *arg, const char *filename, void **hp)
 		return (errno);
 	}
 
-	cf->cf_size = st.st_size;
+	cf->cf_size = cf->cf_stat.st_size;
 	if (S_ISDIR(cf->cf_stat.st_mode)) {
 		cf->cf_isdir = 1;
 		cf->cf_u.dir = opendir(path);
@@ -542,6 +541,21 @@ cb_getenv(void *arg, int num)
 	return (NULL);
 }
 
+static int
+cb_vm_set_register(void *arg, int vcpu, int reg, uint64_t val)
+{
+
+	return (vm_set_register(ctx, vcpu, reg, val));
+}
+
+static int
+cb_vm_set_desc(void *arg, int vcpu, int reg, uint64_t base, u_int limit,
+    u_int access)
+{
+
+	return (vm_set_desc(ctx, vcpu, reg, base, limit, access));
+}
+
 static struct loader_callbacks cb = {
 	.getc = cb_getc,
 	.putc = cb_putc,
@@ -571,6 +585,10 @@ static struct loader_callbacks cb = {
 	.getmem = cb_getmem,
 
 	.getenv = cb_getenv,
+
+	/* Version 4 additions */
+	.vm_set_register = cb_vm_set_register,
+	.vm_set_desc = cb_vm_set_desc,
 };
 
 static int
@@ -609,7 +627,7 @@ disk_open(char *path)
 {
 	int err, fd;
 
-	if (ndisks > NDISKS)
+	if (ndisks >= NDISKS)
 		return (ERANGE);
 
 	err = 0;
@@ -629,8 +647,8 @@ usage(void)
 {
 
 	fprintf(stderr,
-	    "usage: %s [-c <console-device>] [-d <disk-path>] [-e <name=value>]\n"
-	    "       %*s [-h <host-path>] [-m mem-size] <vmname>\n",
+	    "usage: %s [-S][-c <console-device>] [-d <disk-path>] [-e <name=value>]\n"
+	    "       %*s [-h <host-path>] [-m memsize[K|k|M|m|G|g|T|t]] <vmname>\n",
 	    progname,
 	    (int)strlen(progname), "");
 	exit(1);
@@ -639,19 +657,23 @@ usage(void)
 int
 main(int argc, char** argv)
 {
+	char *loader;
 	void *h;
 	void (*func)(struct loader_callbacks *, void *, int, int);
 	uint64_t mem_size;
-	int opt, error, need_reinit;
+	int opt, error, need_reinit, memflags;
 
 	progname = basename(argv[0]);
 
+	loader = NULL;
+
+	memflags = 0;
 	mem_size = 256 * MB;
 
 	consin_fd = STDIN_FILENO;
 	consout_fd = STDOUT_FILENO;
 
-	while ((opt = getopt(argc, argv, "c:d:e:h:m:")) != -1) {
+	while ((opt = getopt(argc, argv, "CSc:d:e:h:l:m:")) != -1) {
 		switch (opt) {
 		case 'c':
 			error = altcons_open(optarg);
@@ -673,10 +695,24 @@ main(int argc, char** argv)
 			host_base = optarg;
 			break;
 
+		case 'l':
+			if (loader != NULL)
+				errx(EX_USAGE, "-l can only be given once");
+			loader = strdup(optarg);
+			if (loader == NULL)
+				err(EX_OSERR, "malloc");
+			break;
+
 		case 'm':
 			error = vm_parse_memsize(optarg, &mem_size);
 			if (error != 0)
 				errx(EX_USAGE, "Invalid memsize '%s'", optarg);
+			break;
+		case 'C':
+			memflags |= VM_MEM_F_INCORE;
+			break;
+		case 'S':
+			memflags |= VM_MEM_F_WIRED;
 			break;
 		case '?':
 			usage();
@@ -715,32 +751,43 @@ main(int argc, char** argv)
 		}
 	}
 
+	vm_set_memflags(ctx, memflags);
 	error = vm_setup_memory(ctx, mem_size, VM_MMAP_ALL);
 	if (error) {
 		perror("vm_setup_memory");
 		exit(1);
 	}
 
-	tcgetattr(consout_fd, &term);
-	oldterm = term;
-	cfmakeraw(&term);
-	term.c_cflag |= CLOCAL;
-	
-	tcsetattr(consout_fd, TCSAFLUSH, &term);
-
-	h = dlopen("/boot/userboot.so", RTLD_LOCAL);
+	if (loader == NULL) {
+		loader = strdup("/boot/userboot.so");
+		if (loader == NULL)
+			err(EX_OSERR, "malloc");
+	}
+	h = dlopen(loader, RTLD_LOCAL);
 	if (!h) {
 		printf("%s\n", dlerror());
+		free(loader);
 		return (1);
 	}
 	func = dlsym(h, "loader_main");
 	if (!func) {
 		printf("%s\n", dlerror());
+		free(loader);
 		return (1);
 	}
+
+	tcgetattr(consout_fd, &term);
+	oldterm = term;
+	cfmakeraw(&term);
+	term.c_cflag |= CLOCAL;
+
+	tcsetattr(consout_fd, TCSAFLUSH, &term);
 
 	addenv("smbios.bios.vendor=BHYVE");
 	addenv("boot_serial=1");
 
-	func(&cb, NULL, USERBOOT_VERSION_3, ndisks);
+	func(&cb, NULL, USERBOOT_VERSION_4, ndisks);
+
+	free(loader);
+	return (0);
 }

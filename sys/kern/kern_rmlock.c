@@ -277,22 +277,28 @@ void
 rm_init_flags(struct rmlock *rm, const char *name, int opts)
 {
 	struct lock_class *lc;
-	int liflags;
+	int liflags, xflags;
 
 	liflags = 0;
 	if (!(opts & RM_NOWITNESS))
 		liflags |= LO_WITNESS;
 	if (opts & RM_RECURSE)
 		liflags |= LO_RECURSABLE;
+	if (opts & RM_NEW)
+		liflags |= LO_NEW;
 	rm->rm_writecpus = all_cpus;
 	LIST_INIT(&rm->rm_activeReaders);
 	if (opts & RM_SLEEPABLE) {
 		liflags |= LO_SLEEPABLE;
 		lc = &lock_class_rm_sleepable;
-		sx_init_flags(&rm->rm_lock_sx, "rmlock_sx", SX_NOWITNESS);
+		xflags = (opts & RM_NEW ? SX_NEW : 0);
+		sx_init_flags(&rm->rm_lock_sx, "rmlock_sx",
+		    xflags | SX_NOWITNESS);
 	} else {
 		lc = &lock_class_rm;
-		mtx_init(&rm->rm_lock_mtx, name, "rmlock_mtx", MTX_NOWITNESS);
+		xflags = (opts & RM_NEW ? MTX_NEW : 0);
+		mtx_init(&rm->rm_lock_mtx, name, "rmlock_mtx",
+		    xflags | MTX_NOWITNESS);
 	}
 	lock_init(&rm->lock_object, lc, name, NULL, liflags);
 }
@@ -369,7 +375,7 @@ _rm_rlock_hard(struct rmlock *rm, struct rm_priotracker *tracker, int trylock)
 	}
 
 	/*
-	 * We allow readers to aquire a lock even if a writer is blocked if
+	 * We allow readers to acquire a lock even if a writer is blocked if
 	 * the lock is recursive and the reader already holds the lock.
 	 */
 	if ((rm->lock_object.lo_flags & LO_RECURSABLE) != 0) {
@@ -401,9 +407,11 @@ _rm_rlock_hard(struct rmlock *rm, struct rm_priotracker *tracker, int trylock)
 				return (0);
 		}
 	} else {
-		if (rm->lock_object.lo_flags & LO_SLEEPABLE)
+		if (rm->lock_object.lo_flags & LO_SLEEPABLE) {
+			THREAD_SLEEPING_OK();
 			sx_xlock(&rm->rm_lock_sx);
-		else
+			THREAD_NO_SLEEPING();
+		} else
 			mtx_lock(&rm->rm_lock_mtx);
 	}
 
@@ -580,7 +588,7 @@ _rm_wunlock(struct rmlock *rm)
 		mtx_unlock(&rm->rm_lock_mtx);
 }
 
-#ifdef LOCK_DEBUG
+#if LOCK_DEBUG > 0
 
 void
 _rm_wlock_debug(struct rmlock *rm, const char *file, int line)
@@ -602,11 +610,8 @@ _rm_wlock_debug(struct rmlock *rm, const char *file, int line)
 	_rm_wlock(rm);
 
 	LOCK_LOG_LOCK("RMWLOCK", &rm->lock_object, 0, 0, file, line);
-
 	WITNESS_LOCK(&rm->lock_object, LOP_EXCLUSIVE, file, line);
-
-	curthread->td_locks++;
-
+	TD_LOCKS_INC(curthread);
 }
 
 void
@@ -622,7 +627,7 @@ _rm_wunlock_debug(struct rmlock *rm, const char *file, int line)
 	WITNESS_UNLOCK(&rm->lock_object, LOP_EXCLUSIVE, file, line);
 	LOCK_LOG_LOCK("RMWUNLOCK", &rm->lock_object, 0, 0, file, line);
 	_rm_wunlock(rm);
-	curthread->td_locks--;
+	TD_LOCKS_DEC(curthread);
 }
 
 int
@@ -664,9 +669,7 @@ _rm_rlock_debug(struct rmlock *rm, struct rm_priotracker *tracker,
 			LOCK_LOG_LOCK("RMRLOCK", &rm->lock_object, 0, 0, file,
 			    line);
 		WITNESS_LOCK(&rm->lock_object, 0, file, line);
-
-		curthread->td_locks++;
-
+		TD_LOCKS_INC(curthread);
 		return (1);
 	} else if (trylock)
 		LOCK_LOG_TRY("RMRLOCK", &rm->lock_object, 0, 0, file, line);
@@ -688,7 +691,7 @@ _rm_runlock_debug(struct rmlock *rm, struct rm_priotracker *tracker,
 	WITNESS_UNLOCK(&rm->lock_object, 0, file, line);
 	LOCK_LOG_LOCK("RMRUNLOCK", &rm->lock_object, 0, 0, file, line);
 	_rm_runlock(rm, tracker);
-	curthread->td_locks--;
+	TD_LOCKS_DEC(curthread);
 }
 
 #else

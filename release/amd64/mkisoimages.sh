@@ -28,13 +28,13 @@ if [ "x$1" = "x-b" ]; then
 	bootable="-o bootimage=i386;$4/boot/cdboot -o no-emul-boot"
 
 	# Make EFI system partition (should be done with makefs in the future)
-	dd if=/dev/zero of=efiboot.img bs=4k count=100
+	dd if=/dev/zero of=efiboot.img bs=4k count=200
 	device=`mdconfig -a -t vnode -f efiboot.img`
 	newfs_msdos -F 12 -m 0xf8 /dev/$device
 	mkdir efi
 	mount -t msdosfs /dev/$device efi
 	mkdir -p efi/efi/boot
-	cp ${4}/boot/loader.efi efi/efi/boot/bootx64.efi
+	cp "$4/boot/loader.efi" efi/efi/boot/bootx64.efi
 	umount efi
 	rmdir efi
 	mdconfig -d -u $device
@@ -46,15 +46,15 @@ else
 fi
 
 if [ $# -lt 3 ]; then
-	echo Usage: $0 '[-b] image-label image-name base-bits-dir [extra-bits-dir]'
+	echo "Usage: $0 [-b] image-label image-name base-bits-dir [extra-bits-dir]"
 	exit 1
 fi
 
-LABEL=`echo $1 | tr '[:lower:]' '[:upper:]'`; shift
-NAME=$1; shift
+LABEL=`echo "$1" | tr '[:lower:]' '[:upper:]'`; shift
+NAME="$1"; shift
 
 publisher="The FreeBSD Project.  http://www.FreeBSD.org/"
-echo "/dev/iso9660/$LABEL / cd9660 ro 0 0" > $1/etc/fstab
-makefs -t cd9660 $bootable -o rockridge -o label=$LABEL -o publisher="$publisher" $NAME $*
-rm $1/etc/fstab
+echo "/dev/iso9660/$LABEL / cd9660 ro 0 0" > "$1/etc/fstab"
+makefs -t cd9660 $bootable -o rockridge -o label="$LABEL" -o publisher="$publisher" "$NAME" "$@"
+rm -f "$1/etc/fstab"
 rm -f efiboot.img

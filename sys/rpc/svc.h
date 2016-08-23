@@ -226,7 +226,7 @@ typedef struct __rpc_svcxprt_ext {
  * The services list
  * Each entry represents a set of procedures (an rpc program).
  * The dispatch routine takes request structs and runs the
- * apropriate procedure.
+ * appropriate procedure.
  */
 struct svc_callout {
 	TAILQ_ENTRY(svc_callout) sc_link;
@@ -240,7 +240,7 @@ TAILQ_HEAD(svc_callout_list, svc_callout);
 /*
  * The services connection loss list
  * The dispatch routine takes request structs and runs the
- * apropriate procedure.
+ * appropriate procedure.
  */
 struct svc_loss_callout {
 	TAILQ_ENTRY(svc_loss_callout) slc_link;
@@ -371,10 +371,10 @@ typedef struct __rpc_svcpool {
 	 * amount of memory used by RPC requests which are queued
 	 * waiting for execution.
 	 */
-	unsigned int	sp_space_low;
-	unsigned int	sp_space_high;
-	unsigned int	sp_space_used;
-	unsigned int	sp_space_used_highest;
+	unsigned long	sp_space_low;
+	unsigned long	sp_space_high;
+	unsigned long	sp_space_used;
+	unsigned long	sp_space_used_highest;
 	bool_t		sp_space_throttled;
 	int		sp_space_throttle_count;
 

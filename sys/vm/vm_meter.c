@@ -63,10 +63,6 @@ SYSCTL_UINT(_vm, VM_V_FREE_RESERVED, v_free_reserved,
 	CTLFLAG_RW, &vm_cnt.v_free_reserved, 0, "Pages reserved for deadlock");
 SYSCTL_UINT(_vm, VM_V_INACTIVE_TARGET, v_inactive_target,
 	CTLFLAG_RW, &vm_cnt.v_inactive_target, 0, "Pages desired inactive");
-SYSCTL_UINT(_vm, VM_V_CACHE_MIN, v_cache_min,
-	CTLFLAG_RW, &vm_cnt.v_cache_min, 0, "Min pages on cache queue");
-SYSCTL_UINT(_vm, VM_V_CACHE_MAX, v_cache_max,
-	CTLFLAG_RW, &vm_cnt.v_cache_max, 0, "Max pages on cache queue");
 SYSCTL_UINT(_vm, VM_V_PAGEOUT_FREE_MIN, v_pageout_free_min,
 	CTLFLAG_RW, &vm_cnt.v_pageout_free_min, 0, "Min pages reserved for kernel");
 SYSCTL_UINT(_vm, OID_AUTO, v_free_severe,
@@ -93,36 +89,31 @@ SYSCTL_PROC(_vm, VM_LOADAVG, loadavg, CTLTYPE_STRUCT | CTLFLAG_RD |
     CTLFLAG_MPSAFE, NULL, 0, sysctl_vm_loadavg, "S,loadavg",
     "Machine loadaverage history");
 
+/*
+ * This function aims to determine if the object is mapped,
+ * specifically, if it is referenced by a vm_map_entry.  Because
+ * objects occasionally acquire transient references that do not
+ * represent a mapping, the method used here is inexact.  However, it
+ * has very low overhead and is good enough for the advisory
+ * vm.vmtotal sysctl.
+ */
+static bool
+is_object_active(vm_object_t obj)
+{
+
+	return (obj->ref_count > obj->shadow_count);
+}
+
 static int
 vmtotal(SYSCTL_HANDLER_ARGS)
 {
-	struct proc *p;
 	struct vmtotal total;
-	vm_map_entry_t entry;
 	vm_object_t object;
-	vm_map_t map;
-	int paging;
+	struct proc *p;
 	struct thread *td;
-	struct vmspace *vm;
 
 	bzero(&total, sizeof(total));
-	/*
-	 * Mark all objects as inactive.
-	 */
-	mtx_lock(&vm_object_list_mtx);
-	TAILQ_FOREACH(object, &vm_object_list, object_list) {
-		if (!VM_OBJECT_TRYWLOCK(object)) {
-			/*
-			 * Avoid a lock-order reversal.  Consequently,
-			 * the reported number of active pages may be
-			 * greater than the actual number.
-			 */
-			continue;
-		}
-		vm_object_clear_flag(object, OBJ_ACTIVE);
-		VM_OBJECT_WUNLOCK(object);
-	}
-	mtx_unlock(&vm_object_list_mtx);
+
 	/*
 	 * Calculate process statistics.
 	 */
@@ -143,11 +134,15 @@ vmtotal(SYSCTL_HANDLER_ARGS)
 				case TDS_INHIBITED:
 					if (TD_IS_SWAPPED(td))
 						total.t_sw++;
-					else if (TD_IS_SLEEPING(td) &&
-					    td->td_priority <= PZERO)
-						total.t_dw++;
-					else
-						total.t_sl++;
+					else if (TD_IS_SLEEPING(td)) {
+						if (td->td_priority <= PZERO)
+							total.t_dw++;
+						else
+							total.t_sl++;
+						if (td->td_wchan ==
+						    &vm_cnt.v_free_count)
+							total.t_pw++;
+					}
 					break;
 
 				case TDS_CAN_RUN:
@@ -165,29 +160,6 @@ vmtotal(SYSCTL_HANDLER_ARGS)
 			}
 		}
 		PROC_UNLOCK(p);
-		/*
-		 * Note active objects.
-		 */
-		paging = 0;
-		vm = vmspace_acquire_ref(p);
-		if (vm == NULL)
-			continue;
-		map = &vm->vm_map;
-		vm_map_lock_read(map);
-		for (entry = map->header.next;
-		    entry != &map->header; entry = entry->next) {
-			if ((entry->eflags & MAP_ENTRY_IS_SUB_MAP) ||
-			    (object = entry->object.vm_object) == NULL)
-				continue;
-			VM_OBJECT_WLOCK(object);
-			vm_object_set_flag(object, OBJ_ACTIVE);
-			paging |= object->paging_in_progress;
-			VM_OBJECT_WUNLOCK(object);
-		}
-		vm_map_unlock_read(map);
-		vmspace_free(vm);
-		if (paging)
-			total.t_pw++;
 	}
 	sx_sunlock(&allproc_lock);
 	/*
@@ -196,10 +168,9 @@ vmtotal(SYSCTL_HANDLER_ARGS)
 	mtx_lock(&vm_object_list_mtx);
 	TAILQ_FOREACH(object, &vm_object_list, object_list) {
 		/*
-		 * Perform unsynchronized reads on the object to avoid
-		 * a lock-order reversal.  In this case, the lack of
-		 * synchronization should not impair the accuracy of
-		 * the reported statistics. 
+		 * Perform unsynchronized reads on the object.  In
+		 * this case, the lack of synchronization should not
+		 * impair the accuracy of the reported statistics.
 		 */
 		if ((object->flags & OBJ_FICTITIOUS) != 0) {
 			/*
@@ -214,9 +185,18 @@ vmtotal(SYSCTL_HANDLER_ARGS)
 			 */
 			continue;
 		}
+		if (object->ref_count == 1 &&
+		    (object->flags & OBJ_NOSPLIT) != 0) {
+			/*
+			 * Also skip otherwise unreferenced swap
+			 * objects backing tmpfs vnodes, and POSIX or
+			 * SysV shared memory.
+			 */
+			continue;
+		}
 		total.t_vm += object->size;
 		total.t_rm += object->resident_page_count;
-		if (object->flags & OBJ_ACTIVE) {
+		if (is_object_active(object)) {
 			total.t_avm += object->size;
 			total.t_arm += object->resident_page_count;
 		}
@@ -224,7 +204,7 @@ vmtotal(SYSCTL_HANDLER_ARGS)
 			/* shared object */
 			total.t_vmshr += object->size;
 			total.t_rmshr += object->resident_page_count;
-			if (object->flags & OBJ_ACTIVE) {
+			if (is_object_active(object)) {
 				total.t_avmshr += object->size;
 				total.t_armshr += object->resident_page_count;
 			}
@@ -316,8 +296,6 @@ VM_STATS_VM(v_active_count, "Active pages");
 VM_STATS_VM(v_inactive_target, "Desired inactive pages");
 VM_STATS_VM(v_inactive_count, "Inactive pages");
 VM_STATS_VM(v_cache_count, "Pages on cache queue");
-VM_STATS_VM(v_cache_min, "Min pages on cache queue");
-VM_STATS_VM(v_cache_max, "Max pages on cached queue");
 VM_STATS_VM(v_pageout_free_min, "Min pages reserved for kernel");
 VM_STATS_VM(v_interrupt_free_min, "Reserved pages for interrupt code");
 VM_STATS_VM(v_forks, "Number of fork() calls");

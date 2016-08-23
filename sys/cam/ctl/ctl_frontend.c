@@ -55,7 +55,6 @@ __FBSDID("$FreeBSD$");
 #include <cam/ctl/ctl_io.h>
 #include <cam/ctl/ctl.h>
 #include <cam/ctl/ctl_frontend.h>
-#include <cam/ctl/ctl_frontend_internal.h>
 #include <cam/ctl/ctl_backend.h>
 /* XXX KDM move defines from ctl_ioctl.h to somewhere else */
 #include <cam/ctl/ctl_ioctl.h>
@@ -68,21 +67,22 @@ extern struct ctl_softc *control_softc;
 int
 ctl_frontend_register(struct ctl_frontend *fe)
 {
+	struct ctl_softc *softc = control_softc;
 	struct ctl_frontend *fe_tmp;
 
-	KASSERT(control_softc != NULL, ("CTL is not initialized"));
+	KASSERT(softc != NULL, ("CTL is not initialized"));
 
 	/*
 	 * Sanity check, make sure this isn't a duplicate registration.
 	 */
-	mtx_lock(&control_softc->ctl_lock);
-	STAILQ_FOREACH(fe_tmp, &control_softc->fe_list, links) {
+	mtx_lock(&softc->ctl_lock);
+	STAILQ_FOREACH(fe_tmp, &softc->fe_list, links) {
 		if (strcmp(fe_tmp->name, fe->name) == 0) {
-			mtx_unlock(&control_softc->ctl_lock);
+			mtx_unlock(&softc->ctl_lock);
 			return (-1);
 		}
 	}
-	mtx_unlock(&control_softc->ctl_lock);
+	mtx_unlock(&softc->ctl_lock);
 	STAILQ_INIT(&fe->port_list);
 
 	/*
@@ -91,24 +91,25 @@ ctl_frontend_register(struct ctl_frontend *fe)
 	if (fe->init != NULL)
 		fe->init();
 
-	mtx_lock(&control_softc->ctl_lock);
-	control_softc->num_frontends++;
-	STAILQ_INSERT_TAIL(&control_softc->fe_list, fe, links);
-	mtx_unlock(&control_softc->ctl_lock);
+	mtx_lock(&softc->ctl_lock);
+	softc->num_frontends++;
+	STAILQ_INSERT_TAIL(&softc->fe_list, fe, links);
+	mtx_unlock(&softc->ctl_lock);
 	return (0);
 }
 
 int
 ctl_frontend_deregister(struct ctl_frontend *fe)
 {
+	struct ctl_softc *softc = control_softc;
 
 	if (!STAILQ_EMPTY(&fe->port_list))
 		return (-1);
 
-	mtx_lock(&control_softc->ctl_lock);
-	STAILQ_REMOVE(&control_softc->fe_list, fe, ctl_frontend, links);
-	control_softc->num_frontends--;
-	mtx_unlock(&control_softc->ctl_lock);
+	mtx_lock(&softc->ctl_lock);
+	STAILQ_REMOVE(&softc->fe_list, fe, ctl_frontend, links);
+	softc->num_frontends--;
+	mtx_unlock(&softc->ctl_lock);
 
 	/*
 	 * Call the frontend's shutdown routine.
@@ -121,41 +122,45 @@ ctl_frontend_deregister(struct ctl_frontend *fe)
 struct ctl_frontend *
 ctl_frontend_find(char *frontend_name)
 {
-	struct ctl_softc *ctl_softc = control_softc;
+	struct ctl_softc *softc = control_softc;
 	struct ctl_frontend *fe;
 
-	mtx_lock(&ctl_softc->ctl_lock);
-	STAILQ_FOREACH(fe, &ctl_softc->fe_list, links) {
+	mtx_lock(&softc->ctl_lock);
+	STAILQ_FOREACH(fe, &softc->fe_list, links) {
 		if (strcmp(fe->name, frontend_name) == 0) {
-			mtx_unlock(&ctl_softc->ctl_lock);
+			mtx_unlock(&softc->ctl_lock);
 			return (fe);
 		}
 	}
-	mtx_unlock(&ctl_softc->ctl_lock);
+	mtx_unlock(&softc->ctl_lock);
 	return (NULL);
 }
 
 int
-ctl_port_register(struct ctl_port *port, int master_shelf)
+ctl_port_register(struct ctl_port *port)
 {
-	struct ctl_io_pool *pool;
+	struct ctl_softc *softc = control_softc;
+	struct ctl_port *tport, *nport;
+	void *pool;
 	int port_num;
 	int retval;
 
-	retval = 0;
+	KASSERT(softc != NULL, ("CTL is not initialized"));
+	port->ctl_softc = softc;
 
-	KASSERT(control_softc != NULL, ("CTL is not initialized"));
-
-	mtx_lock(&control_softc->ctl_lock);
-	port_num = ctl_ffz(&control_softc->ctl_port_mask, CTL_MAX_PORTS);
-	if ((port_num == -1)
-	 || (ctl_set_mask(&control_softc->ctl_port_mask, port_num) == -1)) {
-		port->targ_port = -1;
-		mtx_unlock(&control_softc->ctl_lock);
+	mtx_lock(&softc->ctl_lock);
+	if (port->targ_port >= 0)
+		port_num = port->targ_port;
+	else
+		port_num = ctl_ffz(softc->ctl_port_mask,
+		    softc->port_min, softc->port_max);
+	if ((port_num < 0) ||
+	    (ctl_set_mask(softc->ctl_port_mask, port_num) < 0)) {
+		mtx_unlock(&softc->ctl_lock);
 		return (1);
 	}
-	control_softc->num_ports++;
-	mtx_unlock(&control_softc->ctl_lock);
+	softc->num_ports++;
+	mtx_unlock(&softc->ctl_lock);
 
 	/*
 	 * Initialize the initiator and portname mappings
@@ -176,15 +181,15 @@ ctl_port_register(struct ctl_port *port, int master_shelf)
 	 * pending sense queue on the next command, whether or not it is
 	 * a REQUEST SENSE.
 	 */
-	retval = ctl_pool_create(control_softc, CTL_POOL_FETD,
+	retval = ctl_pool_create(softc, port->port_name,
 				 port->num_requested_ctl_io + 20, &pool);
 	if (retval != 0) {
 		free(port->wwpn_iid, M_CTL);
 error:
 		port->targ_port = -1;
-		mtx_lock(&control_softc->ctl_lock);
-		ctl_clear_mask(&control_softc->ctl_port_mask, port_num);
-		mtx_unlock(&control_softc->ctl_lock);
+		mtx_lock(&softc->ctl_lock);
+		ctl_clear_mask(softc->ctl_port_mask, port_num);
+		mtx_unlock(&softc->ctl_lock);
 		return (retval);
 	}
 	port->ctl_pool_ref = pool;
@@ -192,12 +197,19 @@ error:
 	if (port->options.stqh_first == NULL)
 		STAILQ_INIT(&port->options);
 
-	mtx_lock(&control_softc->ctl_lock);
-	port->targ_port = port_num + (master_shelf != 0 ? 0 : CTL_MAX_PORTS);
+	mtx_lock(&softc->ctl_lock);
+	port->targ_port = port_num;
 	STAILQ_INSERT_TAIL(&port->frontend->port_list, port, fe_links);
-	STAILQ_INSERT_TAIL(&control_softc->port_list, port, links);
-	control_softc->ctl_ports[port_num] = port;
-	mtx_unlock(&control_softc->ctl_lock);
+	for (tport = NULL, nport = STAILQ_FIRST(&softc->port_list);
+	    nport != NULL && nport->targ_port < port_num;
+	    tport = nport, nport = STAILQ_NEXT(tport, links)) {
+	}
+	if (tport)
+		STAILQ_INSERT_AFTER(&softc->port_list, tport, port, links);
+	else
+		STAILQ_INSERT_HEAD(&softc->port_list, port, links);
+	softc->ctl_ports[port->targ_port] = port;
+	mtx_unlock(&softc->ctl_lock);
 
 	return (retval);
 }
@@ -205,8 +217,9 @@ error:
 int
 ctl_port_deregister(struct ctl_port *port)
 {
+	struct ctl_softc *softc = port->ctl_softc;
 	struct ctl_io_pool *pool;
-	int port_num, retval, i;
+	int retval, i;
 
 	retval = 0;
 
@@ -217,19 +230,18 @@ ctl_port_deregister(struct ctl_port *port)
 		goto bailout;
 	}
 
-	mtx_lock(&control_softc->ctl_lock);
-	STAILQ_REMOVE(&control_softc->port_list, port, ctl_port, links);
+	mtx_lock(&softc->ctl_lock);
+	STAILQ_REMOVE(&softc->port_list, port, ctl_port, links);
 	STAILQ_REMOVE(&port->frontend->port_list, port, ctl_port, fe_links);
-	control_softc->num_ports--;
-	port_num = (port->targ_port < CTL_MAX_PORTS) ? port->targ_port :
-	    port->targ_port - CTL_MAX_PORTS;
-	ctl_clear_mask(&control_softc->ctl_port_mask, port_num);
-	control_softc->ctl_ports[port_num] = NULL;
-	mtx_unlock(&control_softc->ctl_lock);
+	softc->num_ports--;
+	ctl_clear_mask(softc->ctl_port_mask, port->targ_port);
+	softc->ctl_ports[port->targ_port] = NULL;
+	mtx_unlock(&softc->ctl_lock);
 
 	ctl_pool_free(pool);
 	ctl_free_opts(&port->options);
 
+	ctl_lun_map_deinit(port);
 	free(port->port_devid, M_CTL);
 	port->port_devid = NULL;
 	free(port->target_devid, M_CTL);
@@ -296,17 +308,79 @@ ctl_port_set_wwns(struct ctl_port *port, int wwnn_valid, uint64_t wwnn,
 void
 ctl_port_online(struct ctl_port *port)
 {
-	port->port_online(port->onoff_arg);
-	/* XXX KDM need a lock here? */
+	struct ctl_softc *softc = port->ctl_softc;
+	struct ctl_lun *lun;
+	const char *value;
+	uint32_t l;
+
+	if (port->lun_enable != NULL) {
+		if (port->lun_map) {
+			for (l = 0; l < CTL_MAX_LUNS; l++) {
+				if (ctl_lun_map_from_port(port, l) >=
+				    CTL_MAX_LUNS)
+					continue;
+				port->lun_enable(port->targ_lun_arg, l);
+			}
+		} else {
+			STAILQ_FOREACH(lun, &softc->lun_list, links)
+				port->lun_enable(port->targ_lun_arg, lun->lun);
+		}
+	}
+	if (port->port_online != NULL)
+		port->port_online(port->onoff_arg);
+	mtx_lock(&softc->ctl_lock);
+	if (softc->is_single == 0) {
+		value = ctl_get_opt(&port->options, "ha_shared");
+		if (value != NULL && strcmp(value, "on") == 0)
+			port->status |= CTL_PORT_STATUS_HA_SHARED;
+		else
+			port->status &= ~CTL_PORT_STATUS_HA_SHARED;
+	}
 	port->status |= CTL_PORT_STATUS_ONLINE;
+	STAILQ_FOREACH(lun, &softc->lun_list, links) {
+		if (ctl_lun_map_to_port(port, lun->lun) >= CTL_MAX_LUNS)
+			continue;
+		mtx_lock(&lun->lun_lock);
+		ctl_est_ua_all(lun, -1, CTL_UA_INQ_CHANGE);
+		mtx_unlock(&lun->lun_lock);
+	}
+	mtx_unlock(&softc->ctl_lock);
+	ctl_isc_announce_port(port);
 }
 
 void
 ctl_port_offline(struct ctl_port *port)
 {
-	port->port_offline(port->onoff_arg);
-	/* XXX KDM need a lock here? */
+	struct ctl_softc *softc = port->ctl_softc;
+	struct ctl_lun *lun;
+	uint32_t l;
+
+	if (port->port_offline != NULL)
+		port->port_offline(port->onoff_arg);
+	if (port->lun_disable != NULL) {
+		if (port->lun_map) {
+			for (l = 0; l < CTL_MAX_LUNS; l++) {
+				if (ctl_lun_map_from_port(port, l) >=
+				    CTL_MAX_LUNS)
+					continue;
+				port->lun_disable(port->targ_lun_arg, l);
+			}
+		} else {
+			STAILQ_FOREACH(lun, &softc->lun_list, links)
+				port->lun_disable(port->targ_lun_arg, lun->lun);
+		}
+	}
+	mtx_lock(&softc->ctl_lock);
 	port->status &= ~CTL_PORT_STATUS_ONLINE;
+	STAILQ_FOREACH(lun, &softc->lun_list, links) {
+		if (ctl_lun_map_to_port(port, lun->lun) >= CTL_MAX_LUNS)
+			continue;
+		mtx_lock(&lun->lun_lock);
+		ctl_est_ua_all(lun, -1, CTL_UA_INQ_CHANGE);
+		mtx_unlock(&lun->lun_lock);
+	}
+	mtx_unlock(&softc->ctl_lock);
+	ctl_isc_announce_port(port);
 }
 
 /*

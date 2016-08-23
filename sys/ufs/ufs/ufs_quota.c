@@ -469,7 +469,7 @@ chkdquot(struct inode *ip)
 			continue;
 		if (ip->i_dquot[i] == NODQUOT) {
 			UFS_UNLOCK(ump);
-			vprint("chkdquot: missing dquot", ITOV(ip));
+			vn_printf(ITOV(ip), "chkdquot: missing dquot ");
 			panic("chkdquot: missing dquot");
 		}
 	}
@@ -495,11 +495,15 @@ quotaon(struct thread *td, struct mount *mp, int type, void *fname)
 	struct nameidata nd;
 
 	error = priv_check(td, PRIV_UFS_QUOTAON);
-	if (error)
+	if (error != 0) {
+		vfs_unbusy(mp);
 		return (error);
+	}
 
-	if (mp->mnt_flag & MNT_RDONLY)
+	if ((mp->mnt_flag & MNT_RDONLY) != 0) {
+		vfs_unbusy(mp);
 		return (EROFS);
+	}
 
 	ump = VFSTOUFS(mp);
 	dq = NODQUOT;
@@ -1035,11 +1039,9 @@ qsync(struct mount *mp)
 	 * Check if the mount point has any quotas.
 	 * If not, simply return.
 	 */
-	UFS_LOCK(ump);
 	for (i = 0; i < MAXQUOTAS; i++)
 		if (ump->um_quotas[i] != NULLVP)
 			break;
-	UFS_UNLOCK(ump);
 	if (i == MAXQUOTAS)
 		return (0);
 	/*
@@ -1084,11 +1086,9 @@ qsyncvp(struct vnode *vp)
 	 * Check if the mount point has any quotas.
 	 * If not, simply return.
 	 */
-	UFS_LOCK(ump);
 	for (i = 0; i < MAXQUOTAS; i++)
 		if (ump->um_quotas[i] != NULLVP)
 			break;
-	UFS_UNLOCK(ump);
 	if (i == MAXQUOTAS)
 		return (0);
 	/*

@@ -58,6 +58,11 @@ typedef	__ssize_t	ssize_t;
 #endif
 #endif
 
+#ifndef _OFF64_T_DECLARED
+#define	_OFF64_T_DECLARED
+typedef	__off64_t	off64_t;
+#endif
+
 #if __POSIX_VISIBLE >= 200112 || __XSI_VISIBLE
 #ifndef _VA_LIST_DECLARED
 typedef	__va_list	va_list;
@@ -144,6 +149,7 @@ struct __sFILE {
 	int	_fl_count;	/* recursive lock count */
 	int	_orientation;	/* orientation for fwide() */
 	__mbstate_t _mbstate;	/* multibyte conversion state */
+	int	_flags2;	/* additional flags */
 };
 #ifndef _STDFILE_DECLARED
 #define _STDFILE_DECLARED
@@ -166,7 +172,7 @@ __END_DECLS
 #define	__SRW	0x0010		/* open for reading & writing */
 #define	__SEOF	0x0020		/* found EOF */
 #define	__SERR	0x0040		/* found error */
-#define	__SMBF	0x0080		/* _buf is from malloc */
+#define	__SMBF	0x0080		/* _bf._base is from malloc */
 #define	__SAPP	0x0100		/* fdopen()ed in append mode */
 #define	__SSTR	0x0200		/* this is an sprintf/snprintf string */
 #define	__SOPT	0x0400		/* do fseek() optimization */
@@ -175,6 +181,8 @@ __END_DECLS
 #define	__SMOD	0x2000		/* true => fgetln modified _p text */
 #define	__SALC	0x4000		/* allocate string space dynamically */
 #define	__SIGN	0x8000		/* ignore this file in _fwalk */
+
+#define	__S2OAP	0x0001		/* O_APPEND mode is set */
 
 /*
  * The following three definitions are for ANSI C, which took them
@@ -349,44 +357,9 @@ ssize_t	 getdelim(char ** __restrict, size_t * __restrict, int,
 FILE	*open_memstream(char **, size_t *);
 int	 renameat(int, const char *, int, const char *);
 int	 vdprintf(int, const char * __restrict, __va_list);
-
-/*
- * Every programmer and his dog wrote functions called getline() and dprintf()
- * before POSIX.1-2008 came along and decided to usurp the names, so we
- * don't prototype them by default unless one of the following is true:
- *   a) the app has requested them specifically by defining _WITH_GETLINE or
- *      _WITH_DPRINTF, respectively
- *   b) the app has requested a POSIX.1-2008 environment via _POSIX_C_SOURCE
- *   c) the app defines a GNUism such as _BSD_SOURCE or _GNU_SOURCE
- */
-#ifndef _WITH_GETLINE
-#if defined(_BSD_SOURCE) || defined(_GNU_SOURCE)
-#define	_WITH_GETLINE
-#elif defined(_POSIX_C_SOURCE)
-#if _POSIX_C_SOURCE >= 200809
-#define	_WITH_GETLINE
-#endif
-#endif
-#endif
-
-#ifdef _WITH_GETLINE
+/* _WITH_GETLINE to allow pre 11 sources to build on 11+ systems */
 ssize_t	 getline(char ** __restrict, size_t * __restrict, FILE * __restrict);
-#endif
-
-#ifndef _WITH_DPRINTF
-#if defined(_BSD_SOURCE) || defined(_GNU_SOURCE)
-#define	_WITH_DPRINTF
-#elif defined(_POSIX_C_SOURCE)
-#if _POSIX_C_SOURCE >= 200809
-#define	_WITH_DPRINTF
-#endif
-#endif
-#endif
-
-#ifdef _WITH_DPRINTF
-int	 (dprintf)(int, const char * __restrict, ...);
-#endif
-
+int	 dprintf(int, const char * __restrict, ...);
 #endif /* __POSIX_VISIBLE >= 200809 */
 
 /*
@@ -396,6 +369,7 @@ int	 (dprintf)(int, const char * __restrict, ...);
 int	 asprintf(char **, const char *, ...) __printflike(2, 3);
 char	*ctermid_r(char *);
 void	 fcloseall(void);
+int	 fdclose(FILE *, int *);
 char	*fgetln(FILE *, size_t *);
 const char *fmtcheck(const char *, const char *) __format_arg(2);
 int	 fpurge(FILE *);
@@ -422,6 +396,18 @@ FILE	*funopen(const void *,
 	    int (*)(void *));
 #define	fropen(cookie, fn) funopen(cookie, fn, 0, 0, 0)
 #define	fwopen(cookie, fn) funopen(cookie, 0, fn, 0, 0)
+
+typedef __ssize_t cookie_read_function_t(void *, char *, size_t);
+typedef __ssize_t cookie_write_function_t(void *, const char *, size_t);
+typedef int cookie_seek_function_t(void *, off64_t *, int);
+typedef int cookie_close_function_t(void *);
+typedef struct {
+	cookie_read_function_t	*read;
+	cookie_write_function_t	*write;
+	cookie_seek_function_t	*seek;
+	cookie_close_function_t	*close;
+} cookie_io_functions_t;
+FILE	*fopencookie(void *, const char *, cookie_io_functions_t);
 
 /*
  * Portability hacks.  See <sys/types.h>.

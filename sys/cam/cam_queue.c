@@ -122,7 +122,7 @@ camq_resize(struct camq *queue, int new_size)
 	cam_pinfo **new_array;
 
 	KASSERT(new_size >= queue->entries, ("camq_resize: "
-	    "New queue size can't accomodate queued entries (%d < %d).",
+	    "New queue size can't accommodate queued entries (%d < %d).",
 	    new_size, queue->entries));
 	new_array = (cam_pinfo **)malloc(new_size * sizeof(cam_pinfo *),
 					 M_CAMQ, M_NOWAIT);
@@ -290,7 +290,6 @@ cam_ccbq_resize(struct cam_ccbq *ccbq, int new_size)
 
 	delta = new_size - (ccbq->dev_active + ccbq->dev_openings);
 	ccbq->total_openings += delta;
-	ccbq->devq_openings += delta;
 	ccbq->dev_openings += delta;
 
 	new_size = imax(64, 1 << fls(new_size + new_size / 2));
@@ -308,7 +307,6 @@ cam_ccbq_init(struct cam_ccbq *ccbq, int openings)
 	    imax(64, 1 << fls(openings + openings / 2))) != 0)
 		return (1);
 	ccbq->total_openings = openings;
-	ccbq->devq_openings = openings;
 	ccbq->dev_openings = openings;
 	return (0);
 }

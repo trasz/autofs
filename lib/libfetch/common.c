@@ -256,8 +256,11 @@ fetch_bind(int sd, int af, const char *addr)
 	if ((err = getaddrinfo(addr, NULL, &hints, &res0)) != 0)
 		return (-1);
 	for (res = res0; res; res = res->ai_next)
-		if (bind(sd, res->ai_addr, res->ai_addrlen) == 0)
+		if (bind(sd, res->ai_addr, res->ai_addrlen) == 0) {
+			freeaddrinfo(res0);
 			return (0);
+		}
+	freeaddrinfo(res0);
 	return (-1);
 }
 
@@ -471,7 +474,7 @@ fetch_ssl_hname_match(const char *h, size_t hlen, const char *m,
 	if (!fetch_ssl_hname_equal(hdot - delta, delta,
 	    mdot1 - delta, delta))
 		return (0);
-	/* all tests succeded, it's a match */
+	/* all tests succeeded, it's a match */
 	return (1);
 }
 
@@ -495,7 +498,8 @@ fetch_ssl_get_numeric_addrinfo(const char *hostname, size_t len)
 	hints.ai_protocol = 0;
 	hints.ai_flags = AI_NUMERICHOST;
 	/* port is not relevant for this purpose */
-	getaddrinfo(host, "443", &hints, &res);
+	if (getaddrinfo(host, "443", &hints, &res) != 0)
+		res = NULL;
 	free(host);
 	return res;
 }
@@ -672,13 +676,15 @@ fetch_ssl_setup_transport_layer(SSL_CTX *ctx, int verbose)
 {
 	long ssl_ctx_options;
 
-	ssl_ctx_options = SSL_OP_ALL | SSL_OP_NO_TICKET;
-	if (getenv("SSL_ALLOW_SSL2") == NULL)
-		ssl_ctx_options |= SSL_OP_NO_SSLv2;
-	if (getenv("SSL_NO_SSL3") != NULL)
+	ssl_ctx_options = SSL_OP_ALL | SSL_OP_NO_SSLv2 | SSL_OP_NO_TICKET;
+	if (getenv("SSL_ALLOW_SSL3") == NULL)
 		ssl_ctx_options |= SSL_OP_NO_SSLv3;
 	if (getenv("SSL_NO_TLS1") != NULL)
 		ssl_ctx_options |= SSL_OP_NO_TLSv1;
+	if (getenv("SSL_NO_TLS1_1") != NULL)
+		ssl_ctx_options |= SSL_OP_NO_TLSv1_1;
+	if (getenv("SSL_NO_TLS1_2") != NULL)
+		ssl_ctx_options |= SSL_OP_NO_TLSv1_2;
 	if (verbose)
 		fetch_info("SSL options: %lx", ssl_ctx_options);
 	SSL_CTX_set_options(ctx, ssl_ctx_options);
@@ -702,7 +708,8 @@ fetch_ssl_setup_peer_verification(SSL_CTX *ctx, int verbose)
 		if (ca_cert_file == NULL &&
 		    access(LOCAL_CERT_FILE, R_OK) == 0)
 			ca_cert_file = LOCAL_CERT_FILE;
-		if (ca_cert_file == NULL)
+		if (ca_cert_file == NULL &&
+		    access(BASE_CERT_FILE, R_OK) == 0)
 			ca_cert_file = BASE_CERT_FILE;
 		ca_cert_path = getenv("SSL_CA_CERT_PATH");
 		if (verbose) {
@@ -713,11 +720,17 @@ fetch_ssl_setup_peer_verification(SSL_CTX *ctx, int verbose)
 			if (ca_cert_path != NULL)
 				fetch_info("Using CA cert path: %s",
 				    ca_cert_path);
+			if (ca_cert_file == NULL && ca_cert_path == NULL)
+				fetch_info("Using OpenSSL default "
+				    "CA cert file and path");
 		}
 		SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER,
 		    fetch_ssl_cb_verify_crt);
-		SSL_CTX_load_verify_locations(ctx, ca_cert_file,
-		    ca_cert_path);
+		if (ca_cert_file != NULL || ca_cert_path != NULL)
+			SSL_CTX_load_verify_locations(ctx, ca_cert_file,
+			    ca_cert_path);
+		else
+			SSL_CTX_set_default_verify_paths(ctx);
 		if ((crl_file = getenv("SSL_CRL_FILE")) != NULL) {
 			if (verbose)
 				fetch_info("Using CRL file: %s", crl_file);
@@ -873,8 +886,8 @@ fetch_ssl(conn_t *conn, const struct url *URL, int verbose)
 	}
 
 	if (verbose) {
-		fetch_info("SSL connection established using %s",
-		    SSL_get_cipher(conn->ssl));
+		fetch_info("%s connection established using %s",
+		    SSL_get_version(conn->ssl), SSL_get_cipher(conn->ssl));
 		name = X509_get_subject_name(conn->ssl_cert);
 		str = X509_NAME_oneline(name, 0, 0);
 		fetch_info("Certificate subject: %s", str);
@@ -1339,7 +1352,7 @@ fetch_netrc_auth(struct url *url)
  * which the proxy should not be consulted; the contents is a comma-,
  * or space-separated list of domain names.  A single asterisk will
  * override all proxy variables and no transactions will be proxied
- * (for compatability with lynx and curl, see the discussion at
+ * (for compatibility with lynx and curl, see the discussion at
  * <http://curl.haxx.se/mail/archive_pre_oct_99/0009.html>).
  */
 int

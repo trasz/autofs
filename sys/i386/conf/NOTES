@@ -17,6 +17,22 @@ profile         2
 #
 options 	KDTRACE_HOOKS
 
+# DTrace core
+# NOTE: introduces CDDL-licensed components into the kernel
+#device		dtrace
+
+# DTrace modules
+#device		dtrace_profile
+#device		dtrace_sdt
+#device		dtrace_fbt
+#device		dtrace_systrace
+#device		dtrace_prototype
+#device		dtnfscl
+#device		dtmalloc
+
+# Alternatively include all the DTrace modules
+#device		dtraceall
+
 
 #####################################################################
 # SMP OPTIONS:
@@ -357,11 +373,6 @@ options 	EISA_SLOTS=12
 device		mca
 
 #
-# PCI bus & PCI options:
-#
-device		pci
-
-#
 # AGP GART support
 device		agp
 
@@ -433,7 +444,7 @@ hint.atkbd.0.irq="1"
 
 # Options for atkbd:
 options 	ATKBD_DFLT_KEYMAP	# specify the built-in keymap
-makeoptions	ATKBD_DFLT_KEYMAP=jp.106
+makeoptions	ATKBD_DFLT_KEYMAP=fr.dvorak
 
 # `flags' for atkbd:
 #       0x01    Force detection of keyboard, else we always assume a keyboard
@@ -613,12 +624,6 @@ hint.ed.0.at="isa"
 hint.ed.0.port="0x280"
 hint.ed.0.irq="5"
 hint.ed.0.maddr="0xd8000"
-device		ie		# EtherExpress 8/16, 3C507, StarLAN 10 etc.
-# Hints only required for Starlan
-hint.ie.2.at="isa"
-hint.ie.2.port="0x300"
-hint.ie.2.irq="5"
-hint.ie.2.maddr="0xd0000"
 device		ipw		# Intel 2100 wireless NICs.
 device		iwi		# Intel 2200BG/2225BG/2915ABG wireless NICs.
 device		iwn		# Intel 4965/1000/5000/6000 wireless NICs.
@@ -637,11 +642,6 @@ hint.sbni.0.port="0x210"
 hint.sbni.0.irq="0xefdead"
 hint.sbni.0.flags="0"
 device		vmx		# VMware VMXNET3 Ethernet
-device		wl
-hint.wl.0.at="isa"
-hint.wl.0.port="0x300"
-options 	WLCACHE		# enables the signal-strength cache
-options 	WLDEBUG		# enables verbose debugging output
 device		wpi		# Intel 3945ABG wireless NICs.
 
 # IEEE 802.11 adapter firmware modules
@@ -738,12 +738,6 @@ device		aacp	# SCSI Passthrough interface (optional, CAM required)
 # Adaptec by PMC RAID controllers, Series 6/7/8 and upcoming families
 device		aacraid		# Container interface, CAM required
 
-# The 'asr' driver provides support for current DPT/Adaptec SCSI RAID
-# controllers (SmartRAID V and VI and later).
-# These controllers require the CAM infrastructure.
-#
-device		asr
-
 #
 # Highpoint RocketRAID 27xx.
 device		hpt27xx
@@ -780,6 +774,9 @@ device         nvme    # base NVMe driver
 device         nvd     # expose NVMe namespaces as disks, depends on nvme
 
 #
+# PMC-Sierra SAS/SATA controller
+device		pmspcv
+#
 # SafeNet crypto driver: can be moved to the MI NOTES as soon as
 # it's tested on a big-endian machine
 #
@@ -815,6 +812,7 @@ device		virtio_blk	# VirtIO Block device
 device		virtio_scsi	# VirtIO SCSI device
 device		virtio_balloon	# VirtIO Memory Balloon device
 device		virtio_random	# VirtIO Entropy device
+device		virtio_console	# VirtIO Console device
 
 device 		hyperv		# HyperV drivers
 
@@ -830,7 +828,6 @@ device 		hyperv		# HyperV drivers
 # vpd: Vital Product Data kernel interface
 # pmtimer: Adjust system timer at wakeup time
 # pbio: Parallel (8255 PPI) basic I/O (mode 0) port (e.g. Advantech PCL-724)
-# spic: Sony Programmable I/O controller (VAIO notebooks)
 # asmc: Apple System Management Controller
 # si: Specialix International SI/XIO or SX intelligent serial card driver
 # tpm: Trusted Platform Module
@@ -867,11 +864,7 @@ device		pmtimer
 device		pbio
 hint.pbio.0.at="isa"
 hint.pbio.0.port="0x360"
-device		spic
-hint.spic.0.at="isa"
-hint.spic.0.port="0x10a0"
 device		asmc
-device		si
 device		tpm
 device		padlock_rng	# VIA Padlock RNG
 device		rdrand_rng	# Intel Bull Mountain RNG
@@ -975,10 +968,13 @@ options 	NKPT=31
 # ABI Emulation
 
 # Enable iBCS2 runtime support for SCO and ISC binaries
-options 	IBCS2
+#options 	IBCS2
 
 # Emulate spx device for client side of SVR3 local X interface
 options 	SPX_HACK
+
+# Enable 32-bit runtime support for CloudABI binaries.
+options 	COMPAT_CLOUDABI32
 
 # Enable Linux ABI emulation
 options 	COMPAT_LINUX
@@ -1069,6 +1065,3 @@ options 	VM_KMEM_SIZE_MAX
 options 	VM_KMEM_SIZE_SCALE
 
 
-# asr old ioctls support, needed by raidutils
-
-options 	ASR_COMPAT

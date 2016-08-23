@@ -77,6 +77,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/stddef.h>
+#include <sys/eventhandler.h>
 #include <sys/lock.h>
 #include <sys/ktr.h>
 #include <sys/malloc.h>
@@ -121,7 +122,6 @@ __FBSDID("$FreeBSD$");
 #endif
 
 #define		VIFI_INVALID	((vifi_t) -1)
-#define		M_HASCL(m)	((m)->m_flags & M_EXT)
 
 static VNET_DEFINE(uint32_t, last_tv_sec); /* last time we processed this */
 #define	V_last_tv_sec	VNET(last_tv_sec)
@@ -179,7 +179,7 @@ static VNET_DEFINE(vifi_t, numvifs);
 #define	V_numvifs		VNET(numvifs)
 static VNET_DEFINE(struct vif, viftable[MAXVIFS]);
 #define	V_viftable		VNET(viftable)
-SYSCTL_VNET_OPAQUE(_net_inet_ip, OID_AUTO, viftable, CTLFLAG_RD,
+SYSCTL_OPAQUE(_net_inet_ip, OID_AUTO, viftable, CTLFLAG_VNET | CTLFLAG_RD,
     &VNET_NAME(viftable), sizeof(V_viftable), "S,vif[MAXVIFS]",
     "IPv4 Multicast Interfaces (struct vif[MAXVIFS], netinet/ip_mroute.h)");
 
@@ -538,7 +538,7 @@ X_mrt_ioctl(u_long cmd, caddr_t data, int fibnum __unused)
     int error = 0;
 
     /*
-     * Currently the only function calling this ioctl routine is rtioctl().
+     * Currently the only function calling this ioctl routine is rtioctl_fib().
      * Typically, only root can create the raw socket in order to execute
      * this ioctl method, however the request might be coming from a prison
      */
@@ -1304,7 +1304,7 @@ X_ip_mforward(struct ip *ip, struct ifnet *ifp, struct mbuf *m,
 	}
 
 	mb0 = m_copypacket(m, M_NOWAIT);
-	if (mb0 && (M_HASCL(mb0) || mb0->m_len < hlen))
+	if (mb0 && (!M_WRITABLE(mb0) || mb0->m_len < hlen))
 	    mb0 = m_pullup(mb0, hlen);
 	if (mb0 == NULL) {
 	    free(rte, M_MRTABLE);
@@ -1544,7 +1544,7 @@ ip_mdq(struct mbuf *m, struct ifnet *ifp, struct mfc *rt, vifi_t xmt_vif)
 		int hlen = ip->ip_hl << 2;
 		struct mbuf *mm = m_copy(m, 0, hlen);
 
-		if (mm && (M_HASCL(mm) || mm->m_len < hlen))
+		if (mm && (!M_WRITABLE(mm) || mm->m_len < hlen))
 		    mm = m_pullup(mm, hlen);
 		if (mm == NULL)
 		    return ENOBUFS;
@@ -1665,7 +1665,7 @@ phyint_send(struct ip *ip, struct vif *vifp, struct mbuf *m)
      * so that ip_output() only scribbles on the copy.
      */
     mb_copy = m_copypacket(m, M_NOWAIT);
-    if (mb_copy && (M_HASCL(mb_copy) || mb_copy->m_len < hlen))
+    if (mb_copy && (!M_WRITABLE(mb_copy) || mb_copy->m_len < hlen))
 	mb_copy = m_pullup(mb_copy, hlen);
     if (mb_copy == NULL)
 	return;
@@ -2502,7 +2502,6 @@ pim_register_send_rp(struct ip *ip, struct vif *vifp, struct mbuf *mb_copy,
      */
     ip_outer = mtod(mb_first, struct ip *);
     *ip_outer = pim_encap_iphdr;
-    ip_outer->ip_id = ip_newid();
     ip_outer->ip_len = htons(len + sizeof(pim_encap_iphdr) +
 	sizeof(pim_encap_pimhdr));
     ip_outer->ip_src = V_viftable[vifi].v_lcl_addr;
@@ -2514,6 +2513,7 @@ pim_register_send_rp(struct ip *ip, struct vif *vifp, struct mbuf *mb_copy,
     ip_outer->ip_tos = ip->ip_tos;
     if (ip->ip_off & htons(IP_DF))
 	ip_outer->ip_off |= htons(IP_DF);
+    ip_fillid(ip_outer);
     pimhdr = (struct pim_encap_pimhdr *)((caddr_t)ip_outer
 					 + sizeof(pim_encap_iphdr));
     *pimhdr = pim_encap_pimhdr;
@@ -2601,7 +2601,7 @@ pim_input(struct mbuf **mp, int *offp, int proto)
      * Get the IP and PIM headers in contiguous memory, and
      * possibly the PIM REGISTER header.
      */
-    if (m->m_len < minlen && (m = m_pullup(m, minlen)) == 0) {
+    if (m->m_len < minlen && (m = m_pullup(m, minlen)) == NULL) {
 	CTR1(KTR_IPMF, "%s: m_pullup() failed", __func__);
 	return (IPPROTO_DONE);
     }
@@ -2817,12 +2817,12 @@ vnet_mroute_init(const void *unused __unused)
 
 	MALLOC(V_nexpire, u_char *, mfchashsize, M_MRTABLE, M_WAITOK|M_ZERO);
 	bzero(V_bw_meter_timers, sizeof(V_bw_meter_timers));
-	callout_init(&V_expire_upcalls_ch, CALLOUT_MPSAFE);
-	callout_init(&V_bw_upcalls_ch, CALLOUT_MPSAFE);
-	callout_init(&V_bw_meter_ch, CALLOUT_MPSAFE);
+	callout_init(&V_expire_upcalls_ch, 1);
+	callout_init(&V_bw_upcalls_ch, 1);
+	callout_init(&V_bw_meter_ch, 1);
 }
 
-VNET_SYSINIT(vnet_mroute_init, SI_SUB_PSEUDO, SI_ORDER_ANY, vnet_mroute_init,
+VNET_SYSINIT(vnet_mroute_init, SI_SUB_PROTO_MC, SI_ORDER_ANY, vnet_mroute_init,
 	NULL);
 
 static void
@@ -2833,7 +2833,7 @@ vnet_mroute_uninit(const void *unused __unused)
 	V_nexpire = NULL;
 }
 
-VNET_SYSUNINIT(vnet_mroute_uninit, SI_SUB_PSEUDO, SI_ORDER_MIDDLE, 
+VNET_SYSUNINIT(vnet_mroute_uninit, SI_SUB_PROTO_MC, SI_ORDER_MIDDLE, 
 	vnet_mroute_uninit, NULL);
 
 static int
@@ -2946,4 +2946,4 @@ static moduledata_t ip_mroutemod = {
     0
 };
 
-DECLARE_MODULE(ip_mroute, ip_mroutemod, SI_SUB_PSEUDO, SI_ORDER_MIDDLE);
+DECLARE_MODULE(ip_mroute, ip_mroutemod, SI_SUB_PROTO_MC, SI_ORDER_MIDDLE);

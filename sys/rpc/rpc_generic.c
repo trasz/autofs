@@ -390,15 +390,11 @@ __rpc_uaddr2taddr_af(int af, const char *uaddr)
 	}
 
 	ret = (struct netbuf *)malloc(sizeof *ret, M_RPC, M_WAITOK);
-	if (ret == NULL)
-		goto out;
 	
 	switch (af) {
 	case AF_INET:
 		sin = (struct sockaddr_in *)malloc(sizeof *sin, M_RPC,
 		    M_WAITOK);
-		if (sin == NULL)
-			goto out;
 		memset(sin, 0, sizeof *sin);
 		sin->sin_family = AF_INET;
 		sin->sin_port = htons(port);
@@ -415,8 +411,6 @@ __rpc_uaddr2taddr_af(int af, const char *uaddr)
 	case AF_INET6:
 		sin6 = (struct sockaddr_in6 *)malloc(sizeof *sin6, M_RPC,
 		    M_WAITOK);
-		if (sin6 == NULL)
-			goto out;
 		memset(sin6, 0, sizeof *sin6);
 		sin6->sin6_family = AF_INET6;
 		sin6->sin6_port = htons(port);
@@ -433,8 +427,6 @@ __rpc_uaddr2taddr_af(int af, const char *uaddr)
 	case AF_LOCAL:
 		sun = (struct sockaddr_un *)malloc(sizeof *sun, M_RPC,
 		    M_WAITOK);
-		if (sun == NULL)
-			goto out;
 		memset(sun, 0, sizeof *sun);
 		sun->sun_family = AF_LOCAL;
 		strncpy(sun->sun_path, addrstr, sizeof(sun->sun_path) - 1);
@@ -703,7 +695,9 @@ __rpc_sockisbound(struct socket *so)
 	struct sockaddr *sa;
 	int error, bound;
 
+	CURVNET_SET(so->so_vnet);
 	error = so->so_proto->pr_usrreqs->pru_sockaddr(so, &sa);
+	CURVNET_RESTORE();
 	if (error)
 		return (0);
 
@@ -791,7 +785,9 @@ bindresvport(struct socket *so, struct sockaddr *sa)
 	socklen_t salen;
 
 	if (sa == NULL) {
+		CURVNET_SET(so->so_vnet);
 		error = so->so_proto->pr_usrreqs->pru_sockaddr(so, &sa);
+		CURVNET_RESTORE();
 		if (error)
 			return (error);
 		freesa = TRUE;

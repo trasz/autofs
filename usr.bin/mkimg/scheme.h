@@ -36,6 +36,7 @@ enum alias {
 	/* start */
 	ALIAS_EBR,
 	ALIAS_EFI,
+	ALIAS_FAT16B,
 	ALIAS_FAT32,
 	ALIAS_FREEBSD,
 	ALIAS_FREEBSD_BOOT,
@@ -45,6 +46,8 @@ enum alias {
 	ALIAS_FREEBSD_VINUM,
 	ALIAS_FREEBSD_ZFS,
 	ALIAS_MBR,
+	ALIAS_NTFS,
+	ALIAS_PPCBOOT,
 	/* end */
 	ALIAS_COUNT		/* Keep last! */
 };
@@ -62,7 +65,7 @@ struct mkimg_scheme {
 	const char	*name;
 	const char	*description;
 	struct mkimg_alias *aliases;
-	u_int		(*metadata)(u_int);
+	lba_t		(*metadata)(u_int, lba_t);
 #define	SCHEME_META_IMG_START	1
 #define	SCHEME_META_IMG_END	2
 #define	SCHEME_META_PART_BEFORE	3

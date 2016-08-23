@@ -38,7 +38,8 @@ __FBSDID("$FreeBSD$");
 #include <machine/elf.h>
 
 #include "bootstrap.h"
-#include "glue.h"
+#include "fdt_platform.h"
+#include "fdt_overlay.h"
 
 #ifdef DEBUG
 #define debugf(fmt, args...) do { printf("%s(): ", __func__);	\
@@ -48,12 +49,9 @@ __FBSDID("$FreeBSD$");
 #endif
 
 #define FDT_CWD_LEN	256
-#define FDT_MAX_DEPTH	6
+#define FDT_MAX_DEPTH	12
 
 #define FDT_PROP_SEP	" = "
-
-#define STR(number) #number
-#define STRINGIFY(number) STR(number)
 
 #define COPYOUT(s,d,l)	archsw.arch_copyout(s, d, l)
 #define COPYIN(s,d,l)	archsw.arch_copyin(s, d, l)
@@ -93,9 +91,9 @@ static int fdt_cmd_mres(int argc, char *argv[]);
 typedef int cmdf_t(int, char *[]);
 
 struct cmdtab {
-	char	*name;
-	cmdf_t	*handler;
-	int	flags;
+	const char	*name;
+	cmdf_t		*handler;
+	int		flags;
 };
 
 static const struct cmdtab commands[] = {
@@ -160,7 +158,7 @@ fdt_find_static_dtb()
 	}
 
 	/*
-	 * The most efficent way to find a symbol would be to calculate a
+	 * The most efficient way to find a symbol would be to calculate a
 	 * hash, find proper bucket and chain, and thus find a symbol.
 	 * However, that would involve code duplication (e.g. for hash
 	 * function). So we're using simpler and a bit slower way: we're
@@ -196,14 +194,14 @@ fdt_load_dtb(vm_offset_t va)
 	COPYOUT(va, &header, sizeof(header));
 	err = fdt_check_header(&header);
 	if (err < 0) {
-		if (err == -FDT_ERR_BADVERSION)
-			sprintf(command_errbuf,
+		if (err == -FDT_ERR_BADVERSION) {
+			snprintf(command_errbuf, sizeof(command_errbuf),
 			    "incompatible blob version: %d, should be: %d",
 			    fdt_version(fdtp), FDT_LAST_SUPPORTED_VERSION);
-
-		else
-			sprintf(command_errbuf, "error validating blob: %s",
-			    fdt_strerror(err));
+		} else {
+			snprintf(command_errbuf, sizeof(command_errbuf),
+			    "error validating blob: %s", fdt_strerror(err));
+		}
 		return (1);
 	}
 
@@ -228,7 +226,7 @@ fdt_load_dtb(vm_offset_t va)
 	return (0);
 }
 
-static int
+int
 fdt_load_dtb_addr(struct fdt_header *header)
 {
 	int err;
@@ -238,8 +236,8 @@ fdt_load_dtb_addr(struct fdt_header *header)
 	fdtp_size = fdt_totalsize(header);
 	err = fdt_check_header(header);
 	if (err < 0) {
-		sprintf(command_errbuf, "error validating blob: %s",
-		    fdt_strerror(err));
+		snprintf(command_errbuf, sizeof(command_errbuf),
+		    "error validating blob: %s", fdt_strerror(err));
 		return (err);
 	}
 	free(fdtp);
@@ -253,7 +251,7 @@ fdt_load_dtb_addr(struct fdt_header *header)
 	return (0);
 }
 
-static int
+int
 fdt_load_dtb_file(const char * filename)
 {
 	struct preloaded_file *bfp, *oldbfp;
@@ -264,8 +262,9 @@ fdt_load_dtb_file(const char * filename)
 	oldbfp = file_findfile(NULL, "dtb");
 
 	/* Attempt to load and validate a new dtb from a file. */
-	if ((bfp = file_loadraw(filename, "dtb")) == NULL) {
-		sprintf(command_errbuf, "failed to load file '%s'", filename);
+	if ((bfp = file_loadraw(filename, "dtb", 1)) == NULL) {
+		snprintf(command_errbuf, sizeof(command_errbuf),
+		    "failed to load file '%s'", filename);
 		return (1);
 	}
 	if ((err = fdt_load_dtb(bfp->f_addr)) != 0) {
@@ -279,13 +278,134 @@ fdt_load_dtb_file(const char * filename)
 	return (0);
 }
 
+static int
+fdt_load_dtb_overlay(const char * filename)
+{
+	struct preloaded_file *bfp, *oldbfp;
+	struct fdt_header header;
+	int err;
+
+	debugf("fdt_load_dtb_overlay(%s)\n", filename);
+
+	oldbfp = file_findfile(filename, "dtbo");
+
+	/* Attempt to load and validate a new dtb from a file. */
+	if ((bfp = file_loadraw(filename, "dtbo", 1)) == NULL) {
+		printf("failed to load file '%s'\n", filename);
+		return (1);
+	}
+
+	COPYOUT(bfp->f_addr, &header, sizeof(header));
+	err = fdt_check_header(&header);
+
+	if (err < 0) {
+		file_discard(bfp);
+		if (err == -FDT_ERR_BADVERSION)
+			printf("incompatible blob version: %d, should be: %d\n",
+			    fdt_version(fdtp), FDT_LAST_SUPPORTED_VERSION);
+
+		else
+			printf("error validating blob: %s\n",
+			    fdt_strerror(err));
+		return (1);
+	}
+
+	/* A new dtb was validated, discard any previous file. */
+	if (oldbfp)
+		file_discard(oldbfp);
+
+	return (0);
+}
+
+int
+fdt_load_dtb_overlays(const char * filenames)
+{
+	char *names;
+	char *name;
+	char *comaptr;
+
+	debugf("fdt_load_dtb_overlay(%s)\n", filenames);
+
+	names = strdup(filenames);
+	if (names == NULL)
+		return (1);
+	name = names;
+	do {
+		comaptr = strchr(name, ',');
+		if (comaptr)
+			*comaptr = '\0';
+		fdt_load_dtb_overlay(name);
+		name = comaptr + 1;
+	} while(comaptr);
+
+	free(names);
+	return (0);
+}
+
+void
+fdt_apply_overlays()
+{
+	struct preloaded_file *fp;
+	size_t overlays_size, max_overlay_size, new_fdtp_size;
+	void *new_fdtp;
+	void *overlay;
+	int rv;
+
+	if ((fdtp == NULL) || (fdtp_size == 0))
+		return;
+
+	overlays_size = 0;
+	max_overlay_size = 0;
+	for (fp = file_findfile(NULL, "dtbo"); fp != NULL; fp = fp->f_next) {
+		if (max_overlay_size < fp->f_size)
+			max_overlay_size = fp->f_size;
+		overlays_size += fp->f_size;
+	}
+
+	/* Nothing to apply */
+	if (overlays_size == 0)
+		return;
+
+	/* It's actually more than enough */
+	new_fdtp_size = fdtp_size + overlays_size;
+	new_fdtp = malloc(new_fdtp_size);
+	if (new_fdtp == NULL) {
+		printf("failed to allocate memory for DTB blob with overlays\n");
+		return;
+	}
+
+	overlay = malloc(max_overlay_size);
+	if (overlay == NULL) {
+		printf("failed to allocate memory for DTB blob with overlays\n");
+		free(new_fdtp);
+		return;
+	}
+
+	rv = fdt_open_into(fdtp, new_fdtp, new_fdtp_size);
+	if (rv != 0) {
+		printf("failed to open DTB blob for applying overlays\n");
+		free(new_fdtp);
+		free(overlay);
+		return;
+	}
+
+	for (fp = file_findfile(NULL, "dtbo"); fp != NULL; fp = fp->f_next) {
+		printf("applying DTB overlay '%s'\n", fp->f_name);
+		COPYOUT(fp->f_addr, overlay, fp->f_size);
+		fdt_overlay_apply(new_fdtp, overlay, fp->f_size);
+	}
+
+	free(fdtp);
+	fdtp = new_fdtp;
+	fdtp_size = new_fdtp_size;
+
+	free(overlay);
+}
+
 int
 fdt_setup_fdtp()
 {
 	struct preloaded_file *bfp;
-	struct fdt_header *hdr;
-	const char *s;
-	char *p;
 	vm_offset_t va;
 	
 	debugf("fdt_setup_fdtp()\n");
@@ -302,44 +422,14 @@ fdt_setup_fdtp()
 	/* If we were given the address of a valid blob in memory, use it. */
 	if (fdt_to_load != NULL) {
 		if (fdt_load_dtb_addr(fdt_to_load) == 0) {
-			printf("Using DTB from memory address 0x%08X.\n",
-			    (unsigned int)fdt_to_load);
+			printf("Using DTB from memory address %p.\n",
+			    fdt_to_load);
 			return (0);
 		}
 	}
 
-	/*
-	 * If the U-boot environment contains a variable giving the address of a
-	 * valid blob in memory, use it.  Board vendors use both fdtaddr and
-	 * fdt_addr names.
-	 */
-	s = ub_env_get("fdtaddr");
-	if (s == NULL)
-		s = ub_env_get("fdt_addr");
-	if (s != NULL && *s != '\0') {
-		hdr = (struct fdt_header *)strtoul(s, &p, 16);
-		if (*p == '\0') {
-			if (fdt_load_dtb_addr(hdr) == 0) {
-				printf("Using DTB provided by U-Boot at "
-				    "address %p.\n", hdr);
-				return (0);
-			}
-		}
-	}
-
-	/*
-	 * If the U-boot environment contains a variable giving the name of a
-	 * file, use it if we can load and validate it.
-	 */
-	s = ub_env_get("fdtfile");
-	if (s == NULL)
-		s = ub_env_get("fdt_file");
-	if (s != NULL && *s != '\0') {
-		if (fdt_load_dtb_file(s) == 0) {
-			printf("Loaded DTB from file '%s'.\n", s);
-			return (0);
-		}
-	}
+	if (fdt_platform_load_dtb() == 0)
+		return (0);
 
 	/* If there is a dtb compiled into the kernel, use it. */
 	if ((va = fdt_find_static_dtb()) != 0) {
@@ -361,11 +451,11 @@ fdt_setup_fdtp()
     (cellbuf), (lim), (cellsize), 16);
 
 static int
-_fdt_strtovect(char *str, void *cellbuf, int lim, unsigned char cellsize,
+_fdt_strtovect(const char *str, void *cellbuf, int lim, unsigned char cellsize,
     uint8_t base)
 {
-	char *buf = str;
-	char *end = str + strlen(str) - 2;
+	const char *buf = str;
+	const char *end = str + strlen(str) - 2;
 	uint32_t *u32buf = NULL;
 	uint8_t *u8buf = NULL;
 	int cnt = 0;
@@ -403,47 +493,20 @@ _fdt_strtovect(char *str, void *cellbuf, int lim, unsigned char cellsize,
 	return (cnt);
 }
 
-#define	TMP_MAX_ETH	8
-
-static void
-fixup_ethernet(const char *env, char *ethstr, int *eth_no, int len)
+void
+fdt_fixup_ethernet(const char *str, char *ethstr, int len)
 {
-	char *end, *str;
 	uint8_t tmp_addr[6];
-	int i, n;
-
-	/* Extract interface number */
-	i = strtol(env + 3, &end, 10);
-	if (end == (env + 3))
-		/* 'ethaddr' means interface 0 address */
-		n = 0;
-	else
-		n = i;
-
-	if (n > TMP_MAX_ETH)
-		return;
-
-	str = ub_env_get(env);
 
 	/* Convert macaddr string into a vector of uints */
 	fdt_strtovectx(str, &tmp_addr, 6, sizeof(uint8_t));
-	if (n != 0) {
-		i = strlen(env) - 7;
-		strncpy(ethstr + 8, env + 3, i);
-	}
 	/* Set actual property to a value from vect */
 	fdt_setprop(fdtp, fdt_path_offset(fdtp, ethstr),
 	    "local-mac-address", &tmp_addr, 6 * sizeof(uint8_t));
-
-	/* Clear ethernet..XXXX.. string */
-	bzero(ethstr + 8, len - 8);
-
-	if (n + 1 > *eth_no)
-		*eth_no = n + 1;
 }
 
-static void
-fixup_cpubusfreqs(unsigned long cpufreq, unsigned long busfreq)
+void
+fdt_fixup_cpubusfreqs(unsigned long cpufreq, unsigned long busfreq)
 {
 	int lo, o = 0, o2, maxo = 0, depth;
 	const uint32_t zero = 0;
@@ -490,6 +553,7 @@ fixup_cpubusfreqs(unsigned long cpufreq, unsigned long busfreq)
 	}
 }
 
+#ifdef notyet
 static int
 fdt_reg_valid(uint32_t *reg, int len, int addr_cells, int size_cells)
 {
@@ -521,14 +585,16 @@ fdt_reg_valid(uint32_t *reg, int len, int addr_cells, int size_cells)
 	}
 	return (0);
 }
+#endif
 
-static void
-fixup_memory(struct sys_info *si)
+void
+fdt_fixup_memory(struct fdt_mem_region *region, size_t num)
 {
-	struct mem_region *curmr;
+	struct fdt_mem_region *curmr;
 	uint32_t addr_cells, size_cells;
-	uint32_t *addr_cellsp, *reg,  *size_cellsp;
-	int err, i, len, memory, realmrno, root;
+	uint32_t *addr_cellsp, *size_cellsp;
+	int err, i, len, memory, root;
+	size_t realmrno;
 	uint8_t *buf, *sb;
 	uint64_t rstart, rsize;
 	int reserved;
@@ -544,7 +610,8 @@ fixup_memory(struct sys_info *si)
 		/* Create proper '/memory' node. */
 		memory = fdt_add_subnode(fdtp, root, "memory");
 		if (memory <= 0) {
-			sprintf(command_errbuf, "Could not fixup '/memory' "
+			snprintf(command_errbuf, sizeof(command_errbuf),
+			    "Could not fixup '/memory' "
 			    "node, error code : %d!\n", memory);
 			return;
 		}
@@ -561,7 +628,8 @@ fixup_memory(struct sys_info *si)
 	size_cellsp = (uint32_t *)fdt_getprop(fdtp, root, "#size-cells", NULL);
 
 	if (addr_cellsp == NULL || size_cellsp == NULL) {
-		sprintf(command_errbuf, "Could not fixup '/memory' node : "
+		snprintf(command_errbuf, sizeof(command_errbuf),
+		    "Could not fixup '/memory' node : "
 		    "%s %s property not found in root node!\n",
 		    (!addr_cellsp) ? "#address-cells" : "",
 		    (!size_cellsp) ? "#size-cells" : "");
@@ -586,11 +654,10 @@ fixup_memory(struct sys_info *si)
 		bzero(buf, len);
 
 		for (i = 0; i < reserved; i++) {
-			curmr = &si->mr[i];
 			if (fdt_get_mem_rsv(fdtp, i, &rstart, &rsize))
 				break;
 			if (rsize) {
-				/* Ensure endianess, and put cells into a buffer */
+				/* Ensure endianness, and put cells into a buffer */
 				if (addr_cells == 2)
 					*(uint64_t *)buf =
 					    cpu_to_fdt64(rstart);
@@ -618,26 +685,15 @@ fixup_memory(struct sys_info *si)
 	} 
 
 	/* Count valid memory regions entries in sysinfo. */
-	realmrno = si->mr_no;
-	for (i = 0; i < si->mr_no; i++)
-		if (si->mr[i].start == 0 && si->mr[i].size == 0)
+	realmrno = num;
+	for (i = 0; i < num; i++)
+		if (region[i].start == 0 && region[i].size == 0)
 			realmrno--;
 
 	if (realmrno == 0) {
 		sprintf(command_errbuf, "Could not fixup '/memory' node : "
 		    "sysinfo doesn't contain valid memory regions info!\n");
 		return;
-	}
-
-	if ((reg = (uint32_t *)fdt_getprop(fdtp, memory, "reg",
-	    &len)) != NULL) {
-
-		if (fdt_reg_valid(reg, len, addr_cells, size_cells) == 0)
-			/*
-			 * Do not apply fixup if existing 'reg' property
-			 * seems to be valid.
-			 */
-			return;
 	}
 
 	len = (addr_cells + size_cells) * realmrno * sizeof(uint32_t);
@@ -647,10 +703,10 @@ fixup_memory(struct sys_info *si)
 
 	bzero(buf, len);
 
-	for (i = 0; i < si->mr_no; i++) {
-		curmr = &si->mr[i];
+	for (i = 0; i < num; i++) {
+		curmr = &region[i];
 		if (curmr->size != 0) {
-			/* Ensure endianess, and put cells into a buffer */
+			/* Ensure endianness, and put cells into a buffer */
 			if (addr_cells == 2)
 				*(uint64_t *)buf =
 				    cpu_to_fdt64(curmr->start);
@@ -677,17 +733,15 @@ fixup_memory(struct sys_info *si)
 	free(sb);
 }
 
-static void
-fixup_stdout(const char *env)
+void
+fdt_fixup_stdout(const char *str)
 {
-	const char *str;
 	char *ptr;
 	int serialno;
 	int len, no, sero;
 	const struct fdt_property *prop;
 	char *tmp[10];
 
-	str = ub_env_get(env);
 	ptr = (char *)str + strlen(str) - 1;
 	while (ptr > str && isdigit(*(str - 1)))
 		str--;
@@ -733,14 +787,8 @@ fixup_stdout(const char *env)
 static int
 fdt_fixup(void)
 {
-	const char *env;
-	char *ethstr;
-	int chosen, eth_no, len;
-	struct sys_info *si;
+	int chosen, len;
 
-	env = NULL;
-	eth_no = 0;
-	ethstr = NULL;
 	len = 0;
 
 	debugf("fdt_fixup()\n");
@@ -757,45 +805,7 @@ fdt_fixup(void)
 	if (fdt_getprop(fdtp, chosen, "fixup-applied", NULL))
 		return (1);
 
-	/* Acquire sys_info */
-	si = ub_get_sys_info();
-
-	while ((env = ub_env_enum(env)) != NULL) {
-		if (strncmp(env, "eth", 3) == 0 &&
-		    strncmp(env + (strlen(env) - 4), "addr", 4) == 0) {
-			/*
-			 * Handle Ethernet addrs: parse uboot env eth%daddr
-			 */
-
-			if (!eth_no) {
-				/*
-				 * Check how many chars we will need to store
-				 * maximal eth iface number.
-				 */
-				len = strlen(STRINGIFY(TMP_MAX_ETH)) +
-				    strlen("ethernet");
-
-				/*
-				 * Reserve mem for string "ethernet" and len
-				 * chars for iface no.
-				 */
-				ethstr = (char *)malloc(len * sizeof(char));
-				bzero(ethstr, len * sizeof(char));
-				strcpy(ethstr, "ethernet0");
-			}
-
-			/* Modify blob */
-			fixup_ethernet(env, ethstr, &eth_no, len);
-
-		} else if (strcmp(env, "consoledev") == 0)
-			fixup_stdout(env);
-	}
-
-	/* Modify cpu(s) and bus clock frequenties in /cpus node [Hz] */
-	fixup_cpubusfreqs(si->clk_cpu, si->clk_bus);
-
-	/* Fixup memory regions */
-	fixup_memory(si);
+	fdt_platform_fixups();
 
 	fdt_setprop(fdtp, chosen, "fixup-applied", NULL, 0);
 	return (1);
@@ -899,7 +909,8 @@ fdt_cmd_addr(int argc, char *argv[])
 
 	hdr = (struct fdt_header *)strtoul(addr, &cp, 16);
 	if (cp == addr) {
-		sprintf(command_errbuf, "Invalid address: %s", addr);
+		snprintf(command_errbuf, sizeof(command_errbuf),
+		    "Invalid address: %s", addr);
 		return (CMD_ERROR);
 	}
 
@@ -938,7 +949,8 @@ fdt_cmd_cd(int argc, char *argv[])
 
 	o = fdt_path_offset(fdtp, path);
 	if (o < 0) {
-		sprintf(command_errbuf, "could not find node: '%s'", path);
+		snprintf(command_errbuf, sizeof(command_errbuf),
+		    "could not find node: '%s'", path);
 		return (CMD_ERROR);
 	}
 
@@ -946,8 +958,8 @@ fdt_cmd_cd(int argc, char *argv[])
 	return (CMD_OK);
 
 fail:
-	sprintf(command_errbuf, "path too long: %d, max allowed: %d",
-	    len, FDT_CWD_LEN - 1);
+	snprintf(command_errbuf, sizeof(command_errbuf),
+	    "path too long: %d, max allowed: %d", len, FDT_CWD_LEN - 1);
 	return (CMD_ERROR);
 }
 
@@ -965,40 +977,52 @@ fdt_cmd_hdr(int argc __unused, char *argv[] __unused)
 	ver = fdt_version(fdtp);
 	pager_open();
 	sprintf(line, "\nFlattened device tree header (%p):\n", fdtp);
-	pager_output(line);
+	if (pager_output(line))
+		goto out;
 	sprintf(line, " magic                   = 0x%08x\n", fdt_magic(fdtp));
-	pager_output(line);
+	if (pager_output(line))
+		goto out;
 	sprintf(line, " size                    = %d\n", fdt_totalsize(fdtp));
-	pager_output(line);
+	if (pager_output(line))
+		goto out;
 	sprintf(line, " off_dt_struct           = 0x%08x\n",
 	    fdt_off_dt_struct(fdtp));
-	pager_output(line);
+	if (pager_output(line))
+		goto out;
 	sprintf(line, " off_dt_strings          = 0x%08x\n",
 	    fdt_off_dt_strings(fdtp));
-	pager_output(line);
+	if (pager_output(line))
+		goto out;
 	sprintf(line, " off_mem_rsvmap          = 0x%08x\n",
 	    fdt_off_mem_rsvmap(fdtp));
-	pager_output(line);
+	if (pager_output(line))
+		goto out;
 	sprintf(line, " version                 = %d\n", ver); 
-	pager_output(line);
+	if (pager_output(line))
+		goto out;
 	sprintf(line, " last compatible version = %d\n",
 	    fdt_last_comp_version(fdtp));
-	pager_output(line);
+	if (pager_output(line))
+		goto out;
 	if (ver >= 2) {
 		sprintf(line, " boot_cpuid              = %d\n",
 		    fdt_boot_cpuid_phys(fdtp));
-		pager_output(line);
+		if (pager_output(line))
+			goto out;
 	}
 	if (ver >= 3) {
 		sprintf(line, " size_dt_strings         = %d\n",
 		    fdt_size_dt_strings(fdtp));
-		pager_output(line);
+		if (pager_output(line))
+			goto out;
 	}
 	if (ver >= 17) {
 		sprintf(line, " size_dt_struct          = %d\n",
 		    fdt_size_dt_struct(fdtp));
-		pager_output(line);
+		if (pager_output(line))
+			goto out;
 	}
+out:
 	pager_close();
 
 	return (CMD_OK);
@@ -1010,7 +1034,7 @@ fdt_cmd_ls(int argc, char *argv[])
 	const char *prevname[FDT_MAX_DEPTH] = { NULL };
 	const char *name;
 	char *path;
-	int i, o, depth, len;
+	int i, o, depth;
 
 	path = (argc > 2) ? argv[2] : NULL;
 	if (path == NULL)
@@ -1018,7 +1042,8 @@ fdt_cmd_ls(int argc, char *argv[])
 
 	o = fdt_path_offset(fdtp, path);
 	if (o < 0) {
-		sprintf(command_errbuf, "could not find node: '%s'", path);
+		snprintf(command_errbuf, sizeof(command_errbuf),
+		    "could not find node: '%s'", path);
 		return (CMD_ERROR);
 	}
 
@@ -1026,7 +1051,7 @@ fdt_cmd_ls(int argc, char *argv[])
 	    (o >= 0) && (depth >= 0);
 	    o = fdt_next_node(fdtp, o, &depth)) {
 
-		name = fdt_get_name(fdtp, o, &len);
+		name = fdt_get_name(fdtp, o, NULL);
 
 		if (depth > FDT_MAX_DEPTH) {
 			printf("max depth exceeded: %d\n", depth);
@@ -1344,7 +1369,7 @@ static int
 fdt_modprop(int nodeoff, char *propname, void *value, char mode)
 {
 	uint32_t cells[100];
-	char *buf;
+	const char *buf;
 	int len, rv;
 	const struct fdt_property *p;
 
@@ -1362,7 +1387,7 @@ fdt_modprop(int nodeoff, char *propname, void *value, char mode)
 	}
 	len = strlen(value);
 	rv = 0;
-	buf = (char *)value;
+	buf = value;
 
 	switch (*buf) {
 	case '&':
@@ -1419,13 +1444,12 @@ fdt_merge_strings(int argc, char *argv[], int start, char **buffer)
 	sz += argc - start;
 
 	buf = (char *)malloc(sizeof(char) * sz);
-	bzero(buf, sizeof(char) * sz);
-
 	if (buf == NULL) {
 		sprintf(command_errbuf, "could not allocate space "
 		    "for string");
 		return (1);
 	}
+	bzero(buf, sizeof(char) * sz);
 
 	idx = 0;
 	for (i = start, idx = 0; i < argc; i++) {
@@ -1465,7 +1489,8 @@ fdt_extract_nameloc(char **pathp, char **namep, int *nodeoff)
 		return (1);
 	}
 	if (o < 0) {
-		sprintf(command_errbuf, "could not find node: '%s'", path);
+		snprintf(command_errbuf, sizeof(command_errbuf),
+		    "could not find node: '%s'", path);
 		return (1);
 	}
 	*namep = name;
@@ -1512,7 +1537,8 @@ fdt_cmd_prop(int argc, char *argv[])
 	o = fdt_path_offset(fdtp, path);
 
 	if (o < 0) {
-		sprintf(command_errbuf, "could not find node: '%s'", path);
+		snprintf(command_errbuf, sizeof(command_errbuf),
+		    "could not find node: '%s'", path);
 		rv = CMD_ERROR;
 		goto out;
 	}
@@ -1605,8 +1631,9 @@ fdt_cmd_rm(int argc, char *argv[])
 			return (CMD_ERROR);
 
 		if ((rv = fdt_delprop(fdtp, o, propname)) != 0) {
-			sprintf(command_errbuf, "could not delete"
-			    "%s\n", (rv == -FDT_ERR_NOTFOUND) ?
+			snprintf(command_errbuf, sizeof(command_errbuf),
+			    "could not delete %s\n",
+			    (rv == -FDT_ERR_NOTFOUND) ?
 			    "(property/node does not exist)" : "");
 			return (CMD_ERROR);
 
@@ -1674,15 +1701,18 @@ fdt_cmd_mres(int argc, char *argv[])
 	pager_open();
 	total = fdt_num_mem_rsv(fdtp);
 	if (total > 0) {
-		pager_output("Reserved memory regions:\n");
+		if (pager_output("Reserved memory regions:\n"))
+			goto out;
 		for (i = 0; i < total; i++) {
 			fdt_get_mem_rsv(fdtp, i, &start, &size);
 			sprintf(line, "reg#%d: (start: 0x%jx, size: 0x%jx)\n", 
 			    i, start, size);
-			pager_output(line);
+			if (pager_output(line))
+				goto out;
 		}
 	} else
 		pager_output("No reserved memory regions\n");
+out:
 	pager_close();
 
 	return (CMD_OK);

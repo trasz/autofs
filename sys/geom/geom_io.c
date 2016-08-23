@@ -71,7 +71,17 @@ static struct g_bioq g_bio_run_down;
 static struct g_bioq g_bio_run_up;
 static struct g_bioq g_bio_run_task;
 
-static u_int pace;
+/*
+ * Pace is a hint that we've had some trouble recently allocating
+ * bios, so we should back off trying to send I/O down the stack
+ * a bit to let the problem resolve. When pacing, we also turn
+ * off direct dispatch to also reduce memory pressure from I/Os
+ * there, at the expxense of some added latency while the memory
+ * pressures exist. See g_io_schedule_down() for more details
+ * and limitations.
+ */
+static volatile u_int pace;
+
 static uma_zone_t	biozone;
 
 /*
@@ -195,11 +205,12 @@ g_clone_bio(struct bio *bp)
 		/*
 		 *  BIO_ORDERED flag may be used by disk drivers to enforce
 		 *  ordering restrictions, so this flag needs to be cloned.
-		 *  BIO_UNMAPPED should be inherited, to properly indicate
-		 *  which way the buffer is passed.
+		 *  BIO_UNMAPPED and BIO_VLIST should be inherited, to properly
+		 *  indicate which way the buffer is passed.
 		 *  Other bio flags are not suitable for cloning.
 		 */
-		bp2->bio_flags = bp->bio_flags & (BIO_ORDERED | BIO_UNMAPPED);
+		bp2->bio_flags = bp->bio_flags &
+		    (BIO_ORDERED | BIO_UNMAPPED | BIO_VLIST);
 		bp2->bio_length = bp->bio_length;
 		bp2->bio_offset = bp->bio_offset;
 		bp2->bio_data = bp->bio_data;
@@ -207,6 +218,9 @@ g_clone_bio(struct bio *bp)
 		bp2->bio_ma_n = bp->bio_ma_n;
 		bp2->bio_ma_offset = bp->bio_ma_offset;
 		bp2->bio_attribute = bp->bio_attribute;
+		if (bp->bio_cmd == BIO_ZONE)
+			bcopy(&bp->bio_zone, &bp2->bio_zone,
+			    sizeof(bp->bio_zone));
 		/* Inherit classification info from the parent */
 		bp2->bio_classifier1 = bp->bio_classifier1;
 		bp2->bio_classifier2 = bp->bio_classifier2;
@@ -230,7 +244,7 @@ g_duplicate_bio(struct bio *bp)
 	struct bio *bp2;
 
 	bp2 = uma_zalloc(biozone, M_WAITOK | M_ZERO);
-	bp2->bio_flags = bp->bio_flags & BIO_UNMAPPED;
+	bp2->bio_flags = bp->bio_flags & (BIO_UNMAPPED | BIO_VLIST);
 	bp2->bio_parent = bp;
 	bp2->bio_cmd = bp->bio_cmd;
 	bp2->bio_length = bp->bio_length;
@@ -251,6 +265,13 @@ g_duplicate_bio(struct bio *bp)
 	}
 #endif
 	return(bp2);
+}
+
+void
+g_reset_bio(struct bio *bp)
+{
+
+	bzero(bp, sizeof(*bp));
 }
 
 void
@@ -282,6 +303,34 @@ g_io_getattr(const char *attr, struct g_consumer *cp, int *len, void *ptr)
 	g_io_request(bp, cp);
 	error = biowait(bp, "ggetattr");
 	*len = bp->bio_completed;
+	g_destroy_bio(bp);
+	return (error);
+}
+
+int
+g_io_zonecmd(struct disk_zone_args *zone_args, struct g_consumer *cp)
+{
+	struct bio *bp;
+	int error;
+	
+	g_trace(G_T_BIO, "bio_zone(%d)", zone_args->zone_cmd);
+	bp = g_alloc_bio();
+	bp->bio_cmd = BIO_ZONE;
+	bp->bio_done = NULL;
+	/*
+	 * XXX KDM need to handle report zone data.
+	 */
+	bcopy(zone_args, &bp->bio_zone, sizeof(*zone_args));
+	if (zone_args->zone_cmd == DISK_ZONE_REPORT_ZONES)
+		bp->bio_length =
+		    zone_args->zone_params.report.entries_allocated *
+		    sizeof(struct disk_zone_rep_entry);
+	else
+		bp->bio_length = 0;
+
+	g_io_request(bp, cp);
+	error = biowait(bp, "gzone");
+	bcopy(&bp->bio_zone, zone_args, sizeof(*zone_args));
 	g_destroy_bio(bp);
 	return (error);
 }
@@ -329,6 +378,14 @@ g_io_check(struct bio *bp)
 	case BIO_DELETE:
 	case BIO_FLUSH:
 		if (cp->acw == 0)
+			return (EPERM);
+		break;
+	case BIO_ZONE:
+		if ((bp->bio_zone.zone_cmd == DISK_ZONE_REPORT_ZONES) ||
+		    (bp->bio_zone.zone_cmd == DISK_ZONE_GET_PARAMS)) {
+			if (cp->acr == 0)
+				return (EPERM);
+		} else if (cp->acw == 0)
 			return (EPERM);
 		break;
 	default:
@@ -461,6 +518,7 @@ g_io_request(struct bio *bp, struct g_consumer *cp)
 	struct g_provider *pp;
 	struct mtx *mtxp;
 	int direct, error, first;
+	uint8_t cmd;
 
 	KASSERT(cp != NULL, ("NULL cp in g_io_request"));
 	KASSERT(bp != NULL, ("NULL bp in g_io_request"));
@@ -482,16 +540,17 @@ g_io_request(struct bio *bp, struct g_consumer *cp)
 	bp->_bio_cflags = bp->bio_cflags;
 #endif
 
-	if (bp->bio_cmd & (BIO_READ|BIO_WRITE|BIO_GETATTR)) {
+	cmd = bp->bio_cmd;
+	if (cmd == BIO_READ || cmd == BIO_WRITE || cmd == BIO_GETATTR) {
 		KASSERT(bp->bio_data != NULL,
-		    ("NULL bp->data in g_io_request(cmd=%hhu)", bp->bio_cmd));
+		    ("NULL bp->data in g_io_request(cmd=%hu)", bp->bio_cmd));
 	}
-	if (bp->bio_cmd & (BIO_DELETE|BIO_FLUSH)) {
+	if (cmd == BIO_DELETE || cmd == BIO_FLUSH) {
 		KASSERT(bp->bio_data == NULL,
-		    ("non-NULL bp->data in g_io_request(cmd=%hhu)",
+		    ("non-NULL bp->data in g_io_request(cmd=%hu)",
 		    bp->bio_cmd));
 	}
-	if (bp->bio_cmd & (BIO_READ|BIO_WRITE|BIO_DELETE)) {
+	if (cmd == BIO_READ || cmd == BIO_WRITE || cmd == BIO_DELETE) {
 		KASSERT(bp->bio_offset % cp->provider->sectorsize == 0,
 		    ("wrong offset %jd for sectorsize %u",
 		    bp->bio_offset, cp->provider->sectorsize));
@@ -517,11 +576,12 @@ g_io_request(struct bio *bp, struct g_consumer *cp)
 		getbinuptime(&bp->bio_t0);
 
 #ifdef GET_STACK_USAGE
-	direct = (cp->flags & G_CF_DIRECT_SEND) &&
-		 (pp->flags & G_PF_DIRECT_RECEIVE) &&
-		 !g_is_geom_thread(curthread) &&
-		 (((pp->flags & G_PF_ACCEPT_UNMAPPED) == 0 &&
-		   (bp->bio_flags & BIO_UNMAPPED) != 0) || THREAD_CAN_SLEEP());
+	direct = (cp->flags & G_CF_DIRECT_SEND) != 0 &&
+	    (pp->flags & G_PF_DIRECT_RECEIVE) != 0 &&
+	    !g_is_geom_thread(curthread) &&
+	    ((pp->flags & G_PF_ACCEPT_UNMAPPED) != 0 ||
+	    (bp->bio_flags & BIO_UNMAPPED) == 0 || THREAD_CAN_SLEEP()) &&
+	    pace == 0;
 	if (direct) {
 		/* Block direct execution if less then half of stack left. */
 		size_t	st, su;
@@ -688,7 +748,7 @@ g_io_deliver(struct bio *bp, int error)
 	bp->bio_driver2 = NULL;
 	bp->bio_pflags = 0;
 	g_io_request(bp, cp);
-	pace++;
+	pace = 1;
 	return;
 }
 
@@ -777,10 +837,33 @@ g_io_schedule_down(struct thread *tp __unused)
 		}
 		CTR0(KTR_GEOM, "g_down has work to do");
 		g_bioq_unlock(&g_bio_run_down);
-		if (pace > 0) {
-			CTR1(KTR_GEOM, "g_down pacing self (pace %d)", pace);
-			pause("g_down", hz/10);
-			pace--;
+		if (pace != 0) {
+			/*
+			 * There has been at least one memory allocation
+			 * failure since the last I/O completed. Pause 1ms to
+			 * give the system a chance to free up memory. We only
+			 * do this once because a large number of allocations
+			 * can fail in the direct dispatch case and there's no
+			 * relationship between the number of these failures and
+			 * the length of the outage. If there's still an outage,
+			 * we'll pause again and again until it's
+			 * resolved. Older versions paused longer and once per
+			 * allocation failure. This was OK for a single threaded
+			 * g_down, but with direct dispatch would lead to max of
+			 * 10 IOPs for minutes at a time when transient memory
+			 * issues prevented allocation for a batch of requests
+			 * from the upper layers.
+			 *
+			 * XXX This pacing is really lame. It needs to be solved
+			 * by other methods. This is OK only because the worst
+			 * case scenario is so rare. In the worst case scenario
+			 * all memory is tied up waiting for I/O to complete
+			 * which can never happen since we can't allocate bios
+			 * for that I/O.
+			 */
+			CTR0(KTR_GEOM, "g_down pacing self");
+			pause("g_down", min(hz/1000, 1));
+			pace = 0;
 		}
 		CTR2(KTR_GEOM, "g_down processing bp %p provider %s", bp,
 		    bp->bio_to->name);
@@ -944,6 +1027,35 @@ g_print_bio(struct bio *bp)
 		cmd = "FLUSH";
 		printf("%s[%s]", pname, cmd);
 		return;
+	case BIO_ZONE: {
+		char *subcmd = NULL;
+		cmd = "ZONE";
+		switch (bp->bio_zone.zone_cmd) {
+		case DISK_ZONE_OPEN:
+			subcmd = "OPEN";
+			break;
+		case DISK_ZONE_CLOSE:
+			subcmd = "CLOSE";
+			break;
+		case DISK_ZONE_FINISH:
+			subcmd = "FINISH";
+			break;
+		case DISK_ZONE_RWP:
+			subcmd = "RWP";
+			break;
+		case DISK_ZONE_REPORT_ZONES:
+			subcmd = "REPORT ZONES";
+			break;
+		case DISK_ZONE_GET_PARAMS:
+			subcmd = "GET PARAMS";
+			break;
+		default:
+			subcmd = "UNKNOWN";
+			break;
+		}
+		printf("%s[%s,%s]", pname, cmd, subcmd);
+		return;
+	}
 	case BIO_READ:
 		cmd = "READ";
 		break;

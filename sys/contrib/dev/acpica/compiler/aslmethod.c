@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2013, Intel Corp.
+ * Copyright (C) 2000 - 2016, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -41,7 +41,6 @@
  * POSSIBILITY OF SUCH DAMAGES.
  */
 
-
 #include <contrib/dev/acpica/compiler/aslcompiler.h>
 #include "aslcompiler.y.h"
 #include <contrib/dev/acpica/include/acparser.h>
@@ -54,7 +53,7 @@
 
 /* Local prototypes */
 
-void
+static void
 MtCheckNamedObjectInMethod (
     ACPI_PARSE_OBJECT       *Op,
     ASL_METHOD_INFO         *MethodInfo);
@@ -94,6 +93,13 @@ MtMethodAnalysisWalkBegin (
     UINT8                   ActualArgs = 0;
 
 
+    /* Build cross-reference output file if requested */
+
+    if (Gbl_CrossReferenceOutput)
+    {
+        OtXrefWalkPart1 (Op, Level, MethodInfo);
+    }
+
     switch (Op->Asl.ParseOpcode)
     {
     case PARSEOP_METHOD:
@@ -102,13 +108,48 @@ MtMethodAnalysisWalkBegin (
 
         /* Create and init method info */
 
-        MethodInfo       = UtLocalCalloc (sizeof (ASL_METHOD_INFO));
+        MethodInfo = UtLocalCalloc (sizeof (ASL_METHOD_INFO));
         MethodInfo->Next = WalkInfo->MethodStack;
         MethodInfo->Op = Op;
 
         WalkInfo->MethodStack = MethodInfo;
 
-        /* Get the name node, ignored here */
+        /*
+         * Special handling for _PSx methods. Dependency rules (same scope):
+         *
+         * 1) _PS0 - One of these must exist: _PS1, _PS2, _PS3
+         * 2) _PS1/_PS2/_PS3: A _PS0 must exist
+         */
+        if (ACPI_COMPARE_NAME (METHOD_NAME__PS0, Op->Asl.NameSeg))
+        {
+            /* For _PS0, one of _PS1/_PS2/_PS3 must exist */
+
+            if ((!ApFindNameInScope (METHOD_NAME__PS1, Op)) &&
+                (!ApFindNameInScope (METHOD_NAME__PS2, Op)) &&
+                (!ApFindNameInScope (METHOD_NAME__PS3, Op)))
+            {
+                AslError (ASL_WARNING, ASL_MSG_MISSING_DEPENDENCY, Op,
+                    "_PS0 requires one of _PS1/_PS2/_PS3 in same scope");
+            }
+        }
+        else if (
+            ACPI_COMPARE_NAME (METHOD_NAME__PS1, Op->Asl.NameSeg) ||
+            ACPI_COMPARE_NAME (METHOD_NAME__PS2, Op->Asl.NameSeg) ||
+            ACPI_COMPARE_NAME (METHOD_NAME__PS3, Op->Asl.NameSeg))
+        {
+            /* For _PS1/_PS2/_PS3, a _PS0 must exist */
+
+            if (!ApFindNameInScope (METHOD_NAME__PS0, Op))
+            {
+                sprintf (MsgBuffer,
+                    "%4.4s requires _PS0 in same scope", Op->Asl.NameSeg);
+
+                AslError (ASL_WARNING, ASL_MSG_MISSING_DEPENDENCY, Op,
+                    MsgBuffer);
+            }
+        }
+
+        /* Get the name node */
 
         Next = Op->Asl.Child;
 
@@ -152,7 +193,9 @@ MtMethodAnalysisWalkBegin (
                 NextParamType = NextType->Asl.Child;
                 while (NextParamType)
                 {
-                    MethodInfo->ValidArgTypes[ActualArgs] |= AnMapObjTypeToBtype (NextParamType);
+                    MethodInfo->ValidArgTypes[ActualArgs] |=
+                        AnMapObjTypeToBtype (NextParamType);
+
                     NextParamType->Asl.ParseOpcode = PARSEOP_DEFAULT_ARG;
                     NextParamType = NextParamType->Asl.Next;
                 }
@@ -161,6 +204,7 @@ MtMethodAnalysisWalkBegin (
             {
                 MethodInfo->ValidArgTypes[ActualArgs] =
                     AnMapObjTypeToBtype (NextType);
+
                 NextType->Asl.ParseOpcode = PARSEOP_DEFAULT_ARG;
                 ActualArgs++;
             }
@@ -217,11 +261,12 @@ MtMethodAnalysisWalkBegin (
              * Local was used outside a control method, or there was an error
              * in the method declaration.
              */
-            AslError (ASL_REMARK, ASL_MSG_LOCAL_OUTSIDE_METHOD, Op, Op->Asl.ExternalName);
+            AslError (ASL_REMARK, ASL_MSG_LOCAL_OUTSIDE_METHOD,
+                Op, Op->Asl.ExternalName);
             return (AE_ERROR);
         }
 
-        RegisterNumber = (Op->Asl.AmlOpcode & 0x000F);
+        RegisterNumber = (Op->Asl.AmlOpcode & 0x0007);
 
         /*
          * If the local is being used as a target, mark the local
@@ -260,7 +305,8 @@ MtMethodAnalysisWalkBegin (
              * Arg was used outside a control method, or there was an error
              * in the method declaration.
              */
-            AslError (ASL_REMARK, ASL_MSG_LOCAL_OUTSIDE_METHOD, Op, Op->Asl.ExternalName);
+            AslError (ASL_REMARK, ASL_MSG_LOCAL_OUTSIDE_METHOD,
+                Op, Op->Asl.ExternalName);
             return (AE_ERROR);
         }
 
@@ -283,7 +329,7 @@ MtMethodAnalysisWalkBegin (
          * The only operator that accepts an uninitialized value is ObjectType()
          */
         else if ((!MethodInfo->ArgInitialized[RegisterNumber]) &&
-                 (Op->Asl.Parent->Asl.ParseOpcode != PARSEOP_OBJECTTYPE))
+            (Op->Asl.Parent->Asl.ParseOpcode != PARSEOP_OBJECTTYPE))
         {
             AslError (ASL_ERROR, ASL_MSG_ARG_INIT, Op, ArgName);
         }
@@ -359,6 +405,15 @@ MtMethodAnalysisWalkBegin (
         break;
 
     case PARSEOP_DEVICE:
+
+        if (!ApFindNameInDeviceTree (METHOD_NAME__HID, Op) &&
+            !ApFindNameInDeviceTree (METHOD_NAME__ADR, Op))
+        {
+            AslError (ASL_WARNING, ASL_MSG_MISSING_DEPENDENCY, Op,
+                "Device object requires a _HID or _ADR in same scope");
+        }
+        break;
+
     case PARSEOP_EVENT:
     case PARSEOP_MUTEX:
     case PARSEOP_OPERATIONREGION:
@@ -373,7 +428,8 @@ MtMethodAnalysisWalkBegin (
         i = ApCheckForPredefinedName (Op, Op->Asl.NameSeg);
         if (i < ACPI_VALID_RESERVED_NAME_MAX)
         {
-            AslError (ASL_ERROR, ASL_MSG_RESERVED_USE, Op, Op->Asl.ExternalName);
+            AslError (ASL_ERROR, ASL_MSG_RESERVED_USE,
+                Op, Op->Asl.ExternalName);
         }
         break;
 
@@ -385,7 +441,7 @@ MtMethodAnalysisWalkBegin (
 
         /* Special typechecking for _HID */
 
-        if (!ACPI_STRCMP (METHOD_NAME__HID, Op->Asl.NameSeg))
+        if (!strcmp (METHOD_NAME__HID, Op->Asl.NameSeg))
         {
             Next = Op->Asl.Child->Asl.Next;
             AnCheckId (Next, ASL_TYPE_HID);
@@ -393,7 +449,7 @@ MtMethodAnalysisWalkBegin (
 
         /* Special typechecking for _CID */
 
-        else if (!ACPI_STRCMP (METHOD_NAME__CID, Op->Asl.NameSeg))
+        else if (!strcmp (METHOD_NAME__CID, Op->Asl.NameSeg))
         {
             Next = Op->Asl.Child->Asl.Next;
 
@@ -412,6 +468,7 @@ MtMethodAnalysisWalkBegin (
                 AnCheckId (Next, ASL_TYPE_CID);
             }
         }
+
         break;
 
     default:
@@ -441,7 +498,7 @@ MtMethodAnalysisWalkBegin (
  *
  ******************************************************************************/
 
-void
+static void
 MtCheckNamedObjectInMethod (
     ACPI_PARSE_OBJECT       *Op,
     ASL_METHOD_INFO         *MethodInfo)
@@ -449,9 +506,10 @@ MtCheckNamedObjectInMethod (
     const ACPI_OPCODE_INFO  *OpInfo;
 
 
-    /* We don't care about actual method declarations */
+    /* We don't care about actual method declarations or scopes */
 
-    if (Op->Asl.AmlOpcode == AML_METHOD_OP)
+    if ((Op->Asl.AmlOpcode == AML_METHOD_OP) ||
+        (Op->Asl.AmlOpcode == AML_SCOPE_OP))
     {
         return;
     }
@@ -631,7 +689,8 @@ MtMethodAnalysisWalkEnd (
          */
         if (Op->Asl.Next)
         {
-            AslError (ASL_WARNING, ASL_MSG_UNREACHABLE_CODE, Op->Asl.Next, NULL);
+            AslError (ASL_WARNING, ASL_MSG_UNREACHABLE_CODE,
+                Op->Asl.Next, NULL);
         }
         break;
 

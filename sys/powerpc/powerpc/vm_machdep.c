@@ -99,11 +99,6 @@
 #include <vm/vm_map.h>
 #include <vm/vm_extern.h>
 
-#ifdef __powerpc64__
-extern uintptr_t tocbase;
-#endif
-
-
 /*
  * Finish a fork operation, with process p2 nearly set up.
  * Copy and update the pcb, set up the stack so that the child
@@ -148,8 +143,8 @@ cpu_fork(struct thread *td1, struct proc *p2, struct thread *td2, int flags)
 
 	cf = (struct callframe *)tf - 1;
 	memset(cf, 0, sizeof(struct callframe));
-	#ifdef __powerpc64__
-	cf->cf_toc = tocbase;
+	#if defined(__powerpc64__) && (!defined(_CALL_ELF) || _CALL_ELF == 1)
+	cf->cf_toc = ((register_t *)fork_return)[1];
 	#endif
 	cf->cf_func = (register_t)fork_return;
 	cf->cf_arg0 = (register_t)td2;
@@ -157,11 +152,12 @@ cpu_fork(struct thread *td1, struct proc *p2, struct thread *td2, int flags)
 
 	pcb->pcb_sp = (register_t)cf;
 	KASSERT(pcb->pcb_sp % 16 == 0, ("stack misaligned"));
-	#ifdef __powerpc64__
+	#if defined(__powerpc64__) && (!defined(_CALL_ELF) || _CALL_ELF == 1)
 	pcb->pcb_lr = ((register_t *)fork_trampoline)[0];
 	pcb->pcb_toc = ((register_t *)fork_trampoline)[1];
 	#else
 	pcb->pcb_lr = (register_t)fork_trampoline;
+	pcb->pcb_context[0] = pcb->pcb_lr;
 	#endif
 	#ifdef AIM
 	pcb->pcb_cpu.aim.usr_vsid = 0;
@@ -183,7 +179,7 @@ cpu_fork(struct thread *td1, struct proc *p2, struct thread *td2, int flags)
  * This is needed to make kernel threads stay in kernel mode.
  */
 void
-cpu_set_fork_handler(struct thread *td, void (*func)(void *), void *arg)
+cpu_fork_kthread_handler(struct thread *td, void (*func)(void *), void *arg)
 {
 	struct callframe *cf;
 

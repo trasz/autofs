@@ -76,7 +76,7 @@
       <para>Note that there are two names for this architecture, AMD64
 	(AMD) and Intel EM64T (Extended Memory 64-bit Technology).
 	64-bit mode of the two architectures are almost compatible
-	with each other, and &os;/&arch.amd64; should support them
+	with each other, and &os;/&arch.amd64; supports them
 	both.</para>
 
       <para>As of this writing, the following processors are
@@ -92,6 +92,18 @@
 	</listitem>
 
 	<listitem>
+	  <para>&amd.sempron;.</para>
+	</listitem>
+
+	<listitem>
+	  <para>&amd.turion;.</para>
+	</listitem>
+
+	<listitem>
+	  <para>&amd.phenom;.</para>
+	</listitem>
+
+	<listitem>
 	  <para>All multi-core &intel; &xeon; processors except
 	    Sossaman have EM64T support.</para>
 	</listitem>
@@ -104,8 +116,12 @@
 	</listitem>
 
 	<listitem>
-	  <para>All &intel; Core 2 (not Core Duo) and later
+	  <para>All &intel; &core; 2 (not &core; Duo) and later
 	    processors</para>
+	</listitem>
+
+	<listitem>
+	  <para>All &intel; &core; i range of processors</para>
 	</listitem>
 
 	<listitem>
@@ -113,13 +129,17 @@
 	</listitem>
 
 	<listitem>
-	  <para>&intel; &pentium; 4s and Celeron Ds using
+	  <para>All &intel; &centrino; Duo and &centrino; Pro platforms</para>
+	</listitem>
+
+	<listitem>
+	  <para>&intel; &pentium; 4s and &celeron; Ds using
 	    the <quote>Cedar Mill</quote> core have EM64T
 	    support.</para>
 	</listitem>
 
 	<listitem>
-	  <para>Some &intel; &pentium; 4s and Celeron Ds using
+	  <para>Some &intel; &pentium; 4s and &celeron; Ds using
 	    the <quote>Prescott</quote> core have EM64T support.  See
 	    the <link xlink:href="http://processorfinder.intel.com">Intel
 	    Processor Spec Finder</link> for the definitive answer about
@@ -649,8 +669,6 @@
 
       &hwlist.arcmsr;
 
-      &hwlist.asr;
-
       &hwlist.bt;
 
       &hwlist.ciss;
@@ -713,6 +731,8 @@
 
       &hwlist.nsp;
 
+      &hwlist.pms;
+
       &hwlist.pst;
 
       &hwlist.siis;
@@ -730,9 +750,6 @@
       &hwlist.tws;
 
       &hwlist.vpo;
-
-      <para>[&arch.i386;] The wds(4) driver supports the WD7000 SCSI
-	controller.</para>
 
       <para>With all supported SCSI controllers, full support is
 	provided for SCSI-I, SCSI-II, and SCSI-III peripherals,
@@ -755,21 +772,7 @@
 	</listitem>
 
 	<listitem>
-	  <para>[&arch.i386;] Sony proprietary interface (all models)
-	    (&man.scd.4;)</para>
-	</listitem>
-
-	<listitem>
 	  <para>ATAPI IDE interface (&man.acd.4;)</para>
-	</listitem>
-      </itemizedlist>
-
-      <para>[&arch.i386;] The following device is unmaintained:</para>
-
-      <itemizedlist>
-	<listitem>
-	  <para>Mitsumi proprietary CD-ROM interface (all models)
-	    (&man.mcd.4;)</para>
 	</listitem>
       </itemizedlist>
     </sect2>
@@ -833,9 +836,9 @@
 
       &hwlist.hme;
 
-      &hwlist.ie;
-
       &hwlist.igb;
+
+      &hwlist.ipheth;
 
       &hwlist.ixgb;
 
@@ -885,6 +888,8 @@
 
       &hwlist.sk;
 
+      &hwlist.smsc;
+
       &hwlist.sn;
 
       &hwlist.snc;
@@ -903,6 +908,8 @@
       &hwlist.txp;
 
       &hwlist.udav;
+
+      &hwlist.urndis;
 
       &hwlist.vge;
 
@@ -971,6 +978,10 @@
 	2200BG/2915ABG MiniPCI and 2225BG PCI network adapters
 	(&man.iwi.4; driver)</para>
 
+      <para>[&arch.i386;, &arch.amd64;] Intel Dual Band Wireless AC
+	3160/7260/7265 IEEE 802.11ac network adapters (&man.iwm.4;
+	driver)</para>
+
       <para>[&arch.i386;, &arch.amd64;] Intel Wireless WiFi Link
 	4965AGN IEEE 802.11n PCI network adapters
 	(&man.iwn.4; driver)</para>
@@ -981,9 +992,14 @@
       <para>Marvell 88W8363 IEEE 802.11n wireless network
 	adapters (&man.mwl.4; driver)</para>
 
+      &hwlist.otus;
+
       &hwlist.ral;
 
       &hwlist.rsu;
+
+      <para>Realtek RTL8188CE based PCIe IEEE 802.11b/g/n wireless network
+	adapters (&man.rtwn.4; driver)</para>
 
       &hwlist.rum;
 
@@ -1004,9 +1020,6 @@
 	and workalikes using the Lucent Hermes, Intersil PRISM-II,
 	Intersil PRISM-2.5, Intersil Prism-3, and Symbol Spectrum24
 	chipsets (&man.wi.4; driver)</para>
-
-      <para>[&arch.i386;] NCR / AT&amp;T / Lucent Technologies WaveLan
-	T1-speed ISA/radio LAN cards (&man.wl.4; driver)</para>
 
       <para>[&arch.i386;, &arch.amd64;] Intel PRO/Wireless 3945ABG
 	MiniPCI network adapters (&man.wpi.4; driver)</para>
@@ -1202,13 +1215,6 @@
       </itemizedlist>
 
       &hwlist.rc;
-
-      <para>[&arch.i386;, &arch.amd64;] Specialix SI/XIO/SX multiport
-	serial cards, with both the older SIHOST2.x and the
-	<quote>enhanced</quote> (transputer based, aka JET) host cards
-	(ISA, EISA and PCI) are supported.  Note that the newer SX+
-	PCI cards are not currently supported.  (&man.si.4;
-	driver)</para>
 
       <para>[&arch.pc98;] Internel serial interfaces (&man.sio.4;
 	driver)</para>

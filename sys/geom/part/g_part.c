@@ -70,6 +70,7 @@ struct g_part_alias_list {
 	enum g_part_alias alias;
 } g_part_alias_list[G_PART_ALIAS_COUNT] = {
 	{ "apple-boot", G_PART_ALIAS_APPLE_BOOT },
+	{ "apple-core-storage", G_PART_ALIAS_APPLE_CORE_STORAGE },
 	{ "apple-hfs", G_PART_ALIAS_APPLE_HFS },
 	{ "apple-label", G_PART_ALIAS_APPLE_LABEL },
 	{ "apple-raid", G_PART_ALIAS_APPLE_RAID },
@@ -77,6 +78,19 @@ struct g_part_alias_list {
 	{ "apple-tv-recovery", G_PART_ALIAS_APPLE_TV_RECOVERY },
 	{ "apple-ufs", G_PART_ALIAS_APPLE_UFS },
 	{ "bios-boot", G_PART_ALIAS_BIOS_BOOT },
+	{ "chromeos-firmware", G_PART_ALIAS_CHROMEOS_FIRMWARE },
+	{ "chromeos-kernel", G_PART_ALIAS_CHROMEOS_KERNEL },
+	{ "chromeos-reserved", G_PART_ALIAS_CHROMEOS_RESERVED },
+	{ "chromeos-root", G_PART_ALIAS_CHROMEOS_ROOT },
+	{ "dragonfly-ccd", G_PART_ALIAS_DFBSD_CCD },
+	{ "dragonfly-hammer", G_PART_ALIAS_DFBSD_HAMMER },
+	{ "dragonfly-hammer2", G_PART_ALIAS_DFBSD_HAMMER2 },
+	{ "dragonfly-label32", G_PART_ALIAS_DFBSD },
+	{ "dragonfly-label64", G_PART_ALIAS_DFBSD64 },
+	{ "dragonfly-legacy", G_PART_ALIAS_DFBSD_LEGACY },
+	{ "dragonfly-swap", G_PART_ALIAS_DFBSD_SWAP },
+	{ "dragonfly-ufs", G_PART_ALIAS_DFBSD_UFS },
+	{ "dragonfly-vinum", G_PART_ALIAS_DFBSD_VINUM },
 	{ "ebr", G_PART_ALIAS_EBR },
 	{ "efi", G_PART_ALIAS_EFI },
 	{ "fat16", G_PART_ALIAS_MS_FAT16 },
@@ -96,28 +110,22 @@ struct g_part_alias_list {
 	{ "ms-basic-data", G_PART_ALIAS_MS_BASIC_DATA },
 	{ "ms-ldm-data", G_PART_ALIAS_MS_LDM_DATA },
 	{ "ms-ldm-metadata", G_PART_ALIAS_MS_LDM_METADATA },
+	{ "ms-recovery", G_PART_ALIAS_MS_RECOVERY },
 	{ "ms-reserved", G_PART_ALIAS_MS_RESERVED },
-	{ "ntfs", G_PART_ALIAS_MS_NTFS },
+	{ "ms-spaces", G_PART_ALIAS_MS_SPACES },
 	{ "netbsd-ccd", G_PART_ALIAS_NETBSD_CCD },
 	{ "netbsd-cgd", G_PART_ALIAS_NETBSD_CGD },
 	{ "netbsd-ffs", G_PART_ALIAS_NETBSD_FFS },
 	{ "netbsd-lfs", G_PART_ALIAS_NETBSD_LFS },
 	{ "netbsd-raid", G_PART_ALIAS_NETBSD_RAID },
 	{ "netbsd-swap", G_PART_ALIAS_NETBSD_SWAP },
+	{ "ntfs", G_PART_ALIAS_MS_NTFS },
+	{ "openbsd-data", G_PART_ALIAS_OPENBSD_DATA },
+	{ "prep-boot", G_PART_ALIAS_PREP_BOOT },
+	{ "vmware-reserved", G_PART_ALIAS_VMRESERVED },
 	{ "vmware-vmfs", G_PART_ALIAS_VMFS },
 	{ "vmware-vmkdiag", G_PART_ALIAS_VMKDIAG },
-	{ "vmware-reserved", G_PART_ALIAS_VMRESERVED },
 	{ "vmware-vsanhdr", G_PART_ALIAS_VMVSANHDR },
-	{ "dragonfly-label32", G_PART_ALIAS_DFBSD },
-	{ "dragonfly-label64", G_PART_ALIAS_DFBSD64 },
-	{ "dragonfly-swap", G_PART_ALIAS_DFBSD_SWAP },
-	{ "dragonfly-ufs", G_PART_ALIAS_DFBSD_UFS },
-	{ "dragonfly-vinum", G_PART_ALIAS_DFBSD_VINUM },
-	{ "dragonfly-ccd", G_PART_ALIAS_DFBSD_CCD },
-	{ "dragonfly-legacy", G_PART_ALIAS_DFBSD_LEGACY },
-	{ "dragonfly-hammer", G_PART_ALIAS_DFBSD_HAMMER },
-	{ "dragonfly-hammer2", G_PART_ALIAS_DFBSD_HAMMER2 },
-	{ "prep-boot", G_PART_ALIAS_PREP_BOOT },
 };
 
 SYSCTL_DECL(_kern_geom);
@@ -143,6 +151,7 @@ static g_orphan_t g_part_orphan;
 static g_spoiled_t g_part_spoiled;
 static g_start_t g_part_start;
 static g_resize_t g_part_resize;
+static g_ioctl_t g_part_ioctl;
 
 static struct g_class g_part_class = {
 	.name = "PART",
@@ -159,7 +168,8 @@ static struct g_class g_part_class = {
 	.orphan = g_part_orphan,
 	.spoiled = g_part_spoiled,
 	.start = g_part_start,
-	.resize = g_part_resize
+	.resize = g_part_resize,
+	.ioctl = g_part_ioctl,
 };
 
 DECLARE_GEOM_CLASS(g_part_class, g_part);
@@ -319,8 +329,10 @@ g_part_check_integrity(struct g_part_table *table, struct g_consumer *cp)
 			if (e1->gpe_offset > offset)
 				offset = e1->gpe_offset;
 			if ((offset + pp->stripeoffset) % pp->stripesize) {
-				DPRINTF("partition %d is not aligned on %u "
-				    "bytes\n", e1->gpe_index, pp->stripesize);
+				DPRINTF("partition %d on (%s, %s) is not "
+				    "aligned on %u bytes\n", e1->gpe_index,
+				    pp->name, table->gpt_scheme->name,
+				    pp->stripesize);
 				/* Don't treat this as a critical failure */
 			}
 		}
@@ -449,7 +461,8 @@ g_part_find_geom(const char *name)
 {
 	struct g_geom *gp;
 	LIST_FOREACH(gp, &g_part_class.geom, geom) {
-		if (!strcmp(name, gp->name))
+		if ((gp->flags & G_GEOM_WITHER) == 0 &&
+		    strcmp(name, gp->name) == 0)
 			break;
 	}
 	return (gp);
@@ -470,10 +483,6 @@ g_part_parm_geom(struct gctl_req *req, const char *name, struct g_geom **v)
 	if (gp == NULL) {
 		gctl_error(req, "%d %s '%s'", EINVAL, name, gname);
 		return (EINVAL);
-	}
-	if ((gp->flags & G_GEOM_WITHER) != 0) {
-		gctl_error(req, "%d %s", ENXIO, gname);
-		return (ENXIO);
 	}
 	*v = gp;
 	return (0);
@@ -2057,6 +2066,25 @@ g_part_dumpconf(struct sbuf *sb, const char *indent, struct g_geom *gp,
 		    table->gpt_opened ? "true": "false");
 		G_PART_DUMPCONF(table, NULL, sb, indent);
 	}
+}
+
+/*-
+ * This start routine is only called for non-trivial requests, all the
+ * trivial ones are handled autonomously by the slice code.
+ * For requests we handle here, we must call the g_io_deliver() on the
+ * bio, and return non-zero to indicate to the slice code that we did so.
+ * This code executes in the "DOWN" I/O path, this means:
+ *    * No sleeping.
+ *    * Don't grab the topology lock.
+ *    * Don't call biowait, g_getattr(), g_setattr() or g_read_data()
+ */
+static int
+g_part_ioctl(struct g_provider *pp, u_long cmd, void *data, int fflag, struct thread *td)
+{
+	struct g_part_table *table;
+
+	table = pp->geom->softc;
+	return G_PART_IOCTL(table, pp, cmd, data, fflag, td);
 }
 
 static void

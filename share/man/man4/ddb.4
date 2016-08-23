@@ -60,7 +60,7 @@
 .\"
 .\" $FreeBSD$
 .\"
-.Dd July 15, 2014
+.Dd July 13, 2016
 .Dt DDB 4
 .Os
 .Sh NAME
@@ -535,11 +535,21 @@ modifier will alter the display to show VM map
 addresses for the process and not show other information.
 .\"
 .Pp
+.It Ic show Cm all trace
+.It Ic alltrace
+.Xc
+Show a stack trace for every thread in the system.
+.Pp
 .It Ic show Cm all ttys
 Show all TTY's within the system.
 Output is similar to
 .Xr pstat 8 ,
 but also includes the address of the TTY structure.
+.\"
+.Pp
+.It Ic show Cm all vnets
+Show the same output as "show vnet" does, but lists all
+virtualized network stacks within the system.
 .\"
 .Pp
 .It Ic show Cm allchains
@@ -560,8 +570,8 @@ The same as "show pcpu", but for every CPU present in the system.
 .Pp
 .It Ic show Cm allrman
 Show information related with resource management, including
-interrupt request lines, DMA request lines, I/O ports and I/O memory
-addresses.
+interrupt request lines, DMA request lines, I/O ports, I/O memory
+addresses, and Resource IDs.
 .\"
 .Pp
 .It Ic show Cm apic
@@ -594,6 +604,13 @@ See the
 header file for more details on the exact meaning of the structure fields.
 .\"
 .Pp
+.It Ic show Cm callout Ar addr
+Show information about the callout structure
+.Vt struct callout
+present at
+.Ar addr .
+.\"
+.Pp
 .It Ic show Cm cbstat
 Show brief information about the TTY subsystem.
 .\"
@@ -618,6 +635,13 @@ for more details.
 .Pp
 .It Ic show Cm cyrixreg
 Show registers specific to the Cyrix processor.
+.\"
+.Pp
+.It Ic show Cm devmap
+Prints the contents of the static device mapping table.
+Currently only available on the
+ARM
+architecture.
 .\"
 .Pp
 .It Ic show Cm domain Ar addr
@@ -667,6 +691,13 @@ Show IDT layout.
 The first column specifies the IDT vector.
 The second one is the name of the interrupt/trap handler.
 Those functions are machine dependent.
+.\"
+.Pp
+.It Ic show Cm igi_list Ar addr
+Show information about the IGMP structure
+.Vt struct igmp_ifsoftc
+present at
+.Ar addr .
 .\"
 .Pp
 .It Ic show Cm inodedeps Op Ar addr
@@ -820,6 +851,10 @@ If the
 .Cm f
 option is specified the
 complete object is printed.
+.\"
+.Pp
+.It Ic show Cm panic
+Print the panic message if set.
 .\"
 .Pp
 .It Ic show Cm page
@@ -1053,6 +1088,13 @@ Currently, it is not possible to use this command when
 is compiled in the kernel.
 .\"
 .Pp
+.It Ic show Cm vnet Ar addr
+Prints virtualized network stack
+.Vt struct vnet
+structure present at the address
+.Ar addr .
+.\"
+.Pp
 .It Ic show Cm vnode Op Ar addr
 Prints vnode
 .Vt struct vnode
@@ -1125,7 +1167,7 @@ abbreviations.
 .Nm
 supports a basic output capture facility, which can be used to retrieve the
 results of debugging commands from userspace using
-.Xr sysctl 2 .
+.Xr sysctl 3 .
 .Ic capture on
 enables output capture;
 .Ic capture off
@@ -1428,6 +1470,52 @@ The NMI allows one to break into the debugger on a wedged machine to
 diagnose problems.
 Other bus' bridge chipsets may be able to generate NMI using bus specific
 methods.
+There are many PCI and PCIe add-in cards which can generate NMI for
+debugging.
+Modern server systems typically use IPMI to generate signals to enter the
+debugger.
+The
+.Dv devel/ipmitool
+port can be used to send the
+.Cd chassis power diag
+command which delivers an NMI to the processor.
+Embedded systems often use JTAG for debugging, but rarely use it in
+combination with
+.Nm .
+.Pp
+For serial consoles, you can enter the debugger by sending a BREAK
+condition on the serial line if
+.Cd options BREAK_TO_DEBUGGER
+is specified in the kernel.
+Most terminal emulation programs can send a break sequence with a
+special key sequence or via a menu item.
+However, in some setups, sending the break can be difficult to arrange
+or happens spuriously, so if the kernel contains
+.Cd options ALT_BREAK_TO_DEBUGGER
+then the sequence of CR TILDE CTRL-B enters the debugger;
+CR TILDE CTRL-P causes a panic instead of entering the
+debugger; and
+CR TILDE CTRL-R causes an immediate reboot.
+In all the above sequences, CR is a Carriage Return and is usually
+sent by hitting the Enter or Return key.
+TILDE is the ASCII tilde character (~).
+CTRL-x is Control x created by hitting the control key and then x
+and then releasing both.
+.Pp
+The break to enter the debugger behavior may be enabled at run-time
+by setting the
+.Xr sysctl 8
+.Dv debug.kdb.break_to_debugger
+to 1.
+The alternate sequence to enter the debugger behavior may be enabled
+at run-time by setting the
+.Xr sysctl 8
+.Dv debug.kdb.alt_break_to_debugger
+to 1.
+The debugger may be entered by setting the
+.Xr sysctl 8
+.Dv debug.kdb.enter
+to 1.
 .Sh FILES
 Header files mentioned in this manual page can be found below
 .Pa /usr/include

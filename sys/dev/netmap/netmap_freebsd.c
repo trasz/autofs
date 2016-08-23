@@ -24,6 +24,8 @@
  */
 
 /* $FreeBSD$ */
+#include "opt_inet.h"
+#include "opt_inet6.h"
 
 #include <sys/types.h>
 #include <sys/module.h>
@@ -148,9 +150,9 @@ nm_csum_tcpudp_ipv6(struct nm_ipv6hdr *ip6h, void *data,
  * Second argument is non-zero to intercept, 0 to restore
  */
 int
-netmap_catch_rx(struct netmap_adapter *na, int intercept)
+netmap_catch_rx(struct netmap_generic_adapter *gna, int intercept)
 {
-	struct netmap_generic_adapter *gna = (struct netmap_generic_adapter *)na;
+	struct netmap_adapter *na = &gna->up.up;
 	struct ifnet *ifp = na->ifp;
 
 	if (intercept) {
@@ -183,7 +185,7 @@ void
 netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
 {
 	struct netmap_adapter *na = &gna->up.up;
-	struct ifnet *ifp = na->ifp;
+	struct ifnet *ifp = netmap_generic_getifp(gna);
 
 	if (enable) {
 		na->if_transmit = ifp->if_transmit;
@@ -204,7 +206,7 @@ netmap_catch_tx(struct netmap_generic_adapter *gna, int enable)
  * of the transmission does not consume resources.
  *
  * On FreeBSD, and on multiqueue cards, we can force the queue using
- *      if ((m->m_flags & M_FLOWID) != 0)
+ *      if (M_HASHTYPE_GET(m) != M_HASHTYPE_NONE)
  *              i = m->m_pkthdr.flowid % adapter->num_queues;
  *      else
  *              i = curcpu % adapter->num_queues;
@@ -240,7 +242,7 @@ generic_xmit_frame(struct ifnet *ifp, struct mbuf *m,
 	m->m_len = m->m_pkthdr.len = len;
 	// inc refcount. All ours, we could skip the atomic
 	atomic_fetchadd_int(PNT_MBUF_REFCNT(m), 1);
-	m->m_flags |= M_FLOWID;
+	M_HASHTYPE_SET(m, M_HASHTYPE_OPAQUE);
 	m->m_pkthdr.flowid = ring_nr;
 	m->m_pkthdr.rcvif = ifp; /* used for tx notification */
 	ret = NA(ifp)->if_transmit(ifp, m);
@@ -466,6 +468,8 @@ netmap_dev_pager_ctor(void *handle, vm_ooffset_t size, vm_prot_t prot,
 	if (netmap_verbose)
 		D("handle %p size %jd prot %d foff %jd",
 			handle, (intmax_t)size, prot, (intmax_t)foff);
+	if (color)
+		*color = 0;
 	dev_ref(vmh->dev);
 	return 0;
 }
@@ -492,6 +496,7 @@ netmap_dev_pager_fault(vm_object_t object, vm_ooffset_t offset,
 {
 	struct netmap_vm_handle_t *vmh = object->handle;
 	struct netmap_priv_d *priv = vmh->priv;
+	struct netmap_adapter *na = priv->np_na;
 	vm_paddr_t paddr;
 	vm_page_t page;
 	vm_memattr_t memattr;
@@ -501,7 +506,7 @@ netmap_dev_pager_fault(vm_object_t object, vm_ooffset_t offset,
 			object, (intmax_t)offset, prot, mres);
 	memattr = object->memattr;
 	pidx = OFF_TO_IDX(offset);
-	paddr = netmap_mem_ofstophys(priv->np_mref, offset);
+	paddr = netmap_mem_ofstophys(na->nm_mem, offset);
 	if (paddr == 0)
 		return VM_PAGER_FAIL;
 
@@ -566,13 +571,13 @@ netmap_mmap_single(struct cdev *cdev, vm_ooffset_t *foff,
 	error = devfs_get_cdevpriv((void**)&priv);
 	if (error)
 		goto err_unlock;
+	if (priv->np_nifp == NULL) {
+		error = EINVAL;
+		goto err_unlock;
+	}
 	vmh->priv = priv;
-	priv->np_refcount++;
+	priv->np_refs++;
 	NMG_UNLOCK();
-
-	error = netmap_get_memory(priv);
-	if (error)
-		goto err_deref;
 
 	obj = cdev_pager_allocate(vmh, OBJT_DEVICE,
 		&netmap_cdev_pager_ops, objsize, prot,
@@ -588,7 +593,7 @@ netmap_mmap_single(struct cdev *cdev, vm_ooffset_t *foff,
 
 err_deref:
 	NMG_LOCK();
-	priv->np_refcount--;
+	priv->np_refs--;
 err_unlock:
 	NMG_UNLOCK();
 // err:
@@ -596,8 +601,18 @@ err_unlock:
 	return error;
 }
 
-
-// XXX can we remove this ?
+/*
+ * On FreeBSD the close routine is only called on the last close on
+ * the device (/dev/netmap) so we cannot do anything useful.
+ * To track close() on individual file descriptors we pass netmap_dtor() to
+ * devfs_set_cdevpriv() on open(). The FreeBSD kernel will call the destructor
+ * when the last fd pointing to the device is closed. 
+ *
+ * Note that FreeBSD does not even munmap() on close() so we also have
+ * to track mmap() ourselves, and postpone the call to
+ * netmap_dtor() is called when the process has no open fds and no active
+ * memory maps on /dev/netmap, as in linux.
+ */
 static int
 netmap_close(struct cdev *dev, int fflag, int devtype, struct thread *td)
 {
@@ -619,19 +634,20 @@ netmap_open(struct cdev *dev, int oflags, int devtype, struct thread *td)
 	(void)devtype;
 	(void)td;
 
-	// XXX wait or nowait ?
 	priv = malloc(sizeof(struct netmap_priv_d), M_DEVBUF,
 			      M_NOWAIT | M_ZERO);
 	if (priv == NULL)
 		return ENOMEM;
-
+	priv->np_refs = 1;
 	error = devfs_set_cdevpriv(priv, netmap_dtor);
-	if (error)
-	        return error;
-
-	priv->np_refcount = 1;
-
-	return 0;
+	if (error) {
+		free(priv, M_DEVBUF);
+	} else {
+		NMG_LOCK();
+		netmap_use_count++;
+		NMG_UNLOCK();
+	}
+	return error;
 }
 
 /******************** kqueue support ****************/
@@ -654,25 +670,24 @@ netmap_open(struct cdev *dev, int oflags, int devtype, struct thread *td)
  * and do not need the selrecord().
  */
 
-void freebsd_selwakeup(struct selinfo *si, int pri);
 
 void
-freebsd_selwakeup(struct selinfo *si, int pri)
+freebsd_selwakeup(struct nm_selinfo *si, int pri)
 {
 	if (netmap_verbose)
-		D("on knote %p", &si->si_note);
-	selwakeuppri(si, pri);
+		D("on knote %p", &si->si.si_note);
+	selwakeuppri(&si->si, pri);
 	/* use a non-zero hint to tell the notification from the
 	 * call done in kqueue_scan() which uses 0
 	 */
-	KNOTE_UNLOCKED(&si->si_note, 0x100 /* notification */);
+	KNOTE_UNLOCKED(&si->si.si_note, 0x100 /* notification */);
 }
 
 static void
 netmap_knrdetach(struct knote *kn)
 {
 	struct netmap_priv_d *priv = (struct netmap_priv_d *)kn->kn_hook;
-	struct selinfo *si = priv->np_rxsi;
+	struct selinfo *si = &priv->np_si[NR_RX]->si;
 
 	D("remove selinfo %p", si);
 	knlist_remove(&si->si_note, kn, 0);
@@ -682,7 +697,7 @@ static void
 netmap_knwdetach(struct knote *kn)
 {
 	struct netmap_priv_d *priv = (struct netmap_priv_d *)kn->kn_hook;
-	struct selinfo *si = priv->np_txsi;
+	struct selinfo *si = &priv->np_si[NR_TX]->si;
 
 	D("remove selinfo %p", si);
 	knlist_remove(&si->si_note, kn, 0);
@@ -754,7 +769,7 @@ netmap_kqfilter(struct cdev *dev, struct knote *kn)
 	struct netmap_priv_d *priv;
 	int error;
 	struct netmap_adapter *na;
-	struct selinfo *si;
+	struct nm_selinfo *si;
 	int ev = kn->kn_filter;
 
 	if (ev != EVFILT_READ && ev != EVFILT_WRITE) {
@@ -772,12 +787,12 @@ netmap_kqfilter(struct cdev *dev, struct knote *kn)
 		return 1;
 	}
 	/* the si is indicated in the priv */
-	si = (ev == EVFILT_WRITE) ? priv->np_txsi : priv->np_rxsi;
+	si = priv->np_si[(ev == EVFILT_WRITE) ? NR_TX : NR_RX];
 	// XXX lock(priv) ?
 	kn->kn_fop = (ev == EVFILT_WRITE) ?
 		&netmap_wfiltops : &netmap_rfiltops;
 	kn->kn_hook = priv;
-	knlist_add(&si->si_note, kn, 1);
+	knlist_add(&si->si.si_note, kn, 1);
 	// XXX unlock(priv)
 	ND("register %p %s td %p priv %p kn %p np_nifp %p kn_fp/fpop %s",
 		na, na->ifp->if_xname, curthread, priv, kn,
@@ -816,6 +831,16 @@ netmap_loader(__unused struct module *module, int event, __unused void *arg)
 		break;
 
 	case MOD_UNLOAD:
+		/*
+		 * if some one is still using netmap,
+		 * then the module can not be unloaded.
+		 */
+		if (netmap_use_count) {
+			D("netmap module can not be unloaded - netmap_use_count: %d",
+					netmap_use_count);
+			error = EBUSY;
+			break;
+		}
 		netmap_fini();
 		break;
 
@@ -829,3 +854,4 @@ netmap_loader(__unused struct module *module, int event, __unused void *arg)
 
 
 DEV_MODULE(netmap, netmap_loader, NULL);
+MODULE_VERSION(netmap, 1);

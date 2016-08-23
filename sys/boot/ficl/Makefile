@@ -15,27 +15,14 @@ BASE_SRCS=	dict.c ficl.c fileaccess.c float.c loader.c math64.c \
 
 SRCS=		${BASE_SRCS} sysdep.c softcore.c
 CLEANFILES=	softcore.c testmain testmain.o
-CFLAGS+=	-ffreestanding
 .if ${MACHINE_CPUARCH} == "i386" || \
     (${MACHINE_CPUARCH} == "amd64" && defined(FICL32))
 CFLAGS+=	-march=i386
-CFLAGS.gcc+=	-mpreferred-stack-boundary=2
-.endif
-.if ${MACHINE_CPUARCH} == "i386" || ${MACHINE_CPUARCH} == "amd64"
-CFLAGS+=	-mno-mmx -mno-3dnow -mno-sse -mno-sse2 -mno-sse3 -msoft-float
-.endif
-.if ${MACHINE_CPUARCH} == "powerpc" || ${MACHINE_CPUARCH} == "arm" || ${MACHINE_CPUARCH} == "mips"
-CFLAGS+=	-msoft-float
-.endif
-.if ${MACHINE} == "pc98"
-CFLAGS+=	-Os -DPC98
-.endif
-.if ${MACHINE_CPUARCH} == "mips"
-CFLAGS+=	-G0 -fno-pic -mno-abicalls
 .endif
 .if HAVE_PNP
 CFLAGS+=	-DHAVE_PNP
 .endif
+.include <bsd.stand.mk>
 .ifmake testmain
 CFLAGS+=	-DTESTMAIN -D_TESTMAIN
 SRCS+=		testmain.c
@@ -68,6 +55,8 @@ CFLAGS+=	-m32 -mcpu=powerpc -I.
 
 .if ${MACHINE_CPUARCH} == "amd64" && defined(FICL32)
 FICL_CPUARCH=	i386
+.elif ${MACHINE_ARCH} == "mips64" || ${MACHINE_ARCH} == "mips64el"
+FICL_CPUARCH=	mips64
 .else
 FICL_CPUARCH=	${MACHINE_CPUARCH}
 .endif
@@ -86,7 +75,7 @@ ${SRCS:M*.c:R:S/$/.o/g}: machine
 beforedepend ${OBJS}: machine
 .endif
 
-machine:
+machine: .NOMETA
 	ln -sf ${.CURDIR}/../../i386/include machine
 
 CLEANFILES+=	machine

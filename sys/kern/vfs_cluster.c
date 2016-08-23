@@ -45,6 +45,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/vnode.h>
 #include <sys/malloc.h>
 #include <sys/mount.h>
+#include <sys/racct.h>
 #include <sys/resourcevar.h>
 #include <sys/rwlock.h>
 #include <sys/vmmeter.h>
@@ -119,6 +120,8 @@ cluster_read(struct vnode *vp, u_quad_t filesize, daddr_t lblkno, long size,
 	 * get the requested block
 	 */
 	*bpp = reqbp = bp = getblk(vp, lblkno, size, 0, 0, gbflags);
+	if (bp == NULL)
+		return (EBUSY);
 	origblkno = lblkno;
 
 	/*
@@ -239,6 +242,13 @@ cluster_read(struct vnode *vp, u_quad_t filesize, daddr_t lblkno, long size,
 			BUF_KERNPROC(bp);
 		bp->b_iooffset = dbtob(bp->b_blkno);
 		bstrategy(bp);
+#ifdef RACCT
+		if (racct_enable) {
+			PROC_LOCK(curproc);
+			racct_add_buf(curproc, bp, 0);
+			PROC_UNLOCK(curproc);
+		}
+#endif /* RACCT */
 		curthread->td_ru.ru_inblock++;
 	}
 
@@ -292,13 +302,28 @@ cluster_read(struct vnode *vp, u_quad_t filesize, daddr_t lblkno, long size,
 			BUF_KERNPROC(rbp);
 		rbp->b_iooffset = dbtob(rbp->b_blkno);
 		bstrategy(rbp);
+#ifdef RACCT
+		if (racct_enable) {
+			PROC_LOCK(curproc);
+			racct_add_buf(curproc, rbp, 0);
+			PROC_UNLOCK(curproc);
+		}
+#endif /* RACCT */
 		curthread->td_ru.ru_inblock++;
 	}
 
-	if (reqbp)
-		return (bufwait(reqbp));
-	else
-		return (error);
+	if (reqbp) {
+		/*
+		 * Like bread, always brelse() the buffer when
+		 * returning an error.
+		 */
+		error = bufwait(reqbp);
+		if (error != 0) {
+			brelse(reqbp);
+			*bpp = NULL;
+		}
+	}
+	return (error);
 }
 
 /*
@@ -310,7 +335,6 @@ static struct buf *
 cluster_rbuild(struct vnode *vp, u_quad_t filesize, daddr_t lbn,
     daddr_t blkno, long size, int run, int gbflags, struct buf *fbp)
 {
-	struct bufobj *bo;
 	struct buf *bp, *tbp;
 	daddr_t bn;
 	off_t off;
@@ -344,7 +368,7 @@ cluster_rbuild(struct vnode *vp, u_quad_t filesize, daddr_t lbn,
 		return tbp;
 
 	bp = trypbuf(&cluster_pbuf_freecnt);
-	if (bp == 0)
+	if (bp == NULL)
 		return tbp;
 
 	/*
@@ -355,7 +379,6 @@ cluster_rbuild(struct vnode *vp, u_quad_t filesize, daddr_t lbn,
 	 */
 	bp->b_flags = B_ASYNC | B_CLUSTER | B_VMIO;
 	if ((gbflags & GB_UNMAPPED) != 0) {
-		bp->b_flags |= B_UNMAPPED;
 		bp->b_data = unmapped_buf;
 	} else {
 		bp->b_data = (char *)((vm_offset_t)bp->b_data |
@@ -376,7 +399,6 @@ cluster_rbuild(struct vnode *vp, u_quad_t filesize, daddr_t lbn,
 	bp->b_npages = 0;
 
 	inc = btodb(size);
-	bo = &vp->v_bufobj;
 	for (bn = blkno, i = 0; i < run; ++i, bn += inc) {
 		if (i == 0) {
 			VM_OBJECT_WLOCK(tbp->b_bufobj->bo_object);
@@ -519,9 +541,8 @@ clean_sbusy:
 	if (bp->b_bufsize > bp->b_kvasize)
 		panic("cluster_rbuild: b_bufsize(%ld) > b_kvasize(%d)\n",
 		    bp->b_bufsize, bp->b_kvasize);
-	bp->b_kvasize = bp->b_bufsize;
 
-	if ((bp->b_flags & B_UNMAPPED) == 0) {
+	if (buf_mapped(bp)) {
 		pmap_qenter(trunc_page((vm_offset_t) bp->b_data),
 		    (vm_page_t *)bp->b_pages, bp->b_npages);
 	}
@@ -542,12 +563,12 @@ cluster_callback(bp)
 	int error = 0;
 
 	/*
-	 * Must propogate errors to all the components.
+	 * Must propagate errors to all the components.
 	 */
 	if (bp->b_ioflags & BIO_ERROR)
 		error = bp->b_error;
 
-	if ((bp->b_flags & B_UNMAPPED) == 0) {
+	if (buf_mapped(bp)) {
 		pmap_qremove(trunc_page((vm_offset_t) bp->b_data),
 		    bp->b_npages);
 	}
@@ -815,12 +836,6 @@ cluster_wbuild(struct vnode *vp, long size, daddr_t start_lbn, int len,
 			--len;
 			continue;
 		}
-		if (tbp->b_pin_count >  0) {
-			BUF_UNLOCK(tbp);
-			++start_lbn;
-			--len;
-			continue;
-		}
 		bremfree(tbp);
 		tbp->b_flags &= ~B_DONE;
 
@@ -873,7 +888,6 @@ cluster_wbuild(struct vnode *vp, long size, daddr_t start_lbn, int len,
 			bp->b_data = (char *)((vm_offset_t)bp->b_data |
 			    ((vm_offset_t)tbp->b_data & PAGE_MASK));
 		} else {
-			bp->b_flags |= B_UNMAPPED;
 			bp->b_data = unmapped_buf;
 		}
 		bp->b_flags |= B_CLUSTER | (tbp->b_flags & (B_VMIO |
@@ -929,14 +943,6 @@ cluster_wbuild(struct vnode *vp, long size, daddr_t start_lbn, int len,
 				    tbp->b_blkno) ||
 				  ((tbp->b_npages + bp->b_npages) >
 				    (vp->v_mount->mnt_iosize_max / PAGE_SIZE))) {
-					BUF_UNLOCK(tbp);
-					break;
-				}
-
-				/*
-				 * Do not pull in pinned buffers.
-				 */
-				if (tbp->b_pin_count > 0) {
 					BUF_UNLOCK(tbp);
 					break;
 				}
@@ -1006,7 +1012,7 @@ cluster_wbuild(struct vnode *vp, long size, daddr_t start_lbn, int len,
 				tbp, b_cluster.cluster_entry);
 		}
 	finishcluster:
-		if ((bp->b_flags & B_UNMAPPED) == 0) {
+		if (buf_mapped(bp)) {
 			pmap_qenter(trunc_page((vm_offset_t) bp->b_data),
 			    (vm_page_t *)bp->b_pages, bp->b_npages);
 		}
@@ -1014,7 +1020,6 @@ cluster_wbuild(struct vnode *vp, long size, daddr_t start_lbn, int len,
 			panic(
 			    "cluster_wbuild: b_bufsize(%ld) > b_kvasize(%d)\n",
 			    bp->b_bufsize, bp->b_kvasize);
-		bp->b_kvasize = bp->b_bufsize;
 		totalwritten += bp->b_bufsize;
 		bp->b_dirtyoff = 0;
 		bp->b_dirtyend = bp->b_bufsize;

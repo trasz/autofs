@@ -112,7 +112,7 @@ typedef	__useconds_t	useconds_t;
 #define	_POSIX_THREAD_PRIO_INHERIT	200112L
 #define	_POSIX_THREAD_PRIO_PROTECT	200112L
 #define	_POSIX_THREAD_PRIORITY_SCHEDULING 200112L
-#define	_POSIX_THREAD_PROCESS_SHARED	-1
+#define	_POSIX_THREAD_PROCESS_SHARED	200112L
 #define	_POSIX_THREAD_SAFE_FUNCTIONS	-1
 #define	_POSIX_THREAD_SPORADIC_SERVER	-1
 #define	_POSIX_THREADS			200112L
@@ -327,9 +327,9 @@ int	 close(int);
 void	 closefrom(int);
 int	 dup(int);
 int	 dup2(int, int);
-int	 execl(const char *, const char *, ...);
+int	 execl(const char *, const char *, ...) __null_sentinel;
 int	 execle(const char *, const char *, ...);
-int	 execlp(const char *, const char *, ...);
+int	 execlp(const char *, const char *, ...) __null_sentinel;
 int	 execv(const char *, char * const *);
 int	 execve(const char *, char * const *, char * const *);
 int	 execvp(const char *, char * const *);
@@ -384,6 +384,7 @@ extern int optind, opterr, optopt;
 /* ISO/IEC 9945-1: 1996 */
 #if __POSIX_VISIBLE >= 199506 || __XSI_VISIBLE
 int	 fsync(int);
+int	 fdatasync(int);
 
 /*
  * ftruncate() was in the POSIX Realtime Extension (it's used for shared
@@ -453,7 +454,6 @@ int	 encrypt(char *, int);
 long	 gethostid(void);
 int	 lockf(int, int, off_t);
 int	 nice(int);
-int	 setpgrp(pid_t _pid, pid_t _pgrp); /* obsoleted by setpgid() */
 int	 setregid(gid_t, gid_t);
 int	 setreuid(uid_t, uid_t);
 
@@ -485,11 +485,18 @@ pid_t	 vfork(void) __returns_twice;
 
 #if __BSD_VISIBLE
 struct timeval;				/* select(2) */
+
+struct crypt_data {
+	int	initialized;	/* For compatibility with glibc. */
+	char	__buf[256];	/* Buffer returned by crypt_r(). */
+};
+
 int	 acct(const char *);
 int	 async_daemon(void);
 int	 check_utility_compat(const char *);
 const char *
 	 crypt_get_format(void);
+char	*crypt_r(const char *, const char *, struct crypt_data *);
 int	 crypt_set_format(const char *);
 int	 des_cipher(const char *, char *, long, int);
 int	 des_setkey(const char *key);
@@ -567,6 +574,7 @@ int	 setkey(const char *);
 int	 setlogin(const char *);
 int	 setloginclass(const char *);
 void	*setmode(const char *);
+int	 setpgrp(pid_t, pid_t);			/* obsoleted by setpgid() */
 void	 setproctitle(const char *_fmt, ...) __printf0like(1, 2);
 int	 setresgid(gid_t, gid_t, gid_t);
 int	 setresuid(uid_t, uid_t, uid_t);

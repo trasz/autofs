@@ -50,6 +50,7 @@ __FBSDID("$FreeBSD$");
 #include "opt_isa.h"
 #include "opt_kdb.h"
 #include "opt_npx.h"
+#include "opt_stack.h"
 #include "opt_trap.h"
 
 #include <sys/param.h>
@@ -94,6 +95,7 @@ PMC_SOFT_DEFINE( , , page_fault, write);
 #ifdef SMP
 #include <machine/smp.h>
 #endif
+#include <machine/stack.h>
 #include <machine/tss.h>
 #include <machine/vm86.h>
 
@@ -153,7 +155,7 @@ static char *trap_msg[] = {
 };
 
 #if defined(I586_CPU) && !defined(NO_F00F_HACK)
-extern int has_f00f_bug;
+int has_f00f_bug = 0;		/* Initialized so that it can be patched. */
 #endif
 
 #ifdef KDB
@@ -219,18 +221,25 @@ trap(struct trapframe *frame)
 		goto out;
 	}
 
-#ifdef	HWPMC_HOOKS
-	/*
-	 * CPU PMCs interrupt using an NMI so we check for that first.
-	 * If the HWPMC module is active, 'pmc_hook' will point to
-	 * the function to be called.  A return value of '1' from the
-	 * hook means that the NMI was handled by it and that we can
-	 * return immediately.
-	 */
-	if (type == T_NMI && pmc_intr &&
-	    (*pmc_intr)(PCPU_GET(cpuid), frame))
-	    goto out;
+	if (type == T_NMI) {
+#ifdef HWPMC_HOOKS
+		/*
+		 * CPU PMCs interrupt using an NMI so we check for that first.
+		 * If the HWPMC module is active, 'pmc_hook' will point to
+		 * the function to be called.  A non-zero return value from the
+		 * hook means that the NMI was consumed by it and that we can
+		 * return immediately.
+		 */
+		if (pmc_intr != NULL &&
+		    (*pmc_intr)(PCPU_GET(cpuid), frame) != 0)
+			goto out;
 #endif
+
+#ifdef STACK
+		if (stack_nmi_handler(frame) != 0)
+			goto out;
+#endif
+	}
 
 	if (type == T_MCHK) {
 		mca_intr();
@@ -246,7 +255,7 @@ trap(struct trapframe *frame)
 	 * flag is cleared and finally re-scheduling is enabled.
 	 */
 	if ((type == T_PROTFLT || type == T_PAGEFLT) &&
-	    dtrace_trap_func != NULL && (*dtrace_trap_func)(frame))
+	    dtrace_trap_func != NULL && (*dtrace_trap_func)(frame, type))
 		goto out;
 #endif
 
@@ -306,8 +315,8 @@ trap(struct trapframe *frame)
 		td->td_pticks = 0;
 		td->td_frame = frame;
 		addr = frame->tf_eip;
-		if (td->td_ucred != p->p_ucred) 
-			cred_update_thread(td);
+		if (td->td_cowgen != p->p_cowgen)
+			thread_cow_update(td);
 
 		switch (type) {
 		case T_PRIVINFLT:	/* privileged instruction fault */
@@ -531,8 +540,8 @@ trap(struct trapframe *frame)
 
 		case T_DNA:
 #ifdef DEV_NPX
-			KASSERT(!PCB_USER_FPU(td->td_pcb),
-			    ("Unregistered use of FPU in kernel"));
+			if (PCB_USER_FPU(td->td_pcb))
+				panic("Unregistered use of FPU in kernel");
 			if (npxdna())
 				goto out;
 #endif
@@ -782,7 +791,6 @@ trap_pfault(frame, usermode, eva)
 	vm_offset_t eva;
 {
 	vm_offset_t va;
-	struct vmspace *vm;
 	vm_map_t map;
 	int rv = 0;
 	vm_prot_t ftype;
@@ -852,14 +860,7 @@ trap_pfault(frame, usermode, eva)
 
 		map = kernel_map;
 	} else {
-		/*
-		 * This is a fault on non-kernel virtual memory.  If either
-		 * p or p->p_vmspace is NULL, then the fault is fatal.
-		 */
-		if (p == NULL || (vm = p->p_vmspace) == NULL)
-			goto nogo;
-
-		map = &vm->vm_map;
+		map = &p->p_vmspace->vm_map;
 
 		/*
 		 * When accessing a user-space address, kernel must be
@@ -881,35 +882,15 @@ trap_pfault(frame, usermode, eva)
 	 */
 	if (frame->tf_err & PGEX_W)
 		ftype = VM_PROT_WRITE;
-#ifdef PAE
+#if defined(PAE) || defined(PAE_TABLES)
 	else if ((frame->tf_err & PGEX_I) && pg_nx != 0)
 		ftype = VM_PROT_EXECUTE;
 #endif
 	else
 		ftype = VM_PROT_READ;
 
-	if (map != kernel_map) {
-		/*
-		 * Keep swapout from messing with us during this
-		 *	critical time.
-		 */
-		PROC_LOCK(p);
-		++p->p_lock;
-		PROC_UNLOCK(p);
-
-		/* Fault in the user page: */
-		rv = vm_fault(map, va, ftype, VM_FAULT_NORMAL);
-
-		PROC_LOCK(p);
-		--p->p_lock;
-		PROC_UNLOCK(p);
-	} else {
-		/*
-		 * Don't have to worry about process locking or stacks in the
-		 * kernel.
-		 */
-		rv = vm_fault(map, va, ftype, VM_FAULT_NORMAL);
-	}
+	/* Fault in the page. */
+	rv = vm_fault(map, va, ftype, VM_FAULT_NORMAL);
 	if (rv == KERN_SUCCESS) {
 #ifdef HWPMC_HOOKS
 		if (ftype == VM_PROT_READ || ftype == VM_PROT_WRITE) {
@@ -998,12 +979,8 @@ trap_fatal(frame, eva)
 	if (frame->tf_eflags & PSL_VM)
 		printf("vm86, ");
 	printf("IOPL = %d\n", (frame->tf_eflags & PSL_IOPL) >> 12);
-	printf("current process		= ");
-	if (curproc) {
-		printf("%lu (%s)\n", (u_long)curproc->p_pid, curthread->td_name);
-	} else {
-		printf("Idle\n");
-	}
+	printf("current process		= %d (%s)\n",
+	    curproc->p_pid, curthread->td_name);
 
 #ifdef KDB
 	if (debugger_on_panic || kdb_active) {
@@ -1059,6 +1036,7 @@ cpu_fetch_syscall_args(struct thread *td, struct syscall_args *sa)
 	struct proc *p;
 	struct trapframe *frame;
 	caddr_t params;
+	long tmp;
 	int error;
 
 	p = td->td_proc;
@@ -1074,14 +1052,20 @@ cpu_fetch_syscall_args(struct thread *td, struct syscall_args *sa)
 		/*
 		 * Code is first argument, followed by actual args.
 		 */
-		sa->code = fuword(params);
+		error = fueword(params, &tmp);
+		if (error == -1)
+			return (EFAULT);
+		sa->code = tmp;
 		params += sizeof(int);
 	} else if (sa->code == SYS___syscall) {
 		/*
 		 * Like syscall, but code is a quad, so as to maintain
 		 * quad alignment for the rest of the arguments.
 		 */
-		sa->code = fuword(params);
+		error = fueword(params, &tmp);
+		if (error == -1)
+			return (EFAULT);
+		sa->code = tmp;
 		params += sizeof(quad_t);
 	}
 
@@ -1150,7 +1134,7 @@ syscall(struct trapframe *frame)
 	KASSERT(PCB_USER_FPU(td->td_pcb),
 	    ("System call %s returning with kernel FPU ctx leaked",
 	     syscallname(td->td_proc, sa.code)));
-	KASSERT(td->td_pcb->pcb_save == &td->td_pcb->pcb_user_save,
+	KASSERT(td->td_pcb->pcb_save == get_pcb_user_save_td(td),
 	    ("System call %s returning with mangled pcb_save",
 	     syscallname(td->td_proc, sa.code)));
 

@@ -522,8 +522,8 @@ usb_make_device_desc(struct usb_temp_setup *temp,
  *	usb_hw_ep_match
  *
  * Return values:
- *    0: The endpoint profile does not match the criterias
- * Else: The endpoint profile matches the criterias
+ *    0: The endpoint profile does not match the criteria
+ * Else: The endpoint profile matches the criteria
  *------------------------------------------------------------------------*/
 static uint8_t
 usb_hw_ep_match(const struct usb_hw_ep_profile *pf,
@@ -1370,6 +1370,12 @@ usb_temp_setup_by_index(struct usb_device *udev, uint16_t index)
 		break;
 	case USB_TEMP_PHONE:
 		err = usb_temp_setup(udev, &usb_template_phone);
+		break;
+	case USB_TEMP_SERIALNET:
+		err = usb_temp_setup(udev, &usb_template_serialnet);
+		break;
+	case USB_TEMP_MIDI:
+		err = usb_temp_setup(udev, &usb_template_midi);
 		break;
 	default:
 		return (USB_ERR_INVAL);

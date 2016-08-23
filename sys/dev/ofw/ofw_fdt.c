@@ -96,6 +96,27 @@ OFW_DEF(ofw_fdt);
 static void *fdtp = NULL;
 
 static int
+sysctl_handle_dtb(SYSCTL_HANDLER_ARGS)
+{
+
+        return (sysctl_handle_opaque(oidp, fdtp, fdt_totalsize(fdtp), req));
+}
+
+static void
+sysctl_register_fdt_oid(void *arg)
+{
+
+	/* If there is no FDT registered, skip adding the sysctl */
+	if (fdtp == NULL)
+		return;
+
+	SYSCTL_ADD_PROC(NULL, SYSCTL_STATIC_CHILDREN(_hw_fdt), OID_AUTO, "dtb",
+	    CTLTYPE_OPAQUE | CTLFLAG_RD, NULL, 0, sysctl_handle_dtb, "",
+	    "Device Tree Blob");
+}
+SYSINIT(dtb_oid, SI_SUB_KMEM, SI_ORDER_ANY, sysctl_register_fdt_oid, 0);
+
+static int
 ofw_fdt_init(ofw_t ofw, void *data)
 {
 	int err;
@@ -208,7 +229,7 @@ ofw_fdt_instance_to_package(ofw_t ofw, ihandle_t instance)
 {
 
 	/* Where real OF uses ihandles in the tree, FDT uses xref phandles */
-	return (OF_xref_phandle(instance));
+	return (OF_node_from_xref(instance));
 }
 
 /* Get the length of a property of a package. */
@@ -222,14 +243,24 @@ ofw_fdt_getproplen(ofw_t ofw, phandle_t package, const char *propname)
 	if (offset < 0)
 		return (-1);
 
-	if (strcmp(propname, "name") == 0) {
+	len = -1;
+	prop = fdt_get_property(fdtp, offset, propname, &len);
+
+	if (prop == NULL && strcmp(propname, "name") == 0) {
 		/* Emulate the 'name' property */
 		fdt_get_name(fdtp, offset, &len);
 		return (len + 1);
 	}
 
-	len = -1;
-	prop = fdt_get_property(fdtp, offset, propname, &len);
+	if (prop == NULL && offset == fdt_path_offset(fdtp, "/chosen")) {
+		if (strcmp(propname, "fdtbootcpu") == 0)
+			return (sizeof(cell_t));
+		if (strcmp(propname, "fdtmemreserv") == 0)
+			return (sizeof(uint64_t)*2*fdt_num_mem_rsv(fdtp));
+	}
+
+	if (prop == NULL)
+		return (-1);
 
 	return (len);
 }
@@ -242,12 +273,15 @@ ofw_fdt_getprop(ofw_t ofw, phandle_t package, const char *propname, void *buf,
 	const void *prop;
 	const char *name;
 	int len, offset;
+	uint32_t cpuid;
 
 	offset = fdt_phandle_offset(package);
 	if (offset < 0)
 		return (-1);
 
-	if (strcmp(propname, "name") == 0) {
+	prop = fdt_getprop(fdtp, offset, propname, &len);
+
+	if (prop == NULL && strcmp(propname, "name") == 0) {
 		/* Emulate the 'name' property */
 		name = fdt_get_name(fdtp, offset, &len);
 		strncpy(buf, name, buflen);
@@ -256,7 +290,18 @@ ofw_fdt_getprop(ofw_t ofw, phandle_t package, const char *propname, void *buf,
 		return (len + 1);
 	}
 
-	prop = fdt_getprop(fdtp, offset, propname, &len);
+	if (prop == NULL && offset == fdt_path_offset(fdtp, "/chosen")) {
+		if (strcmp(propname, "fdtbootcpu") == 0) {
+			cpuid = cpu_to_fdt32(fdt_boot_cpuid_phys(fdtp));
+			len = sizeof(cpuid);
+			prop = &cpuid;
+		}
+		if (strcmp(propname, "fdtmemreserv") == 0) {
+			prop = (char *)fdtp + fdt_off_mem_rsvmap(fdtp);
+			len = sizeof(uint64_t)*2*fdt_num_mem_rsv(fdtp);
+		}
+	}
+
 	if (prop == NULL)
 		return (-1);
 
@@ -370,6 +415,7 @@ ofw_fdt_package_to_path(ofw_t ofw, phandle_t package, char *buf, size_t len)
 	return (-1);
 }
 
+#if defined(__arm__) || defined(__powerpc__)
 static int
 ofw_fdt_fixup(ofw_t ofw)
 {
@@ -403,10 +449,12 @@ ofw_fdt_fixup(ofw_t ofw)
 
 	return (0);
 }
+#endif
 
 static int
 ofw_fdt_interpret(ofw_t ofw, const char *cmd, int nret, cell_t *retvals)
 {
+#if defined(__arm__) || defined(__powerpc__)
 	int rv;
 
 	/*
@@ -425,4 +473,7 @@ ofw_fdt_interpret(ofw_t ofw, const char *cmd, int nret, cell_t *retvals)
 		retvals[0] = rv;
 
 	return (rv);
+#else
+	return (0);
+#endif
 }

@@ -138,6 +138,9 @@ static struct g_part_mbr_alias {
 	{ DOSPTYP_PPCBOOT,	G_PART_ALIAS_PREP_BOOT },
 	{ DOSPTYP_VMFS,		G_PART_ALIAS_VMFS },
 	{ DOSPTYP_VMKDIAG,	G_PART_ALIAS_VMKDIAG },
+	{ DOSPTYP_APPLE_UFS,	G_PART_ALIAS_APPLE_UFS },
+	{ DOSPTYP_APPLE_BOOT,	G_PART_ALIAS_APPLE_BOOT },
+	{ DOSPTYP_HFS,		G_PART_ALIAS_APPLE_HFS },
 };
 
 static int
@@ -155,8 +158,7 @@ mbr_parse_type(const char *type, u_char *dp_typ)
 		*dp_typ = (u_char)lt;
 		return (0);
 	}
-	for (i = 0;
-	    i < sizeof(mbr_alias_match) / sizeof(mbr_alias_match[0]); i++) {
+	for (i = 0; i < nitems(mbr_alias_match); i++) {
 		alias = g_part_alias_name(mbr_alias_match[i].alias);
 		if (strcasecmp(type, alias) == 0) {
 			*dp_typ = mbr_alias_match[i].typ;
@@ -557,8 +559,7 @@ g_part_mbr_type(struct g_part_table *basetable, struct g_part_entry *baseentry,
 	int i;
 
 	entry = (struct g_part_mbr_entry *)baseentry;
-	for (i = 0;
-	    i < sizeof(mbr_alias_match) / sizeof(mbr_alias_match[0]); i++) {
+	for (i = 0; i < nitems(mbr_alias_match); i++) {
 		if (mbr_alias_match[i].typ == entry->ent.dp_typ)
 			return (g_part_alias_name(mbr_alias_match[i].alias));
 	}

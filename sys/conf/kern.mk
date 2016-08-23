@@ -7,6 +7,7 @@ CWARNFLAGS?=	-Wall -Wredundant-decls -Wnested-externs -Wstrict-prototypes \
 		-Wmissing-prototypes -Wpointer-arith -Winline -Wcast-qual \
 		-Wundef -Wno-pointer-sign ${FORMAT_EXTENSIONS} \
 		-Wmissing-include-dirs -fdiagnostics-show-option \
+		-Wno-unknown-pragmas \
 		${CWARNEXTRA}
 #
 # The following flags are next up for working on:
@@ -17,29 +18,63 @@ CWARNFLAGS?=	-Wall -Wredundant-decls -Wnested-externs -Wstrict-prototypes \
 # a false positive.
 .if ${COMPILER_TYPE} == "clang"
 NO_WCONSTANT_CONVERSION=	-Wno-constant-conversion
-NO_WARRAY_BOUNDS=		-Wno-array-bounds
 NO_WSHIFT_COUNT_NEGATIVE=	-Wno-shift-count-negative
 NO_WSHIFT_COUNT_OVERFLOW=	-Wno-shift-count-overflow
-NO_WUNUSED_VALUE=		-Wno-unused-value
 NO_WSELF_ASSIGN=		-Wno-self-assign
-NO_WFORMAT_SECURITY=		-Wno-format-security
 NO_WUNNEEDED_INTERNAL_DECL=	-Wno-unneeded-internal-declaration
 NO_WSOMETIMES_UNINITIALIZED=	-Wno-error-sometimes-uninitialized
+NO_WCAST_QUAL=			-Wno-cast-qual
 # Several other warnings which might be useful in some cases, but not severe
 # enough to error out the whole kernel build.  Display them anyway, so there is
 # some incentive to fix them eventually.
 CWARNEXTRA?=	-Wno-error-tautological-compare -Wno-error-empty-body \
-		-Wno-error-parentheses-equality -Wno-error-unused-function
+		-Wno-error-parentheses-equality -Wno-error-unused-function \
+		-Wno-error-pointer-sign
+.if ${COMPILER_VERSION} >= 30700
+CWARNEXTRA+=	-Wno-error-shift-negative-value
 .endif
 
-.if ${COMPILER_TYPE} == "gcc" && ${COMPILER_VERSION} >= 40300
-CWARNEXTRA?=	-Wno-inline
+CLANG_NO_IAS= -no-integrated-as
+.if ${COMPILER_VERSION} < 30500
+# XXX: clang < 3.5 integrated-as doesn't grok .codeNN directives
+CLANG_NO_IAS34= -no-integrated-as
+.endif
+.endif
+
+.if ${COMPILER_TYPE} == "gcc"
+.if ${COMPILER_VERSION} >= 40800
+# Catch-all for all the things that are in our tree, but for which we're
+# not yet ready for this compiler.
+CWARNEXTRA?=	-Wno-error=address				\
+		-Wno-error=aggressive-loop-optimizations	\
+		-Wno-error=array-bounds				\
+		-Wno-error=attributes				\
+		-Wno-error=cast-qual				\
+		-Wno-error=enum-compare				\
+		-Wno-error=inline				\
+		-Wno-error=maybe-uninitialized			\
+		-Wno-error=overflow				\
+		-Wno-error=sequence-point			\
+		-Wno-error=strict-overflow			\
+		-Wno-error=unused-but-set-variable
+.if ${COMPILER_VERSION} >= 60100
+CWARNEXTRA+=	-Wno-error=misleading-indentation		\
+		-Wno-error=nonnull-compare			\
+		-Wno-error=shift-overflow			\
+		-Wno-error=tautological-compare
+.endif
+.else
+# For gcc 4.2, eliminate the too-often-wrong warnings about uninitialized vars.
+CWARNEXTRA?=	-Wno-uninitialized
+.endif
 .endif
 
 # External compilers may not support our format extensions.  Allow them
 # to be disabled.  WARNING: format checking is disabled in this case.
 .if ${MK_FORMAT_EXTENSIONS} == "no"
 FORMAT_EXTENSIONS=	-Wno-format
+.elif ${COMPILER_TYPE} == "clang" && ${COMPILER_VERSION} >= 30600
+FORMAT_EXTENSIONS=	-D__printf__=__freebsd_kprintf__
 .else
 FORMAT_EXTENSIONS=	-fformat-extensions
 .endif
@@ -71,6 +106,18 @@ INLINE_LIMIT?=	8000
 .endif
 
 .if ${MACHINE_CPUARCH} == "arm"
+INLINE_LIMIT?=	8000
+.endif
+
+.if ${MACHINE_CPUARCH} == "aarch64"
+# We generally don't want fpu instructions in the kernel.
+CFLAGS += -mgeneral-regs-only
+# Reserve x18 for pcpu data
+CFLAGS += -ffixed-x18
+.endif
+
+.if ${MACHINE_CPUARCH} == "riscv"
+CFLAGS.gcc+=	-mcmodel=medany
 INLINE_LIMIT?=	8000
 .endif
 
@@ -113,7 +160,9 @@ INLINE_LIMIT?=	8000
 # Also explicitly disable Altivec instructions inside the kernel.
 #
 .if ${MACHINE_CPUARCH} == "powerpc"
-CFLAGS+=	-msoft-float -mno-altivec
+CFLAGS+=	-mno-altivec
+CFLAGS.clang+=	-mllvm -disable-ppc-float-in-variadic=true
+CFLAGS.gcc+=	-msoft-float
 INLINE_LIMIT?=	15000
 .endif
 
@@ -121,7 +170,7 @@ INLINE_LIMIT?=	15000
 # Use dot symbols on powerpc64 to make ddb happy
 #
 .if ${MACHINE_ARCH} == "powerpc64"
-CFLAGS+=	-mcall-aixdesc
+CFLAGS.gcc+=	-mcall-aixdesc
 .endif
 
 #
@@ -137,6 +186,14 @@ INLINE_LIMIT?=	8000
 # assumption that the program is linked against libc.  Stop this.
 #
 CFLAGS+=	-ffreestanding
+
+#
+# The C standard leaves signed integer overflow behavior undefined.
+# gcc and clang opimizers take advantage of this.  The kernel makes
+# use of signed integer wraparound mechanics so we need the compiler
+# to treat it as a wraparound and not take shortcuts.
+# 
+CFLAGS+=	-fwrapv
 
 #
 # GCC SSP support
@@ -157,4 +214,33 @@ CFLAGS+=	-fstack-protector
 CFLAGS+=	-gdwarf-2
 .endif
 
-CFLAGS+= ${CFLAGS.${COMPILER_TYPE}}
+CFLAGS+= ${CWARNFLAGS:M*} ${CWARNFLAGS.${.IMPSRC:T}}
+CFLAGS+= ${CFLAGS.${COMPILER_TYPE}} ${CFLAGS.${.IMPSRC:T}}
+
+# Tell bmake not to mistake standard targets for things to be searched for
+# or expect to ever be up-to-date.
+PHONY_NOTMAIN = afterdepend afterinstall all beforedepend beforeinstall \
+		beforelinking build build-tools buildfiles buildincludes \
+		checkdpadd clean cleandepend cleandir cleanobj configure \
+		depend distclean distribute exe \
+		html includes install installfiles installincludes lint \
+		obj objlink objs objwarn \
+		realinstall regress \
+		tags whereobj
+
+.PHONY: ${PHONY_NOTMAIN}
+.NOTMAIN: ${PHONY_NOTMAIN}
+
+CSTD=		c99
+
+.if ${CSTD} == "k&r"
+CFLAGS+=        -traditional
+.elif ${CSTD} == "c89" || ${CSTD} == "c90"
+CFLAGS+=        -std=iso9899:1990
+.elif ${CSTD} == "c94" || ${CSTD} == "c95"
+CFLAGS+=        -std=iso9899:199409
+.elif ${CSTD} == "c99"
+CFLAGS+=        -std=iso9899:1999
+.else # CSTD
+CFLAGS+=        -std=${CSTD}
+.endif # CSTD

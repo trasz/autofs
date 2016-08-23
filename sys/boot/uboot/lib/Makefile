@@ -27,7 +27,7 @@ LOADER_FDT_SUPPORT=	no
 .endif
 
 .if ${LOADER_FDT_SUPPORT} == "yes"
-CFLAGS+= -DLOADER_FDT_SUPPORT
+CFLAGS+= -DLOADER_FDT_SUPPORT -I${.CURDIR}/../../fdt
 .endif
 
 # Pick up FDT includes
@@ -41,11 +41,12 @@ CFLAGS+=	-I${.CURDIR}/../../common -I${.CURDIR}/../../.. -I.
 CFLAGS+= -DDISK_DEBUG
 .endif
 
-machine:
+machine: .NOMETA
 	ln -sf ${.CURDIR}/../../../${MACHINE_CPUARCH}/include machine
 
 CLEANFILES+=	machine
 
+.include <bsd.stand.mk>
 .include <bsd.lib.mk>
 
 beforedepend ${OBJS}: machine

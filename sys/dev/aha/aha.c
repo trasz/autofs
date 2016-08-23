@@ -301,7 +301,7 @@ aha_probe(struct aha_softc* aha)
 	 * This really should be replaced with the esetup command, since
 	 * that appears to be more reliable.  This becomes more and more
 	 * true over time as we discover more cards that don't read the
-	 * geometry register consistantly.
+	 * geometry register consistently.
 	 */
 	if (aha->boardid <= 0x42) {
 		/* Wait 10ms before reading */
@@ -458,7 +458,7 @@ aha_init(struct aha_softc* aha)
 				/* highaddr	*/ BUS_SPACE_MAXADDR,
 				/* filter	*/ NULL,
 				/* filterarg	*/ NULL,
-				/* maxsize	*/ MAXBSIZE,
+				/* maxsize	*/ DFLTPHYS,
 				/* nsegments	*/ AHA_NSEG,
 				/* maxsegsz	*/ BUS_SPACE_MAXSIZE_24BIT,
 				/* flags	*/ BUS_DMA_ALLOCNOW,
@@ -1047,8 +1047,8 @@ ahaexecuteccb(void *arg, bus_dma_segment_t *dm_segs, int nseg, int error)
 	ccb->ccb_h.status |= CAM_SIM_QUEUED;
 	LIST_INSERT_HEAD(&aha->pending_ccbs, &ccb->ccb_h, sim_links.le);
 
-	callout_reset(&accb->timer, (ccb->ccb_h.timeout * hz) / 1000,
-	    ahatimeout, accb);
+	callout_reset_sbt(&accb->timer, SBT_1MS * ccb->ccb_h.timeout, 0,
+	    ahatimeout, accb, 0);
 
 	/* Tell the adapter about this command */
 	if (aha->cur_outbox->action_code != AMBO_FREE) {
@@ -1161,7 +1161,7 @@ ahadone(struct aha_softc *aha, struct aha_ccb *accb, aha_mbi_comp_code_t comp_co
 		struct ccb_hdr *ccb_h;
 		cam_status error;
 
-		/* Notify all clients that a BDR occured */
+		/* Notify all clients that a BDR occurred */
 		error = xpt_create_path(&path, /*periph*/NULL,
 		    cam_sim_path(aha->sim), accb->hccb.target,
 		    CAM_LUN_WILDCARD);
@@ -1181,9 +1181,9 @@ ahadone(struct aha_softc *aha, struct aha_ccb *accb, aha_mbi_comp_code_t comp_co
 				ccb_h = LIST_NEXT(ccb_h, sim_links.le);
 				ahadone(aha, pending_accb, AMBI_ERROR);
 			} else {
-				callout_reset(&pending_accb->timer,
-				    (ccb_h->timeout * hz) / 1000,
-				    ahatimeout, pending_accb);
+				callout_reset_sbt(&pending_accb->timer,
+				    SBT_1MS * ccb_h->timeout, 0, ahatimeout,
+				    pending_accb, 0);
 				ccb_h = LIST_NEXT(ccb_h, sim_links.le);
 			}
 		}
@@ -1204,7 +1204,7 @@ ahadone(struct aha_softc *aha, struct aha_ccb *accb, aha_mbi_comp_code_t comp_co
 		break;
 	case AMBI_ABORT:
 	case AMBI_ERROR:
-		/* An error occured */
+		/* An error occurred */
 		if (accb->hccb.opcode < INITIATOR_CCB_WRESID)
 			csio->resid = 0;
 		else
@@ -1747,7 +1747,7 @@ ahatimeout(void *arg)
 	 * means that the driver attempts to clear only one error
 	 * condition at a time.  In general, timeouts that occur
 	 * close together are related anyway, so there is no benefit
-	 * in attempting to handle errors in parrallel.  Timeouts will
+	 * in attempting to handle errors in parallel.  Timeouts will
 	 * be reinstated when the recovery process ends.
 	 */
 	if ((accb->flags & ACCB_DEVICE_RESET) == 0) {

@@ -205,8 +205,10 @@ ufs_create(ap)
 	error =
 	    ufs_makeinode(MAKEIMODE(ap->a_vap->va_type, ap->a_vap->va_mode),
 	    ap->a_dvp, ap->a_vpp, ap->a_cnp);
-	if (error)
+	if (error != 0)
 		return (error);
+	if ((ap->a_cnp->cn_flags & MAKEENTRY) != 0)
+		cache_enter(ap->a_dvp, *ap->a_vpp, ap->a_cnp);
 	return (0);
 }
 
@@ -623,7 +625,8 @@ ufs_setattr(ap)
 			 */
 			return (0);
 		}
-		if ((error = UFS_TRUNCATE(vp, vap->va_size, IO_NORMAL,
+		if ((error = UFS_TRUNCATE(vp, vap->va_size, IO_NORMAL |
+		    ((vap->va_vaflags & VA_SYNC) != 0 ? IO_SYNC : 0),
 		    cred)) != 0)
 			return (error);
 	}
@@ -637,19 +640,14 @@ ufs_setattr(ap)
 		error = vn_utimes_perm(vp, vap, cred, td);
 		if (error != 0)
 			return (error);
-		if (vap->va_atime.tv_sec != VNOVAL)
-			ip->i_flag |= IN_ACCESS;
-		if (vap->va_mtime.tv_sec != VNOVAL)
-			ip->i_flag |= IN_CHANGE | IN_UPDATE;
-		if (vap->va_birthtime.tv_sec != VNOVAL &&
-		    ip->i_ump->um_fstype == UFS2)
-			ip->i_flag |= IN_MODIFIED;
-		ufs_itimes(vp);
+		ip->i_flag |= IN_CHANGE | IN_MODIFIED;
 		if (vap->va_atime.tv_sec != VNOVAL) {
+			ip->i_flag &= ~IN_ACCESS;
 			DIP_SET(ip, i_atime, vap->va_atime.tv_sec);
 			DIP_SET(ip, i_atimensec, vap->va_atime.tv_nsec);
 		}
 		if (vap->va_mtime.tv_sec != VNOVAL) {
+			ip->i_flag &= ~IN_UPDATE;
 			DIP_SET(ip, i_mtime, vap->va_mtime.tv_sec);
 			DIP_SET(ip, i_mtimensec, vap->va_mtime.tv_nsec);
 		}
@@ -1915,13 +1913,13 @@ ufs_mkdir(ap)
 	dirtemplate = *dtp;
 	dirtemplate.dot_ino = ip->i_number;
 	dirtemplate.dotdot_ino = dp->i_number;
+	vnode_pager_setsize(tvp, DIRBLKSIZ);
 	if ((error = UFS_BALLOC(tvp, (off_t)0, DIRBLKSIZ, cnp->cn_cred,
 	    BA_CLRBUF, &bp)) != 0)
 		goto bad;
 	ip->i_size = DIRBLKSIZ;
 	DIP_SET(ip, i_size, DIRBLKSIZ);
 	ip->i_flag |= IN_CHANGE | IN_UPDATE;
-	vnode_pager_setsize(tvp, (u_long)ip->i_size);
 	bcopy((caddr_t)&dirtemplate, (caddr_t)bp->b_data, sizeof dirtemplate);
 	if (DOINGSOFTDEP(tvp)) {
 		/*

@@ -207,15 +207,20 @@ find_class(struct gmesh *mesh, const char *name)
 static struct ggeom *
 find_geom(struct gclass *classp, const char *name)
 {
-	struct ggeom *gp;
+	struct ggeom *gp, *wgp;
 
 	if (strncmp(name, _PATH_DEV, sizeof(_PATH_DEV) - 1) == 0)
 		name += sizeof(_PATH_DEV) - 1;
+	wgp = NULL;
 	LIST_FOREACH(gp, &classp->lg_geom, lg_geom) {
-		if (strcmp(gp->lg_name, name) == 0)
+		if (strcmp(gp->lg_name, name) != 0)
+			continue;
+		if (find_geomcfg(gp, "wither") == NULL)
 			return (gp);
+		else
+			wgp = gp;
 	}
-	return (NULL);
+	return (wgp);
 }
 
 static const char *
@@ -561,7 +566,7 @@ gpart_autofill(struct gctl_req *req)
 
 		s = find_provcfg(pp, "end");
 		first = (off_t)strtoimax(s, NULL, 0) + 1;
-		if (first > a_first)
+		if (first + offset > a_first)
 			a_first = ALIGNUP(first + offset, alignment);
 	}
 	if (a_first <= last) {
@@ -609,6 +614,8 @@ gpart_show_geom(struct ggeom *gp, const char *element, int show_providers)
 	off_t length, secsz;
 	int idx, wblocks, wname, wmax;
 
+	if (find_geomcfg(gp, "wither"))
+		return;
 	scheme = find_geomcfg(gp, "scheme");
 	if (scheme == NULL)
 		errx(EXIT_FAILURE, "Scheme not found for geom %s", gp->lg_name);
@@ -1099,14 +1106,11 @@ gpart_write_partcode(struct ggeom *gp, int idx, void *code, ssize_t size)
 
 	if (pp != NULL) {
 		snprintf(dsf, sizeof(dsf), "/dev/%s", pp->lg_name);
+		if (pp->lg_mediasize < size)
+			errx(EXIT_FAILURE, "%s: not enough space", dsf);
 		fd = open(dsf, O_WRONLY);
 		if (fd == -1)
 			err(EXIT_FAILURE, "%s", dsf);
-		if (lseek(fd, size, SEEK_SET) != size)
-			errx(EXIT_FAILURE, "%s: not enough space", dsf);
-		if (lseek(fd, 0, SEEK_SET) != 0)
-			err(EXIT_FAILURE, "%s", dsf);
-
 		/*
 		 * When writing to a disk device, the write must be
 		 * sector aligned and not write to any partial sectors,
@@ -1122,6 +1126,7 @@ gpart_write_partcode(struct ggeom *gp, int idx, void *code, ssize_t size)
 			err(EXIT_FAILURE, "%s", dsf);
 		free(buf);
 		close(fd);
+		printf("partcode written to %s\n", pp->lg_name);
 	} else
 		errx(EXIT_FAILURE, "invalid partition index");
 }
@@ -1145,11 +1150,11 @@ gpart_write_partcode_vtoc8(struct ggeom *gp, int idx, void *code)
 		if (pp->lg_sectorsize != sizeof(struct vtoc8))
 			errx(EXIT_FAILURE, "%s: unexpected sector "
 			    "size (%d)\n", dsf, pp->lg_sectorsize);
+		if (pp->lg_mediasize < VTOC_BOOTSIZE)
+			continue;
 		fd = open(dsf, O_WRONLY);
 		if (fd == -1)
 			err(EXIT_FAILURE, "%s", dsf);
-		if (lseek(fd, VTOC_BOOTSIZE, SEEK_SET) != VTOC_BOOTSIZE)
-			continue;
 		/*
 		 * We ignore the first VTOC_BOOTSIZE bytes of boot code in
 		 * order to avoid overwriting the label.
@@ -1168,6 +1173,9 @@ gpart_write_partcode_vtoc8(struct ggeom *gp, int idx, void *code)
 	}
 	if (installed == 0)
 		errx(EXIT_FAILURE, "%s: no partitions", gp->lg_name);
+	else
+		printf("partcode written to %s\n",
+		    idx != 0 ? pp->lg_name: gp->lg_name);
 }
 
 static void
@@ -1189,10 +1197,8 @@ gpart_bootcode(struct gctl_req *req, unsigned int fl)
 		    bootcode);
 		if (error)
 			errc(EXIT_FAILURE, error, "internal error");
-	} else {
+	} else
 		bootcode = NULL;
-		bootsize = 0;
-	}
 
 	s = gctl_get_ascii(req, "class");
 	if (s == NULL)
@@ -1216,21 +1222,23 @@ gpart_bootcode(struct gctl_req *req, unsigned int fl)
 	s = find_geomcfg(gp, "scheme");
 	if (s == NULL)
 		errx(EXIT_FAILURE, "Scheme not found for geom %s", gp->lg_name);
-	vtoc8 = 0;
 	if (strcmp(s, "VTOC8") == 0)
 		vtoc8 = 1;
+	else
+		vtoc8 = 0;
 
 	if (gctl_has_param(req, GPART_PARAM_PARTCODE)) {
 		s = gctl_get_ascii(req, GPART_PARAM_PARTCODE);
-		partsize = vtoc8 != 0 ? VTOC_BOOTSIZE : bootsize * 1024;
+		if (vtoc8 != 0)
+			partsize = VTOC_BOOTSIZE;
+		else
+			partsize = 1024 * 1024;		/* Arbitrary limit. */
 		partcode = gpart_bootfile_read(s, &partsize);
 		error = gctl_delete_param(req, GPART_PARAM_PARTCODE);
 		if (error)
 			errc(EXIT_FAILURE, error, "internal error");
-	} else {
+	} else
 		partcode = NULL;
-		partsize = 0;
-	}
 
 	if (gctl_has_param(req, GPART_PARAM_INDEX)) {
 		if (partcode == NULL)

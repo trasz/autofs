@@ -7,21 +7,20 @@
 
 .include <src.opts.mk>
 
+PACKAGE=atm
 PROG=	atmconfig
 SRCS=	main.c diag.c natm.c
 MAN=	atmconfig.8
-# CFLAGS+= -DPATH_HELP='".:/usr/share/doc/atm:/usr/local/share/doc/atm"'
+# CFLAGS+= -DPATH_HELP='".:${SHAREDIR}/doc/atm:/usr/local/share/doc/atm"'
 
 CFLAGS+= -I${.OBJDIR}
 
 .if !defined(RESCUE) && ${MK_BSNMP} != "no"
 CFLAGS+=	-DWITH_BSNMP
 SRCS+=	oid.h atmconfig_device.c
-DPADD+=	${LIBBSNMP}
-LDADD+=	-lbsnmp
+LIBADD+=	bsnmp
 . if ${MK_DYNAMICROOT} == "no" && ${MK_OPENSSL} != "no"
-DPADD+=	${LIBCRYPTO}
-LDADD+= -lcrypto
+LIBADD+=	crypto
 . endif
 .endif
 
@@ -33,7 +32,7 @@ WARNS?= 3
 .endif
 
 FILES=	atmconfig.help atmconfig_device.help
-FILESDIR= /usr/share/doc/atm
+FILESDIR= ${SHAREDIR}/doc/atm
 
 SNMP_ATM_DEF= ${.CURDIR}/../../../contrib/ngatm/snmp_atm/atm_tree.def	\
 	${.CURDIR}/../../../usr.sbin/bsnmpd/modules/snmp_atm/atm_freebsd.def

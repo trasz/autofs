@@ -619,8 +619,8 @@ tunoutput(struct ifnet *ifp, struct mbuf *m0, const struct sockaddr *dst,
 
 		/* if allocation failed drop packet */
 		if (m0 == NULL) {
-			ifp->if_iqdrops++;
-			ifp->if_oerrors++;
+			if_inc_counter(ifp, IFCOUNTER_IQDROPS, 1);
+			if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 			return (ENOBUFS);
 		} else {
 			bcopy(dst, m0->m_data, dst->sa_len);
@@ -633,8 +633,8 @@ tunoutput(struct ifnet *ifp, struct mbuf *m0, const struct sockaddr *dst,
 
 		/* if allocation failed drop packet */
 		if (m0 == NULL) {
-			ifp->if_iqdrops++;
-			ifp->if_oerrors++;
+			if_inc_counter(ifp, IFCOUNTER_IQDROPS, 1);
+			if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 			return (ENOBUFS);
 		} else
 			*(u_int32_t *)m0->m_data = htonl(af);
@@ -651,7 +651,7 @@ tunoutput(struct ifnet *ifp, struct mbuf *m0, const struct sockaddr *dst,
 	error = (ifp->if_transmit)(ifp, m0);
 	if (error)
 		return (ENOBUFS);
-	ifp->if_opackets++;
+	if_inc_counter(ifp, IFCOUNTER_OPACKETS, 1);
 	return (0);
 }
 
@@ -848,7 +848,7 @@ tunwrite(struct cdev *dev, struct uio *uio, int flag)
 	struct tun_softc *tp = dev->si_drv1;
 	struct ifnet	*ifp = TUN2IFP(tp);
 	struct mbuf	*m;
-	uint32_t	family;
+	uint32_t	family, mru;
 	int 		isr;
 
 	TUNDEBUG(ifp, "tunwrite\n");
@@ -860,13 +860,16 @@ tunwrite(struct cdev *dev, struct uio *uio, int flag)
 	if (uio->uio_resid == 0)
 		return (0);
 
-	if (uio->uio_resid < 0 || uio->uio_resid > TUNMRU) {
+	mru = TUNMRU;
+	if (tp->tun_flags & TUN_IFHEAD)
+		mru += sizeof(family);
+	if (uio->uio_resid < 0 || uio->uio_resid > mru) {
 		TUNDEBUG(ifp, "len=%zd!\n", uio->uio_resid);
 		return (EIO);
 	}
 
 	if ((m = m_uiotombuf(uio, M_NOWAIT, 0, 0, M_PKTHDR)) == NULL) {
-		ifp->if_ierrors++;
+		if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 		return (ENOBUFS);
 	}
 
@@ -906,10 +909,9 @@ tunwrite(struct cdev *dev, struct uio *uio, int flag)
 		m_freem(m);
 		return (EAFNOSUPPORT);
 	}
-	if (harvest.point_to_point)
-		random_harvest(&(m->m_data), 12, 2, RANDOM_NET_TUN);
-	ifp->if_ibytes += m->m_pkthdr.len;
-	ifp->if_ipackets++;
+	random_harvest_queue(m, sizeof(*m), 2, RANDOM_NET_TUN);
+	if_inc_counter(ifp, IFCOUNTER_IBYTES, m->m_pkthdr.len);
+	if_inc_counter(ifp, IFCOUNTER_IPACKETS, 1);
 	CURVNET_SET(ifp->if_vnet);
 	M_SETFIB(m, ifp->if_fib);
 	netisr_dispatch(isr, m);

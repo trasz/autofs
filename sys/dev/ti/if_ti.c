@@ -184,13 +184,13 @@ static int ti_detach(device_t);
 static void ti_txeof(struct ti_softc *);
 static void ti_rxeof(struct ti_softc *);
 
-static void ti_stats_update(struct ti_softc *);
 static int ti_encap(struct ti_softc *, struct mbuf **);
 
 static void ti_intr(void *);
 static void ti_start(struct ifnet *);
 static void ti_start_locked(struct ifnet *);
 static int ti_ioctl(struct ifnet *, u_long, caddr_t);
+static uint64_t ti_get_counter(struct ifnet *, ift_counter);
 static void ti_init(void *);
 static void ti_init_locked(void *);
 static void ti_init2(struct ti_softc *);
@@ -434,7 +434,7 @@ ti_mem_read(struct ti_softc *sc, uint32_t addr, uint32_t len, void *buf)
 			segsize = cnt;
 		else
 			segsize = TI_WINLEN - (segptr % TI_WINLEN);
-		CSR_WRITE_4(sc, TI_WINBASE, (segptr & ~(TI_WINLEN - 1)));
+		CSR_WRITE_4(sc, TI_WINBASE, rounddown2(segptr, TI_WINLEN));
 		bus_space_read_region_4(sc->ti_btag, sc->ti_bhandle,
 		    TI_WINDOW + (segptr & (TI_WINLEN - 1)), (uint32_t *)ptr,
 		    segsize / 4);
@@ -464,7 +464,7 @@ ti_mem_write(struct ti_softc *sc, uint32_t addr, uint32_t len, void *buf)
 			segsize = cnt;
 		else
 			segsize = TI_WINLEN - (segptr % TI_WINLEN);
-		CSR_WRITE_4(sc, TI_WINBASE, (segptr & ~(TI_WINLEN - 1)));
+		CSR_WRITE_4(sc, TI_WINBASE, rounddown2(segptr, TI_WINLEN));
 		bus_space_write_region_4(sc->ti_btag, sc->ti_bhandle,
 		    TI_WINDOW + (segptr & (TI_WINLEN - 1)), (uint32_t *)ptr,
 		    segsize / 4);
@@ -491,7 +491,7 @@ ti_mem_zero(struct ti_softc *sc, uint32_t addr, uint32_t len)
 			segsize = cnt;
 		else
 			segsize = TI_WINLEN - (segptr % TI_WINLEN);
-		CSR_WRITE_4(sc, TI_WINBASE, (segptr & ~(TI_WINLEN - 1)));
+		CSR_WRITE_4(sc, TI_WINBASE, rounddown2(segptr, TI_WINLEN));
 		bus_space_set_region_4(sc->ti_btag, sc->ti_bhandle,
 		    TI_WINDOW + (segptr & (TI_WINLEN - 1)), 0, segsize / 4);
 		segptr += segsize;
@@ -559,7 +559,7 @@ ti_copy_mem(struct ti_softc *sc, uint32_t tigon_addr, uint32_t len,
 			segsize = cnt;
 		else
 			segsize = TI_WINLEN - (segptr % TI_WINLEN);
-		CSR_WRITE_4(sc, TI_WINBASE, (segptr & ~(TI_WINLEN - 1)));
+		CSR_WRITE_4(sc, TI_WINBASE, rounddown2(segptr, TI_WINLEN));
 
 		ti_offset = TI_WINDOW + (segptr & (TI_WINLEN -1));
 
@@ -628,7 +628,7 @@ ti_copy_mem(struct ti_softc *sc, uint32_t tigon_addr, uint32_t len,
 		/*
 		 * Set the segment pointer.
 		 */
-		CSR_WRITE_4(sc, TI_WINBASE, (segptr & ~(TI_WINLEN - 1)));
+		CSR_WRITE_4(sc, TI_WINBASE, rounddown2(segptr, TI_WINLEN));
 
 		ti_offset = TI_WINDOW + (segptr & (TI_WINLEN - 1));
 
@@ -959,8 +959,6 @@ ti_handle_events(struct ti_softc *sc)
 			ti_init2(sc);
 			break;
 		case TI_EV_STATS_UPDATED:
-			ti_stats_update(sc);
-			break;
 		case TI_EV_RESET_JUMBO_RING:
 		case TI_EV_MCAST_UPDATED:
 			/* Who cares. */
@@ -1598,8 +1596,7 @@ ti_newbuf_jumbo(struct ti_softc *sc, int idx, struct mbuf *m_old)
 			    "failed -- packet dropped!\n");
 			goto nobufs;
 		}
-		MCLGET(m[NPAYLOAD], M_NOWAIT);
-		if ((m[NPAYLOAD]->m_flags & M_EXT) == 0) {
+		if (!(MCLGET(m[NPAYLOAD], M_NOWAIT))) {
 			device_printf(sc->ti_dev, "mbuf allocation failed "
 			    "-- packet dropped!\n");
 			goto nobufs;
@@ -1637,7 +1634,7 @@ ti_newbuf_jumbo(struct ti_softc *sc, int idx, struct mbuf *m_old)
 			m[i]->m_data = (void *)sf_buf_kva(sf[i]);
 			m[i]->m_len = PAGE_SIZE;
 			MEXTADD(m[i], sf_buf_kva(sf[i]), PAGE_SIZE,
-			    sf_buf_mext, (void*)sf_buf_kva(sf[i]), sf[i],
+			    sf_mext_free, (void*)sf_buf_kva(sf[i]), sf[i],
 			    0, EXT_DISPOSABLE);
 			m[i]->m_next = m[i+1];
 		}
@@ -1702,7 +1699,7 @@ nobufs:
 		if (m[i])
 			m_freem(m[i]);
 		if (sf[i])
-			sf_buf_mext((void *)sf_buf_kva(sf[i]), sf[i]);
+			sf_mext_free((void *)sf_buf_kva(sf[i]), sf[i]);
 	}
 	return (ENOBUFS);
 }
@@ -1723,7 +1720,7 @@ ti_init_rx_ring_std(struct ti_softc *sc)
 	for (i = 0; i < TI_STD_RX_RING_CNT; i++) {
 		if (ti_newbuf_std(sc, i) != 0)
 			return (ENOBUFS);
-	};
+	}
 
 	sc->ti_std = TI_STD_RX_RING_CNT - 1;
 	TI_UPDATE_STDPROD(sc, TI_STD_RX_RING_CNT - 1);
@@ -1761,7 +1758,7 @@ ti_init_rx_ring_jumbo(struct ti_softc *sc)
 	for (i = 0; i < TI_JUMBO_RX_RING_CNT; i++) {
 		if (ti_newbuf_jumbo(sc, i, NULL) != 0)
 			return (ENOBUFS);
-	};
+	}
 
 	sc->ti_jumbo = TI_JUMBO_RX_RING_CNT - 1;
 	TI_UPDATE_JUMBOPROD(sc, TI_JUMBO_RX_RING_CNT - 1);
@@ -1798,7 +1795,7 @@ ti_init_rx_ring_mini(struct ti_softc *sc)
 	for (i = 0; i < TI_MINI_RX_RING_CNT; i++) {
 		if (ti_newbuf_mini(sc, i) != 0)
 			return (ENOBUFS);
-	};
+	}
 
 	sc->ti_mini = TI_MINI_RX_RING_CNT - 1;
 	TI_UPDATE_MINIPROD(sc, TI_MINI_RX_RING_CNT - 1);
@@ -2505,6 +2502,7 @@ ti_attach(device_t dev)
 	ifp->if_ioctl = ti_ioctl;
 	ifp->if_start = ti_start;
 	ifp->if_init = ti_init;
+	ifp->if_get_counter = ti_get_counter;
 	ifp->if_baudrate = IF_Gbps(1UL);
 	ifp->if_snd.ifq_drv_maxlen = TI_TX_RING_CNT - 1;
 	IFQ_SET_MAXLEN(&ifp->if_snd, ifp->if_snd.ifq_drv_maxlen);
@@ -2515,7 +2513,7 @@ ti_attach(device_t dev)
 		/*
 		 * Copper cards allow manual 10/100 mode selection,
 		 * but not manual 1000baseTX mode selection. Why?
-		 * Becuase currently there's no way to specify the
+		 * Because currently there's no way to specify the
 		 * master/slave setting through the firmware interface,
 		 * so Alteon decided to just bag it and handle it
 		 * via autonegotiation.
@@ -2749,7 +2747,7 @@ ti_discard_jumbo(struct ti_softc *sc, int i)
  * Note: we have to be able to handle three possibilities here:
  * 1) the frame is from the mini receive ring (can only happen)
  *    on Tigon 2 boards)
- * 2) the frame is from the jumbo recieve ring
+ * 2) the frame is from the jumbo receive ring
  * 3) the frame is from the standard receive ring
  */
 
@@ -2803,12 +2801,12 @@ ti_rxeof(struct ti_softc *sc)
 			m = sc->ti_cdata.ti_rx_jumbo_chain[rxidx];
 #ifndef TI_SF_BUF_JUMBO
 			if (cur_rx->ti_flags & TI_BDFLAG_ERROR) {
-				ifp->if_ierrors++;
+				if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 				ti_discard_jumbo(sc, rxidx);
 				continue;
 			}
 			if (ti_newbuf_jumbo(sc, rxidx, NULL) != 0) {
-				ifp->if_iqdrops++;
+				if_inc_counter(ifp, IFCOUNTER_IQDROPS, 1);
 				ti_discard_jumbo(sc, rxidx);
 				continue;
 			}
@@ -2820,12 +2818,12 @@ ti_rxeof(struct ti_softc *sc)
 			    BUS_DMASYNC_POSTREAD);
 			bus_dmamap_unload(sc->ti_cdata.ti_rx_jumbo_tag, map);
 			if (cur_rx->ti_flags & TI_BDFLAG_ERROR) {
-				ifp->if_ierrors++;
+				if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 				ti_newbuf_jumbo(sc, sc->ti_jumbo, m);
 				continue;
 			}
 			if (ti_newbuf_jumbo(sc, sc->ti_jumbo, NULL) == ENOBUFS) {
-				ifp->if_iqdrops++;
+				if_inc_counter(ifp, IFCOUNTER_IQDROPS, 1);
 				ti_newbuf_jumbo(sc, sc->ti_jumbo, m);
 				continue;
 			}
@@ -2842,12 +2840,12 @@ ti_rxeof(struct ti_softc *sc)
 			TI_INC(sc->ti_mini, TI_MINI_RX_RING_CNT);
 			m = sc->ti_cdata.ti_rx_mini_chain[rxidx];
 			if (cur_rx->ti_flags & TI_BDFLAG_ERROR) {
-				ifp->if_ierrors++;
+				if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 				ti_discard_mini(sc, rxidx);
 				continue;
 			}
 			if (ti_newbuf_mini(sc, rxidx) != 0) {
-				ifp->if_iqdrops++;
+				if_inc_counter(ifp, IFCOUNTER_IQDROPS, 1);
 				ti_discard_mini(sc, rxidx);
 				continue;
 			}
@@ -2857,12 +2855,12 @@ ti_rxeof(struct ti_softc *sc)
 			TI_INC(sc->ti_std, TI_STD_RX_RING_CNT);
 			m = sc->ti_cdata.ti_rx_std_chain[rxidx];
 			if (cur_rx->ti_flags & TI_BDFLAG_ERROR) {
-				ifp->if_ierrors++;
+				if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 				ti_discard_std(sc, rxidx);
 				continue;
 			}
 			if (ti_newbuf_std(sc, rxidx) != 0) {
-				ifp->if_iqdrops++;
+				if_inc_counter(ifp, IFCOUNTER_IQDROPS, 1);
 				ti_discard_std(sc, rxidx);
 				continue;
 			}
@@ -2870,7 +2868,7 @@ ti_rxeof(struct ti_softc *sc)
 		}
 
 		m->m_pkthdr.len = ti_len;
-		ifp->if_ipackets++;
+		if_inc_counter(ifp, IFCOUNTER_IPACKETS, 1);
 		m->m_pkthdr.rcvif = ifp;
 
 		if (ifp->if_capenable & IFCAP_RXCSUM) {
@@ -2961,7 +2959,7 @@ ti_txeof(struct ti_softc *sc)
 		    BUS_DMASYNC_POSTWRITE);
 		bus_dmamap_unload(sc->ti_cdata.ti_tx_tag, txd->tx_dmamap);
 
-		ifp->if_opackets++;
+		if_inc_counter(ifp, IFCOUNTER_OPACKETS, 1);
 		m_freem(txd->tx_m);
 		txd->tx_m = NULL;
 		STAILQ_REMOVE_HEAD(&sc->ti_cdata.ti_txbusyq, tx_q);
@@ -2989,7 +2987,7 @@ ti_intr(void *xsc)
 		return;
 	}
 
-	/* Ack interrupt and stop others from occuring. */
+	/* Ack interrupt and stop others from occurring. */
 	CSR_WRITE_4(sc, TI_MB_HOSTINTR, 1);
 
 	if (ifp->if_drv_flags & IFF_DRV_RUNNING) {
@@ -3016,27 +3014,35 @@ ti_intr(void *xsc)
 	TI_UNLOCK(sc);
 }
 
-static void
-ti_stats_update(struct ti_softc *sc)
+static uint64_t
+ti_get_counter(struct ifnet *ifp, ift_counter cnt)
 {
-	struct ifnet *ifp;
-	struct ti_stats *s;
 
-	ifp = sc->ti_ifp;
+	switch (cnt) {
+	case IFCOUNTER_COLLISIONS:
+	    {
+		struct ti_softc *sc;
+		struct ti_stats *s;
+		uint64_t rv;
 
-	if (sc->ti_stat_ticks == 0)
-		return;
-	bus_dmamap_sync(sc->ti_cdata.ti_gib_tag, sc->ti_cdata.ti_gib_map,
-	    BUS_DMASYNC_POSTREAD);
+		sc = if_getsoftc(ifp);
+		s = &sc->ti_rdata.ti_info->ti_stats;
 
-	s = &sc->ti_rdata.ti_info->ti_stats;
-	ifp->if_collisions += (s->dot3StatsSingleCollisionFrames +
-	   s->dot3StatsMultipleCollisionFrames +
-	   s->dot3StatsExcessiveCollisions + s->dot3StatsLateCollisions) -
-	    ifp->if_collisions;
-
-	bus_dmamap_sync(sc->ti_cdata.ti_gib_tag, sc->ti_cdata.ti_gib_map,
-	    BUS_DMASYNC_PREREAD);
+		TI_LOCK(sc);
+		bus_dmamap_sync(sc->ti_cdata.ti_gib_tag,
+		    sc->ti_cdata.ti_gib_map, BUS_DMASYNC_POSTREAD);
+		rv = s->dot3StatsSingleCollisionFrames +
+		    s->dot3StatsMultipleCollisionFrames +
+		    s->dot3StatsExcessiveCollisions +
+		    s->dot3StatsLateCollisions;
+		bus_dmamap_sync(sc->ti_cdata.ti_gib_tag,
+		    sc->ti_cdata.ti_gib_map, BUS_DMASYNC_PREREAD);
+		TI_UNLOCK(sc);
+		return (rv);
+	    }
+	default:
+		return (if_get_counter_default(ifp, cnt));
+	}
 }
 
 /*
@@ -3344,7 +3350,7 @@ ti_ifmedia_upd(struct ifnet *ifp)
 
 	sc = ifp->if_softc;
 	TI_LOCK(sc);
-	error = ti_ifmedia_upd(ifp);
+	error = ti_ifmedia_upd_locked(sc);
 	TI_UNLOCK(sc);
 
 	return (error);
@@ -3373,7 +3379,7 @@ ti_ifmedia_upd_locked(struct ti_softc *sc)
 
 		/*
 		 * Transmit flow control can also cause problems on the
-		 * Tigon 2, apparantly with both the copper and fiber
+		 * Tigon 2, apparently with both the copper and fiber
 		 * boards.  The symptom is that the interface will just
 		 * hang.  This was reproduced with Alteon 180 switches.
 		 */
@@ -3662,6 +3668,8 @@ ti_ioctl2(struct cdev *dev, u_long cmd, caddr_t addr, int flag,
 		    sc->ti_cdata.ti_gib_map, BUS_DMASYNC_POSTREAD);
 		bcopy(&sc->ti_rdata.ti_info->ti_stats, outstats,
 		    sizeof(struct ti_stats));
+		bus_dmamap_sync(sc->ti_cdata.ti_gib_tag,
+		    sc->ti_cdata.ti_gib_map, BUS_DMASYNC_PREREAD);
 		TI_UNLOCK(sc);
 		break;
 	}
@@ -3917,7 +3925,7 @@ ti_watchdog(void *arg)
 	ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
 	ti_init_locked(sc);
 
-	ifp->if_oerrors++;
+	if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 }
 
 /*

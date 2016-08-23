@@ -183,7 +183,7 @@ static HAL_BOOL ar5210FillCapabilityInfo(struct ath_hal *ah);
  */
 static struct ath_hal *
 ar5210Attach(uint16_t devid, HAL_SOFTC sc, HAL_BUS_TAG st, HAL_BUS_HANDLE sh,
-	uint16_t *eepromdata, HAL_STATUS *status)
+	uint16_t *eepromdata, HAL_OPS_CONFIG *ah_config, HAL_STATUS *status)
 {
 #define	N(a)	(sizeof(a)/sizeof(a[0]))
 	struct ath_hal_5210 *ahp;
@@ -390,7 +390,8 @@ ar5210FillCapabilityInfo(struct ath_hal *ah)
 		pCap->halRfSilentSupport = AH_TRUE;
 	}
 
-	pCap->halTstampPrecision = 15;		/* NB: s/w extended from 13 */
+	pCap->halTxTstampPrecision = 16;
+	pCap->halRxTstampPrecision = 15;	/* NB: s/w extended from 13 */
 	pCap->halIntrMask = (HAL_INT_COMMON - HAL_INT_BNR)
 			| HAL_INT_RX
 			| HAL_INT_TX

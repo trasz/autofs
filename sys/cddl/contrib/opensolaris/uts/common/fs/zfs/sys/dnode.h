@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  */
 
 #ifndef	_SYS_DNODE_H
@@ -56,7 +57,7 @@ extern "C" {
  * Fixed constants.
  */
 #define	DNODE_SHIFT		9	/* 512 bytes */
-#define	DN_MIN_INDBLKSHIFT	10	/* 1k */
+#define	DN_MIN_INDBLKSHIFT	12	/* 4k */
 #define	DN_MAX_INDBLKSHIFT	14	/* 16k */
 #define	DNODE_BLOCK_SHIFT	14	/* 16k */
 #define	DNODE_CORE_SIZE		64	/* 64 bytes for dnode sans blkptrs */
@@ -255,6 +256,7 @@ typedef struct dnode_handle {
 } dnode_handle_t;
 
 typedef struct dnode_children {
+	dmu_buf_user_t dnc_dbu;		/* User evict data */
 	size_t dnc_count;		/* number of children */
 	dnode_handle_t dnc_children[];	/* sized dynamically */
 } dnode_children_t;
@@ -265,7 +267,7 @@ typedef struct free_range {
 	uint64_t fr_nblks;
 } free_range_t;
 
-dnode_t *dnode_special_open(struct objset *dd, dnode_phys_t *dnp,
+void dnode_special_open(struct objset *dd, dnode_phys_t *dnp,
     uint64_t object, dnode_handle_t *dnh);
 void dnode_special_close(dnode_handle_t *dnh);
 
@@ -279,6 +281,7 @@ int dnode_hold_impl(struct objset *dd, uint64_t object, int flag,
     void *ref, dnode_t **dnp);
 boolean_t dnode_add_ref(dnode_t *dn, void *ref);
 void dnode_rele(dnode_t *dn, void *ref);
+void dnode_rele_and_unlock(dnode_t *dn, void *tag);
 void dnode_setdirty(dnode_t *dn, dmu_tx_t *tx);
 void dnode_sync(dnode_t *dn, dmu_tx_t *tx);
 void dnode_allocate(dnode_t *dn, dmu_object_type_t ot, int blocksize, int ibs,
@@ -300,6 +303,16 @@ void dnode_fini(void);
 int dnode_next_offset(dnode_t *dn, int flags, uint64_t *off,
     int minlvl, uint64_t blkfill, uint64_t txg);
 void dnode_evict_dbufs(dnode_t *dn);
+void dnode_evict_bonus(dnode_t *dn);
+
+#define	DNODE_IS_CACHEABLE(_dn)						\
+	((_dn)->dn_objset->os_primary_cache == ZFS_CACHE_ALL ||		\
+	(DMU_OT_IS_METADATA((_dn)->dn_type) &&				\
+	(_dn)->dn_objset->os_primary_cache == ZFS_CACHE_METADATA))
+
+#define	DNODE_META_IS_CACHEABLE(_dn)					\
+	((_dn)->dn_objset->os_primary_cache == ZFS_CACHE_ALL ||		\
+	(_dn)->dn_objset->os_primary_cache == ZFS_CACHE_METADATA)
 
 #ifdef ZFS_DEBUG
 

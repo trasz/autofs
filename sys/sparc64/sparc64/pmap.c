@@ -143,6 +143,7 @@ static int pmap_protect_tte(struct pmap *pm1, struct pmap *pm2,
     struct tte *tp, vm_offset_t va);
 static int pmap_unwire_tte(pmap_t pm, pmap_t pm2, struct tte *tp,
     vm_offset_t va);
+static void pmap_init_qpages(void);
 
 /*
  * Map the given physical page at the specified virtual address in the
@@ -345,14 +346,18 @@ pmap_bootstrap(u_int cpu_impl)
 	if (OF_getprop(pmem, "available", mra, sz) == -1)
 		OF_panic("%s: getprop /memory/available", __func__);
 	sz /= sizeof(*mra);
-	CTR0(KTR_PMAP, "pmap_bootstrap: physical memory");
+#ifdef DIAGNOSTIC
+	OF_printf("pmap_bootstrap: physical memory\n");
+#endif
 	qsort(mra, sz, sizeof (*mra), mr_cmp);
 	physsz = 0;
 	getenv_quad("hw.physmem", &physmem);
 	physmem = btoc(physmem);
 	for (i = 0, j = 0; i < sz; i++, j += 2) {
-		CTR2(KTR_PMAP, "start=%#lx size=%#lx", mra[i].mr_start,
+#ifdef DIAGNOSTIC
+		OF_printf("start=%#lx size=%#lx\n", mra[i].mr_start,
 		    mra[i].mr_size);
+#endif
 		if (physmem != 0 && btoc(physsz + mra[i].mr_size) >= physmem) {
 			if (btoc(physsz) < physmem) {
 				phys_avail[j] = mra[i].mr_start;
@@ -616,13 +621,16 @@ pmap_bootstrap(u_int cpu_impl)
 		    __func__);
 	sz /= sizeof(*translations);
 	translations_size = sz;
-	CTR0(KTR_PMAP, "pmap_bootstrap: translations");
+#ifdef DIAGNOSTIC
+	OF_printf("pmap_bootstrap: translations\n");
+#endif
 	qsort(translations, sz, sizeof (*translations), om_cmp);
 	for (i = 0; i < sz; i++) {
-		CTR3(KTR_PMAP,
-		    "translation: start=%#lx size=%#lx tte=%#lx",
+#ifdef DIAGNOSTIC
+		OF_printf("translation: start=%#lx size=%#lx tte=%#lx\n",
 		    translations[i].om_start, translations[i].om_size,
 		    translations[i].om_tte);
+#endif
 		if ((translations[i].om_tte & TD_V) == 0)
 			continue;
 		if (translations[i].om_start < VM_MIN_PROM_ADDRESS ||
@@ -679,6 +687,25 @@ pmap_bootstrap(u_int cpu_impl)
 	 */
 	tlb_flush_nonlocked();
 }
+
+static void
+pmap_init_qpages(void)
+{
+	struct pcpu *pc;
+	int i;
+
+	if (dcache_color_ignore != 0)
+		return;
+
+	CPU_FOREACH(i) {
+		pc = pcpu_find(i);
+		pc->pc_qmap_addr = kva_alloc(PAGE_SIZE * DCACHE_COLORS);
+		if (pc->pc_qmap_addr == 0)
+			panic("pmap_init_qpages: unable to allocate KVA");
+	}
+}
+
+SYSINIT(qpages_init, SI_SUB_CPU, SI_ORDER_ANY, pmap_init_qpages, NULL);
 
 /*
  * Map the 4MB kernel TSB pages.
@@ -1932,6 +1959,54 @@ pmap_copy_page(vm_page_t msrc, vm_page_t mdst)
 		tlb_page_demap(kernel_pmap, vsrc);
 		PMAP_UNLOCK(kernel_pmap);
 	}
+}
+
+vm_offset_t
+pmap_quick_enter_page(vm_page_t m)
+{
+	vm_paddr_t pa;
+	vm_offset_t qaddr;
+	struct tte *tp;
+
+	pa = VM_PAGE_TO_PHYS(m);
+	if (dcache_color_ignore != 0 || m->md.color == DCACHE_COLOR(pa))
+		return (TLB_PHYS_TO_DIRECT(pa));
+
+	critical_enter();
+	qaddr = PCPU_GET(qmap_addr);
+	qaddr += (PAGE_SIZE * ((DCACHE_COLORS + DCACHE_COLOR(pa) -
+	    DCACHE_COLOR(qaddr)) % DCACHE_COLORS));
+	tp = tsb_kvtotte(qaddr);
+
+	KASSERT(tp->tte_data == 0, ("pmap_quick_enter_page: PTE busy"));
+	
+	tp->tte_data = TD_V | TD_8K | TD_PA(pa) | TD_CP | TD_CV | TD_W;
+	tp->tte_vpn = TV_VPN(qaddr, TS_8K);
+
+	return (qaddr);
+}
+
+void
+pmap_quick_remove_page(vm_offset_t addr)
+{
+	vm_offset_t qaddr;
+	struct tte *tp;
+
+	if (addr >= VM_MIN_DIRECT_ADDRESS)
+		return;
+
+	tp = tsb_kvtotte(addr);
+	qaddr = PCPU_GET(qmap_addr);
+	
+	KASSERT((addr >= qaddr) && (addr < (qaddr + (PAGE_SIZE * DCACHE_COLORS))),
+	    ("pmap_quick_remove_page: invalid address"));
+	KASSERT(tp->tte_data != 0, ("pmap_quick_remove_page: PTE not in use"));
+	
+	stxa(TLB_DEMAP_VA(addr) | TLB_DEMAP_NUCLEUS | TLB_DEMAP_PAGE, ASI_DMMU_DEMAP, 0);
+	stxa(TLB_DEMAP_VA(addr) | TLB_DEMAP_NUCLEUS | TLB_DEMAP_PAGE, ASI_IMMU_DEMAP, 0);
+	flush(KERNBASE);
+	TTE_ZERO(tp);
+	critical_exit();
 }
 
 int unmapped_buf_allowed;

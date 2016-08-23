@@ -28,29 +28,30 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
-#include <stdint.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <ctype.h>
-#include <errno.h>
-#include <err.h>
-#include <fcntl.h>
-#include <string.h>
-#include <stdio.h>
+#include <sys/param.h>
 #include <sys/ioctl.h>
-#include <limits.h>
 #include <sys/mman.h>
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <net/ethernet.h>
-#include <netinet/in.h>
+
 #include <arpa/inet.h>
+#include <net/ethernet.h>
 #include <net/sff8472.h>
+#include <netinet/in.h>
+
+#include <ctype.h>
+#include <err.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "t4_ioctl.h"
 
-#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 #define in_range(val, lo, hi) ( val < 0 || (val <= hi && val >= lo))
 #define	max(x, y) ((x) > (y) ? (x) : (y))
 
@@ -78,8 +79,9 @@ struct field_desc {
 };
 
 #include "reg_defs_t4.c"
-#include "reg_defs_t4vf.c"
 #include "reg_defs_t5.c"
+#include "reg_defs_t6.c"
+#include "reg_defs_t4vf.c"
 
 static void
 usage(FILE *fp)
@@ -345,24 +347,9 @@ dump_regs_t4(int argc, const char *argv[], const uint32_t *regs)
 		T4_MODREGS(xgmac)
 	};
 
-	return dump_regs_table(argc, argv, regs, t4_mod, ARRAY_SIZE(t4_mod));
+	return dump_regs_table(argc, argv, regs, t4_mod, nitems(t4_mod));
 }
 #undef T4_MODREGS
-
-static int
-dump_regs_t4vf(int argc, const char *argv[], const uint32_t *regs)
-{
-	static struct mod_regs t4vf_mod[] = {
-		{ "sge", t4vf_sge_regs },
-		{ "mps", t4vf_mps_regs },
-		{ "pl", t4vf_pl_regs },
-		{ "mbdata", t4vf_mbdata_regs },
-		{ "cim", t4vf_cim_regs },
-	};
-
-	return dump_regs_table(argc, argv, regs, t4vf_mod,
-	    ARRAY_SIZE(t4vf_mod));
-}
 
 #define T5_MODREGS(name) { #name, t5_##name##_regs }
 static int
@@ -398,9 +385,88 @@ dump_regs_t5(int argc, const char *argv[], const uint32_t *regs)
 		{ "hma", t5_hma_t5_regs }
 	};
 
-	return dump_regs_table(argc, argv, regs, t5_mod, ARRAY_SIZE(t5_mod));
+	return dump_regs_table(argc, argv, regs, t5_mod, nitems(t5_mod));
 }
 #undef T5_MODREGS
+
+#define T6_MODREGS(name) { #name, t6_##name##_regs }
+static int
+dump_regs_t6(int argc, const char *argv[], const uint32_t *regs)
+{
+	static struct mod_regs t6_mod[] = {
+		T6_MODREGS(sge),
+		{ "pci", t6_pcie_regs },
+		T6_MODREGS(dbg),
+		{ "mc0", t6_mc_0_regs },
+		T6_MODREGS(ma),
+		{ "edc0", t6_edc_t60_regs },
+		{ "edc1", t6_edc_t61_regs },
+		T6_MODREGS(cim),
+		T6_MODREGS(tp),
+		{ "ulprx", t6_ulp_rx_regs },
+		{ "ulptx", t6_ulp_tx_regs },
+		{ "pmrx", t6_pm_rx_regs },
+		{ "pmtx", t6_pm_tx_regs },
+		T6_MODREGS(mps),
+		{ "cplsw", t6_cpl_switch_regs },
+		T6_MODREGS(smb),
+		{ "i2c", t6_i2cm_regs },
+		T6_MODREGS(mi),
+		T6_MODREGS(uart),
+		T6_MODREGS(pmu),
+		T6_MODREGS(sf),
+		T6_MODREGS(pl),
+		T6_MODREGS(le),
+		T6_MODREGS(ncsi),
+		T6_MODREGS(mac),
+		{ "hma", t6_hma_t6_regs }
+	};
+
+	return dump_regs_table(argc, argv, regs, t6_mod, nitems(t6_mod));
+}
+#undef T6_MODREGS
+
+static int
+dump_regs_t4vf(int argc, const char *argv[], const uint32_t *regs)
+{
+	static struct mod_regs t4vf_mod[] = {
+		{ "sge", t4vf_sge_regs },
+		{ "mps", t4vf_mps_regs },
+		{ "pl", t4vf_pl_regs },
+		{ "mbdata", t4vf_mbdata_regs },
+		{ "cim", t4vf_cim_regs },
+	};
+
+	return dump_regs_table(argc, argv, regs, t4vf_mod, nitems(t4vf_mod));
+}
+
+static int
+dump_regs_t5vf(int argc, const char *argv[], const uint32_t *regs)
+{
+	static struct mod_regs t5vf_mod[] = {
+		{ "sge", t5vf_sge_regs },
+		{ "mps", t4vf_mps_regs },
+		{ "pl", t5vf_pl_regs },
+		{ "mbdata", t4vf_mbdata_regs },
+		{ "cim", t4vf_cim_regs },
+	};
+
+	return dump_regs_table(argc, argv, regs, t5vf_mod, nitems(t5vf_mod));
+}
+
+static int
+dump_regs_t6vf(int argc, const char *argv[], const uint32_t *regs)
+{
+	static struct mod_regs t6vf_mod[] = {
+		{ "sge", t5vf_sge_regs },
+		{ "mps", t4vf_mps_regs },
+		{ "pl", t6vf_pl_regs },
+		{ "mbdata", t4vf_mbdata_regs },
+		{ "cim", t4vf_cim_regs },
+	};
+
+	return dump_regs_table(argc, argv, regs, t6vf_mod, nitems(t6vf_mod));
+}
 
 static int
 dump_regs(int argc, const char *argv[])
@@ -429,9 +495,17 @@ dump_regs(int argc, const char *argv[])
 			rc = dump_regs_t4vf(argc, argv, regs.data);
 		else
 			rc = dump_regs_t4(argc, argv, regs.data);
-	} else if (vers == 5)
-		rc = dump_regs_t5(argc, argv, regs.data);
-	else {
+	} else if (vers == 5) {
+		if (revision == 0x3f)
+			rc = dump_regs_t5vf(argc, argv, regs.data);
+		else
+			rc = dump_regs_t5(argc, argv, regs.data);
+	} else if (vers == 6) {
+		if (revision == 0x3f)
+			rc = dump_regs_t6vf(argc, argv, regs.data);
+		else
+			rc = dump_regs_t6(argc, argv, regs.data);
+	} else {
 		warnx("%s (type %d, rev %d) is not a known card.",
 		    nexus, vers, revision);
 		return (ENOTSUP);
@@ -446,47 +520,50 @@ do_show_info_header(uint32_t mode)
 {
 	uint32_t i;
 
-	printf ("%4s %8s", "Idx", "Hits");
+	printf("%4s %8s", "Idx", "Hits");
 	for (i = T4_FILTER_FCoE; i <= T4_FILTER_IP_FRAGMENT; i <<= 1) {
 		switch (mode & i) {
 		case T4_FILTER_FCoE:
-			printf (" FCoE");
+			printf(" FCoE");
 			break;
 
 		case T4_FILTER_PORT:
-			printf (" Port");
+			printf(" Port");
 			break;
 
 		case T4_FILTER_VNIC:
-			printf ("      vld:VNIC");
+			if (mode & T4_FILTER_IC_VNIC)
+				printf("   VFvld:PF:VF");
+			else
+				printf("     vld:oVLAN");
 			break;
 
 		case T4_FILTER_VLAN:
-			printf ("      vld:VLAN");
+			printf("      vld:VLAN");
 			break;
 
 		case T4_FILTER_IP_TOS:
-			printf ("   TOS");
+			printf("   TOS");
 			break;
 
 		case T4_FILTER_IP_PROTO:
-			printf ("  Prot");
+			printf("  Prot");
 			break;
 
 		case T4_FILTER_ETH_TYPE:
-			printf ("   EthType");
+			printf("   EthType");
 			break;
 
 		case T4_FILTER_MAC_IDX:
-			printf ("  MACIdx");
+			printf("  MACIdx");
 			break;
 
 		case T4_FILTER_MPS_HIT_TYPE:
-			printf (" MPS");
+			printf(" MPS");
 			break;
 
 		case T4_FILTER_IP_FRAGMENT:
-			printf (" Frag");
+			printf(" Frag");
 			break;
 
 		default:
@@ -715,11 +792,19 @@ do_show_one_filter_info(struct t4_filter *t, uint32_t mode)
 			break;
 
 		case T4_FILTER_VNIC:
-			printf(" %1d:%1x:%02x/%1d:%1x:%02x",
-			    t->fs.val.vnic_vld, (t->fs.val.vnic >> 7) & 0x7,
-			    t->fs.val.vnic & 0x7f, t->fs.mask.vnic_vld,
-			    (t->fs.mask.vnic >> 7) & 0x7,
-			    t->fs.mask.vnic & 0x7f);
+			if (mode & T4_FILTER_IC_VNIC) {
+				printf(" %1d:%1x:%02x/%1d:%1x:%02x",
+				    t->fs.val.pfvf_vld,
+				    (t->fs.val.vnic >> 13) & 0x7,
+				    t->fs.val.vnic & 0x1fff,
+				    t->fs.mask.pfvf_vld,
+				    (t->fs.mask.vnic >> 13) & 0x7,
+				    t->fs.mask.vnic & 0x1fff);
+			} else {
+				printf(" %1d:%04x/%1d:%04x",
+				    t->fs.val.ovlan_vld, t->fs.val.vnic,
+				    t->fs.mask.ovlan_vld, t->fs.mask.vnic);
+			}
 			break;
 
 		case T4_FILTER_VLAN:
@@ -866,7 +951,7 @@ get_filter_mode(void)
 
 	if (mode & T4_FILTER_IP_SADDR)
 		printf("sip ");
-	
+
 	if (mode & T4_FILTER_IP_DADDR)
 		printf("dip ");
 
@@ -897,8 +982,12 @@ get_filter_mode(void)
 	if (mode & T4_FILTER_VLAN)
 		printf("vlan ");
 
-	if (mode & T4_FILTER_VNIC)
-		printf("vnic/ovlan ");
+	if (mode & T4_FILTER_VNIC) {
+		if (mode & T4_FILTER_IC_VNIC)
+			printf("vnic_id ");
+		else
+			printf("ovlan ");
+	}
 
 	if (mode & T4_FILTER_PORT)
 		printf("iport ");
@@ -915,6 +1004,7 @@ static int
 set_filter_mode(int argc, const char *argv[])
 {
 	uint32_t mode = 0;
+	int vnic = 0, ovlan = 0;
 
 	for (; argc; argc--, argv++) {
 		if (!strcmp(argv[0], "frag"))
@@ -938,15 +1028,27 @@ set_filter_mode(int argc, const char *argv[])
 		if (!strcmp(argv[0], "vlan"))
 			mode |= T4_FILTER_VLAN;
 
-		if (!strcmp(argv[0], "ovlan") ||
-		    !strcmp(argv[0], "vnic"))
+		if (!strcmp(argv[0], "ovlan")) {
 			mode |= T4_FILTER_VNIC;
+			ovlan++;
+		}
+
+		if (!strcmp(argv[0], "vnic_id")) {
+			mode |= T4_FILTER_VNIC;
+			mode |= T4_FILTER_IC_VNIC;
+			vnic++;
+		}
 
 		if (!strcmp(argv[0], "iport"))
 			mode |= T4_FILTER_PORT;
 
 		if (!strcmp(argv[0], "fcoe"))
 			mode |= T4_FILTER_FCoE;
+	}
+
+	if (vnic > 0 && ovlan > 0) {
+		warnx("\"vnic_id\" and \"ovlan\" are mutually exclusive.");
+		return (EINVAL);
 	}
 
 	return doit(CHELSIO_T4_SET_FILTER_MODE, &mode);
@@ -1007,18 +1109,27 @@ set_filter(uint32_t idx, int argc, const char *argv[])
 		} else if (!parse_val_mask("ovlan", args, &val, &mask)) {
 			t.fs.val.vnic = val;
 			t.fs.mask.vnic = mask;
-			t.fs.val.vnic_vld = 1;
-			t.fs.mask.vnic_vld = 1;
-		} else if (!parse_val_mask("vnic", args, &val, &mask)) {
-			t.fs.val.vnic = val;
-			t.fs.mask.vnic = mask;
-			t.fs.val.vnic_vld = 1;
-			t.fs.mask.vnic_vld = 1;
+			t.fs.val.ovlan_vld = 1;
+			t.fs.mask.ovlan_vld = 1;
 		} else if (!parse_val_mask("ivlan", args, &val, &mask)) {
 			t.fs.val.vlan = val;
 			t.fs.mask.vlan = mask;
 			t.fs.val.vlan_vld = 1;
 			t.fs.mask.vlan_vld = 1;
+		} else if (!parse_val_mask("pf", args, &val, &mask)) {
+			t.fs.val.vnic &= 0x1fff;
+			t.fs.val.vnic |= (val & 0x7) << 13;
+			t.fs.mask.vnic &= 0x1fff;
+			t.fs.mask.vnic |= (mask & 0x7) << 13;
+			t.fs.val.pfvf_vld = 1;
+			t.fs.mask.pfvf_vld = 1;
+		} else if (!parse_val_mask("vf", args, &val, &mask)) {
+			t.fs.val.vnic &= 0xe000;
+			t.fs.val.vnic |= val & 0x1fff;
+			t.fs.mask.vnic &= 0xe000;
+			t.fs.mask.vnic |= mask & 0x1fff;
+			t.fs.val.pfvf_vld = 1;
+			t.fs.mask.pfvf_vld = 1;
 		} else if (!parse_val_mask("tos", args, &val, &mask)) {
 			t.fs.val.tos = val;
 			t.fs.mask.tos = mask;
@@ -1154,6 +1265,10 @@ set_filter(uint32_t idx, int argc, const char *argv[])
 		     " action \"drop\" or \"switch\"");
 		return (EINVAL);
 	}
+	if (t.fs.val.ovlan_vld && t.fs.val.pfvf_vld) {
+		warnx("ovlan and vnic_id (pf/vf) are mutually exclusive");
+		return (EINVAL);
+	}
 
 	t.fs.type = (af == AF_INET6 ? 1 : 0); /* default IPv4 */
 	return doit(CHELSIO_T4_SET_FILTER, &t);
@@ -1245,9 +1360,159 @@ show_struct(const uint32_t *words, int nwords, const struct field_desc *fd)
 #define FIELD1(name, start) FIELD(name, start, start)
 
 static void
-show_sge_context(const struct t4_sge_context *p)
+show_t5_ctxt(const struct t4_sge_context *p)
 {
-	static struct field_desc egress[] = {
+	static struct field_desc egress_t5[] = {
+		FIELD("DCA_ST:", 181, 191),
+		FIELD1("StatusPgNS:", 180),
+		FIELD1("StatusPgRO:", 179),
+		FIELD1("FetchNS:", 178),
+		FIELD1("FetchRO:", 177),
+		FIELD1("Valid:", 176),
+		FIELD("PCIeDataChannel:", 174, 175),
+		FIELD1("StatusPgTPHintEn:", 173),
+		FIELD("StatusPgTPHint:", 171, 172),
+		FIELD1("FetchTPHintEn:", 170),
+		FIELD("FetchTPHint:", 168, 169),
+		FIELD1("FCThreshOverride:", 167),
+		{ "WRLength:", 162, 166, 9, 0, 1 },
+		FIELD1("WRLengthKnown:", 161),
+		FIELD1("ReschedulePending:", 160),
+		FIELD1("OnChipQueue:", 159),
+		FIELD1("FetchSizeMode:", 158),
+		{ "FetchBurstMin:", 156, 157, 4, 0, 1 },
+		FIELD1("FLMPacking:", 155),
+		FIELD("FetchBurstMax:", 153, 154),
+		FIELD("uPToken:", 133, 152),
+		FIELD1("uPTokenEn:", 132),
+		FIELD1("UserModeIO:", 131),
+		FIELD("uPFLCredits:", 123, 130),
+		FIELD1("uPFLCreditEn:", 122),
+		FIELD("FID:", 111, 121),
+		FIELD("HostFCMode:", 109, 110),
+		FIELD1("HostFCOwner:", 108),
+		{ "CIDXFlushThresh:", 105, 107, 0, 0, 1 },
+		FIELD("CIDX:", 89, 104),
+		FIELD("PIDX:", 73, 88),
+		{ "BaseAddress:", 18, 72, 9, 1 },
+		FIELD("QueueSize:", 2, 17),
+		FIELD1("QueueType:", 1),
+		FIELD1("CachePriority:", 0),
+		{ NULL }
+	};
+	static struct field_desc fl_t5[] = {
+		FIELD("DCA_ST:", 181, 191),
+		FIELD1("StatusPgNS:", 180),
+		FIELD1("StatusPgRO:", 179),
+		FIELD1("FetchNS:", 178),
+		FIELD1("FetchRO:", 177),
+		FIELD1("Valid:", 176),
+		FIELD("PCIeDataChannel:", 174, 175),
+		FIELD1("StatusPgTPHintEn:", 173),
+		FIELD("StatusPgTPHint:", 171, 172),
+		FIELD1("FetchTPHintEn:", 170),
+		FIELD("FetchTPHint:", 168, 169),
+		FIELD1("FCThreshOverride:", 167),
+		FIELD1("ReschedulePending:", 160),
+		FIELD1("OnChipQueue:", 159),
+		FIELD1("FetchSizeMode:", 158),
+		{ "FetchBurstMin:", 156, 157, 4, 0, 1 },
+		FIELD1("FLMPacking:", 155),
+		FIELD("FetchBurstMax:", 153, 154),
+		FIELD1("FLMcongMode:", 152),
+		FIELD("MaxuPFLCredits:", 144, 151),
+		FIELD("FLMcontextID:", 133, 143),
+		FIELD1("uPTokenEn:", 132),
+		FIELD1("UserModeIO:", 131),
+		FIELD("uPFLCredits:", 123, 130),
+		FIELD1("uPFLCreditEn:", 122),
+		FIELD("FID:", 111, 121),
+		FIELD("HostFCMode:", 109, 110),
+		FIELD1("HostFCOwner:", 108),
+		{ "CIDXFlushThresh:", 105, 107, 0, 0, 1 },
+		FIELD("CIDX:", 89, 104),
+		FIELD("PIDX:", 73, 88),
+		{ "BaseAddress:", 18, 72, 9, 1 },
+		FIELD("QueueSize:", 2, 17),
+		FIELD1("QueueType:", 1),
+		FIELD1("CachePriority:", 0),
+		{ NULL }
+	};
+	static struct field_desc ingress_t5[] = {
+		FIELD("DCA_ST:", 143, 153),
+		FIELD1("ISCSICoalescing:", 142),
+		FIELD1("Queue_Valid:", 141),
+		FIELD1("TimerPending:", 140),
+		FIELD1("DropRSS:", 139),
+		FIELD("PCIeChannel:", 137, 138),
+		FIELD1("SEInterruptArmed:", 136),
+		FIELD1("CongestionMgtEnable:", 135),
+		FIELD1("NoSnoop:", 134),
+		FIELD1("RelaxedOrdering:", 133),
+		FIELD1("GTSmode:", 132),
+		FIELD1("TPHintEn:", 131),
+		FIELD("TPHint:", 129, 130),
+		FIELD1("UpdateScheduling:", 128),
+		FIELD("UpdateDelivery:", 126, 127),
+		FIELD1("InterruptSent:", 125),
+		FIELD("InterruptIDX:", 114, 124),
+		FIELD1("InterruptDestination:", 113),
+		FIELD1("InterruptArmed:", 112),
+		FIELD("RxIntCounter:", 106, 111),
+		FIELD("RxIntCounterThreshold:", 104, 105),
+		FIELD1("Generation:", 103),
+		{ "BaseAddress:", 48, 102, 9, 1 },
+		FIELD("PIDX:", 32, 47),
+		FIELD("CIDX:", 16, 31),
+		{ "QueueSize:", 4, 15, 4, 0 },
+		{ "QueueEntrySize:", 2, 3, 4, 0, 1 },
+		FIELD1("QueueEntryOverride:", 1),
+		FIELD1("CachePriority:", 0),
+		{ NULL }
+	};
+	static struct field_desc flm_t5[] = {
+		FIELD1("Valid:", 89),
+		FIELD("SplitLenMode:", 87, 88),
+		FIELD1("TPHintEn:", 86),
+		FIELD("TPHint:", 84, 85),
+		FIELD1("NoSnoop:", 83),
+		FIELD1("RelaxedOrdering:", 82),
+		FIELD("DCA_ST:", 71, 81),
+		FIELD("EQid:", 54, 70),
+		FIELD("SplitEn:", 52, 53),
+		FIELD1("PadEn:", 51),
+		FIELD1("PackEn:", 50),
+		FIELD1("Cache_Lock :", 49),
+		FIELD1("CongDrop:", 48),
+		FIELD("PackOffset:", 16, 47),
+		FIELD("CIDX:", 8, 15),
+		FIELD("PIDX:", 0, 7),
+		{ NULL }
+	};
+	static struct field_desc conm_t5[] = {
+		FIELD1("CngMPSEnable:", 21),
+		FIELD("CngTPMode:", 19, 20),
+		FIELD1("CngDBPHdr:", 18),
+		FIELD1("CngDBPData:", 17),
+		FIELD1("CngIMSG:", 16),
+		{ "CngChMap:", 0, 15, 0, 1, 0 },
+		{ NULL }
+	};
+
+	if (p->mem_id == SGE_CONTEXT_EGRESS)
+		show_struct(p->data, 6, (p->data[0] & 2) ? fl_t5 : egress_t5);
+	else if (p->mem_id == SGE_CONTEXT_FLM)
+		show_struct(p->data, 3, flm_t5);
+	else if (p->mem_id == SGE_CONTEXT_INGRESS)
+		show_struct(p->data, 5, ingress_t5);
+	else if (p->mem_id == SGE_CONTEXT_CNM)
+		show_struct(p->data, 1, conm_t5);
+}
+
+static void
+show_t4_ctxt(const struct t4_sge_context *p)
+{
+	static struct field_desc egress_t4[] = {
 		FIELD1("StatusPgNS:", 180),
 		FIELD1("StatusPgRO:", 179),
 		FIELD1("FetchNS:", 178),
@@ -1281,7 +1546,7 @@ show_sge_context(const struct t4_sge_context *p)
 		FIELD1("CachePriority:", 0),
 		{ NULL }
 	};
-	static struct field_desc fl[] = {
+	static struct field_desc fl_t4[] = {
 		FIELD1("StatusPgNS:", 180),
 		FIELD1("StatusPgRO:", 179),
 		FIELD1("FetchNS:", 178),
@@ -1291,8 +1556,6 @@ show_sge_context(const struct t4_sge_context *p)
 		FIELD1("DCAEgrQEn:", 173),
 		FIELD("DCACPUID:", 168, 172),
 		FIELD1("FCThreshOverride:", 167),
-		FIELD("WRLength:", 162, 166),
-		FIELD1("WRLengthKnown:", 161),
 		FIELD1("ReschedulePending:", 160),
 		FIELD1("OnChipQueue:", 159),
 		FIELD1("FetchSizeMode", 158),
@@ -1317,7 +1580,7 @@ show_sge_context(const struct t4_sge_context *p)
 		FIELD1("CachePriority:", 0),
 		{ NULL }
 	};
-	static struct field_desc ingress[] = {
+	static struct field_desc ingress_t4[] = {
 		FIELD1("NoSnoop:", 145),
 		FIELD1("RelaxedOrdering:", 144),
 		FIELD1("GTSmode:", 143),
@@ -1348,7 +1611,7 @@ show_sge_context(const struct t4_sge_context *p)
 		FIELD1("CachePriority:", 0),
 		{ NULL }
 	};
-	static struct field_desc flm[] = {
+	static struct field_desc flm_t4[] = {
 		FIELD1("NoSnoop:", 79),
 		FIELD1("RelaxedOrdering:", 78),
 		FIELD1("Valid:", 77),
@@ -1364,31 +1627,22 @@ show_sge_context(const struct t4_sge_context *p)
 		FIELD("PIDX:", 0, 7),
 		{ NULL }
 	};
-	static struct field_desc conm[] = {
+	static struct field_desc conm_t4[] = {
 		FIELD1("CngDBPHdr:", 6),
 		FIELD1("CngDBPData:", 5),
 		FIELD1("CngIMSG:", 4),
 		{ "CngChMap:", 0, 3, 0, 1, 0},
 		{ NULL }
 	};
-	static struct field_desc t5_conm[] = {
-		FIELD1("CngMPSEnable:", 21),
-		FIELD("CngTPMode:", 19, 20),
-		FIELD1("CngDBPHdr:", 18),
-		FIELD1("CngDBPData:", 17),
-		FIELD1("CngIMSG:", 16),
-		{ "CngChMap:", 0, 15, 0, 1, 0},
-		{ NULL }
-	};
 
 	if (p->mem_id == SGE_CONTEXT_EGRESS)
-		show_struct(p->data, 6, (p->data[0] & 2) ? fl : egress);
+		show_struct(p->data, 6, (p->data[0] & 2) ? fl_t4 : egress_t4);
 	else if (p->mem_id == SGE_CONTEXT_FLM)
-		show_struct(p->data, 3, flm);
+		show_struct(p->data, 3, flm_t4);
 	else if (p->mem_id == SGE_CONTEXT_INGRESS)
-		show_struct(p->data, 5, ingress);
+		show_struct(p->data, 5, ingress_t4);
 	else if (p->mem_id == SGE_CONTEXT_CNM)
-		show_struct(p->data, 1, chip_id == 5 ? t5_conm : conm);
+		show_struct(p->data, 1, conm_t4);
 }
 
 #undef FIELD
@@ -1432,7 +1686,11 @@ get_sge_context(int argc, const char *argv[])
 	if (rc != 0)
 		return (rc);
 
-	show_sge_context(&cntxt);
+	if (chip_id == 4)
+		show_t4_ctxt(&cntxt);
+	else
+		show_t5_ctxt(&cntxt);
+
 	return (0);
 }
 
@@ -1462,7 +1720,7 @@ loadfw(int argc, const char *argv[])
 	}
 
 	data.len = st.st_size;
-	data.data = mmap(0, data.len, PROT_READ, 0, fd, 0);
+	data.data = mmap(0, data.len, PROT_READ, MAP_PRIVATE, fd, 0);
 	if (data.data == MAP_FAILED) {
 		warn("mmap");
 		close(fd);
@@ -2268,9 +2526,9 @@ sched_class(int argc, const char *argv[])
                         errs++;
                 }
                 if (op.u.params.ratemode == SCHED_CLASS_RATEMODE_ABS &&
-		    !in_range(op.u.params.maxrate, 1, 10000000)) {
+		    !in_range(op.u.params.maxrate, 1, 100000000)) {
                         warnx("sched params \"max-rate\" takes "
-			    "value(1-10000000) for rate-mode absolute");
+			    "value(1-100000000) for rate-mode absolute");
                         errs++;
                 }
                 if (op.u.params.maxrate > 0 &&

@@ -13,12 +13,14 @@ SUBDIR= ${_binutils} \
 	grep \
 	${_groff} \
 	${_rcs} \
-	sdiff \
-	${_tests} \
-	${_texinfo}
+	${_tests}
+
+SUBDIR_DEPEND_gdb= ${_binutils}
 
 .if ${MK_CXX} != "no"
+.if ${MK_GCC} != "no"
 _gperf=		gperf
+.endif
 .if ${MK_GROFF} != "no"
 _groff=		groff
 .endif
@@ -26,10 +28,6 @@ _groff=		groff
 
 .if ${MK_GPL_DTC} != "no"
 _dtc=		dtc
-.endif
-
-.if ${MK_INFO} != "no"
-_texinfo=	texinfo
 .endif
 
 .if ${MK_RCS} != "no"
@@ -42,12 +40,13 @@ _tests=		tests
 
 .if ${MK_BINUTILS} != "no"
 _binutils=	binutils
-.endif
-.if ${MK_GCC} != "no"
-_cc=		cc
-.endif
 .if ${MK_GDB} != "no"
 _gdb=		gdb
+.endif
+.endif
+
+.if ${MK_GCC} != "no"
+_cc=		cc
 .endif
 
 SUBDIR_PARALLEL=

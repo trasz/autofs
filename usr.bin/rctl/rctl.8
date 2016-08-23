@@ -25,7 +25,7 @@
 .\"
 .\" $FreeBSD$
 .\"
-.Dd February 16, 2014
+.Dd January 30, 2016
 .Dt RCTL 8
 .Os
 .Sh NAME
@@ -35,22 +35,22 @@
 .Nm
 .Op Fl h
 .Op Fl n
-.Op Ar filter
+.Op Ar filter Ar ...
 .Nm
 .Fl a
-.Op Ar rule
+.Ar rule Ar ...
 .Nm
 .Fl l
 .Op Fl h
 .Op Fl n
-.Op Ar filter
+.Ar filter Ar ...
 .Nm
 .Fl r
-.Op Ar filter
+.Ar filter Ar ...
 .Nm
 .Fl u
 .Op Fl h
-.Op Ar filter
+.Ar filter Ar ...
 .Pp
 .Nm
 requires the kernel to be compiled with:
@@ -193,7 +193,7 @@ resource would be
 .It Sy openfiles Ta "file descriptor table size"
 .It Sy vmemoryuse Ta "address space limit, in bytes"
 .It Sy pseudoterminals Ta "number of PTYs"
-.It Sy swapuse Ta "swap usage, in bytes"
+.It Sy swapuse Ta "swap space that may be reserved or used, in bytes"
 .It Sy nthr Ta "number of threads"
 .It Sy msgqqueued Ta "number of queued SysV messages"
 .It Sy msgqsize Ta "SysV message queue size, in bytes"
@@ -204,14 +204,22 @@ resource would be
 .It Sy shmsize Ta "SysV shared memory size, in bytes"
 .It Sy wallclock Ta "wallclock time, in seconds"
 .It Sy pcpu Ta "%CPU, in percents of a single CPU core"
+.It Sy readbps Ta "filesystem reads, in bytes per second"
+.It Sy writebps Ta "filesystem writes, in bytes per second"
+.It Sy readiops Ta "filesystem reads, in operations per second"
+.It Sy writeiops Ta "filesystem writes, in operations per second"
 .El
 .Sh ACTIONS
 .Bl -column -offset 3n "pseudoterminals"
 .It Em action
 .It Sy deny Ta deny the allocation; not supported for
-.Sy cpu
+.Sy cputime ,
+.Sy wallclock ,
+.Sy readbps ,
+.Sy writebps ,
+.Sy readiops ,
 and
-.Sy wallclock
+.Sy writeiops
 .It Sy log Ta "log a warning to the console"
 .It Sy devctl Ta "send notification to"
 .Xr devd 8
@@ -228,11 +236,30 @@ send a signal to the offending process.
 See
 .Xr signal 3
 for a list of supported signals
+.It Sy throttle Ta "slow down process execution"; only supported for
+.Sy readbps ,
+.Sy writebps ,
+.Sy readiops ,
+and
+.Sy writeiops .
 .El
 .Pp
 Not all actions are supported for all resources.
 Attempting to add a rule with an action not supported by a given resource will
 result in error.
+.Sh LOADER TUNABLES
+Tunables can be set at the
+.Xr loader 8
+prompt, or
+.Xr loader.conf 5 .
+.Bl -tag -width indent
+.It Va kern.racct.enable: No 1
+Enable
+.Nm .
+This defaults to 1, unless
+.Cd "options RACCT_DEFAULT_TO_DISABLED"
+is set in the kernel configuration file.
+.El
 .Sh EXIT STATUS
 .Ex -std
 .Sh EXAMPLES
@@ -274,3 +301,22 @@ under sponsorship from the FreeBSD Foundation.
 Limiting
 .Sy memoryuse
 may kill the machine due to thrashing.
+.Pp
+The
+.Sy readiops
+and
+.Sy writeiops
+counters are only approximations.
+Like
+.Sy readbps
+and
+.Sy writebps ,
+they are calculated in the filesystem layer, where it is difficult
+or even impossible to observe actual disk device operations.
+.Pp
+The
+.Sy writebps
+and
+.Sy writeiops
+resources generally account for writes to the filesystem cache,
+not to actual devices.

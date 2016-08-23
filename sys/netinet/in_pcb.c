@@ -47,11 +47,14 @@ __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/mbuf.h>
 #include <sys/callout.h>
+#include <sys/eventhandler.h>
 #include <sys/domain.h>
 #include <sys/protosw.h>
+#include <sys/rmlock.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/priv.h>
@@ -70,13 +73,14 @@ __FBSDID("$FreeBSD$");
 #include <net/if.h>
 #include <net/if_var.h>
 #include <net/if_types.h>
+#include <net/if_llatbl.h>
 #include <net/route.h>
+#include <net/rss_config.h>
 #include <net/vnet.h>
 
 #if defined(INET) || defined(INET6)
 #include <netinet/in.h>
 #include <netinet/in_pcb.h>
-#include <netinet/in_rss.h>
 #include <netinet/ip_var.h>
 #include <netinet/tcp_var.h>
 #include <netinet/udp.h>
@@ -164,34 +168,38 @@ sysctl_net_ipport_check(SYSCTL_HANDLER_ARGS)
 static SYSCTL_NODE(_net_inet_ip, IPPROTO_IP, portrange, CTLFLAG_RW, 0,
     "IP Ports");
 
-SYSCTL_VNET_PROC(_net_inet_ip_portrange, OID_AUTO, lowfirst,
-	CTLTYPE_INT|CTLFLAG_RW, &VNET_NAME(ipport_lowfirstauto), 0,
-	&sysctl_net_ipport_check, "I", "");
-SYSCTL_VNET_PROC(_net_inet_ip_portrange, OID_AUTO, lowlast,
-	CTLTYPE_INT|CTLFLAG_RW, &VNET_NAME(ipport_lowlastauto), 0,
-	&sysctl_net_ipport_check, "I", "");
-SYSCTL_VNET_PROC(_net_inet_ip_portrange, OID_AUTO, first,
-	CTLTYPE_INT|CTLFLAG_RW, &VNET_NAME(ipport_firstauto), 0,
-	&sysctl_net_ipport_check, "I", "");
-SYSCTL_VNET_PROC(_net_inet_ip_portrange, OID_AUTO, last,
-	CTLTYPE_INT|CTLFLAG_RW, &VNET_NAME(ipport_lastauto), 0,
-	&sysctl_net_ipport_check, "I", "");
-SYSCTL_VNET_PROC(_net_inet_ip_portrange, OID_AUTO, hifirst,
-	CTLTYPE_INT|CTLFLAG_RW, &VNET_NAME(ipport_hifirstauto), 0,
-	&sysctl_net_ipport_check, "I", "");
-SYSCTL_VNET_PROC(_net_inet_ip_portrange, OID_AUTO, hilast,
-	CTLTYPE_INT|CTLFLAG_RW, &VNET_NAME(ipport_hilastauto), 0,
-	&sysctl_net_ipport_check, "I", "");
-SYSCTL_VNET_INT(_net_inet_ip_portrange, OID_AUTO, reservedhigh,
-	CTLFLAG_RW|CTLFLAG_SECURE, &VNET_NAME(ipport_reservedhigh), 0, "");
-SYSCTL_VNET_INT(_net_inet_ip_portrange, OID_AUTO, reservedlow,
+SYSCTL_PROC(_net_inet_ip_portrange, OID_AUTO, lowfirst,
+	CTLFLAG_VNET | CTLTYPE_INT | CTLFLAG_RW,
+	&VNET_NAME(ipport_lowfirstauto), 0, &sysctl_net_ipport_check, "I", "");
+SYSCTL_PROC(_net_inet_ip_portrange, OID_AUTO, lowlast,
+	CTLFLAG_VNET | CTLTYPE_INT | CTLFLAG_RW,
+	&VNET_NAME(ipport_lowlastauto), 0, &sysctl_net_ipport_check, "I", "");
+SYSCTL_PROC(_net_inet_ip_portrange, OID_AUTO, first,
+	CTLFLAG_VNET | CTLTYPE_INT | CTLFLAG_RW,
+	&VNET_NAME(ipport_firstauto), 0, &sysctl_net_ipport_check, "I", "");
+SYSCTL_PROC(_net_inet_ip_portrange, OID_AUTO, last,
+	CTLFLAG_VNET | CTLTYPE_INT | CTLFLAG_RW,
+	&VNET_NAME(ipport_lastauto), 0, &sysctl_net_ipport_check, "I", "");
+SYSCTL_PROC(_net_inet_ip_portrange, OID_AUTO, hifirst,
+	CTLFLAG_VNET | CTLTYPE_INT | CTLFLAG_RW,
+	&VNET_NAME(ipport_hifirstauto), 0, &sysctl_net_ipport_check, "I", "");
+SYSCTL_PROC(_net_inet_ip_portrange, OID_AUTO, hilast,
+	CTLFLAG_VNET | CTLTYPE_INT | CTLFLAG_RW,
+	&VNET_NAME(ipport_hilastauto), 0, &sysctl_net_ipport_check, "I", "");
+SYSCTL_INT(_net_inet_ip_portrange, OID_AUTO, reservedhigh,
+	CTLFLAG_VNET | CTLFLAG_RW | CTLFLAG_SECURE,
+	&VNET_NAME(ipport_reservedhigh), 0, "");
+SYSCTL_INT(_net_inet_ip_portrange, OID_AUTO, reservedlow,
 	CTLFLAG_RW|CTLFLAG_SECURE, &VNET_NAME(ipport_reservedlow), 0, "");
-SYSCTL_VNET_INT(_net_inet_ip_portrange, OID_AUTO, randomized, CTLFLAG_RW,
+SYSCTL_INT(_net_inet_ip_portrange, OID_AUTO, randomized,
+	CTLFLAG_VNET | CTLFLAG_RW,
 	&VNET_NAME(ipport_randomized), 0, "Enable random port allocation");
-SYSCTL_VNET_INT(_net_inet_ip_portrange, OID_AUTO, randomcps, CTLFLAG_RW,
+SYSCTL_INT(_net_inet_ip_portrange, OID_AUTO, randomcps,
+	CTLFLAG_VNET | CTLFLAG_RW,
 	&VNET_NAME(ipport_randomcps), 0, "Maximum number of random port "
 	"allocations before switching to a sequental one");
-SYSCTL_VNET_INT(_net_inet_ip_portrange, OID_AUTO, randomtime, CTLFLAG_RW,
+SYSCTL_INT(_net_inet_ip_portrange, OID_AUTO, randomtime,
+	CTLFLAG_VNET | CTLFLAG_RW,
 	&VNET_NAME(ipport_randomtime), 0,
 	"Minimum time to keep sequental port "
 	"allocation before switching to a random one");
@@ -218,6 +226,7 @@ in_pcbinfo_init(struct inpcbinfo *pcbinfo, const char *name,
 
 	INP_INFO_LOCK_INIT(pcbinfo, name);
 	INP_HASH_LOCK_INIT(pcbinfo, "pcbinfohash");	/* XXXRW: argument? */
+	INP_LIST_LOCK_INIT(pcbinfo, "pcbinfolist");
 #ifdef VIMAGE
 	pcbinfo->ipi_vnet = curvnet;
 #endif
@@ -256,6 +265,7 @@ in_pcbinfo_destroy(struct inpcbinfo *pcbinfo)
 	in_pcbgroup_destroy(pcbinfo);
 #endif
 	uma_zdestroy(pcbinfo->ipi_zone);
+	INP_LIST_LOCK_DESTROY(pcbinfo);
 	INP_HASH_LOCK_DESTROY(pcbinfo);
 	INP_INFO_LOCK_DESTROY(pcbinfo);
 }
@@ -270,7 +280,14 @@ in_pcballoc(struct socket *so, struct inpcbinfo *pcbinfo)
 	struct inpcb *inp;
 	int error;
 
-	INP_INFO_WLOCK_ASSERT(pcbinfo);
+#ifdef INVARIANTS
+	if (pcbinfo == &V_tcbinfo) {
+		INP_INFO_RLOCK_ASSERT(pcbinfo);
+	} else {
+		INP_INFO_WLOCK_ASSERT(pcbinfo);
+	}
+#endif
+
 	error = 0;
 	inp = uma_zalloc(pcbinfo->ipi_zone, M_NOWAIT);
 	if (inp == NULL)
@@ -302,6 +319,8 @@ in_pcballoc(struct socket *so, struct inpcbinfo *pcbinfo)
 			inp->inp_flags |= IN6P_IPV6_V6ONLY;
 	}
 #endif
+	INP_WLOCK(inp);
+	INP_LIST_WLOCK(pcbinfo);
 	LIST_INSERT_HEAD(pcbinfo->ipi_listhead, inp, inp_list);
 	pcbinfo->ipi_count++;
 	so->so_pcb = (caddr_t)inp;
@@ -309,9 +328,9 @@ in_pcballoc(struct socket *so, struct inpcbinfo *pcbinfo)
 	if (V_ip6_auto_flowlabel)
 		inp->inp_flags |= IN6P_AUTOFLOWLABEL;
 #endif
-	INP_WLOCK(inp);
 	inp->inp_gencnt = ++pcbinfo->ipi_gencnt;
 	refcount_init(&inp->inp_refcount, 1);	/* Reference from inpcbinfo */
+	INP_LIST_WUNLOCK(pcbinfo);
 #if defined(IPSEC) || defined(MAC)
 out:
 	if (error != 0) {
@@ -792,9 +811,11 @@ in_pcbladdr(struct inpcb *inp, struct in_addr *faddr, struct in_addr *laddr,
 		struct in_ifaddr *ia;
 		struct ifnet *ifp;
 
-		ia = ifatoia(ifa_ifwithdstaddr((struct sockaddr *)sin));
+		ia = ifatoia(ifa_ifwithdstaddr((struct sockaddr *)sin,
+					inp->inp_socket->so_fibnum));
 		if (ia == NULL)
-			ia = ifatoia(ifa_ifwithnet((struct sockaddr *)sin, 0));
+			ia = ifatoia(ifa_ifwithnet((struct sockaddr *)sin, 0,
+						inp->inp_socket->so_fibnum));
 		if (ia == NULL) {
 			error = ENETUNREACH;
 			goto done;
@@ -909,9 +930,11 @@ in_pcbladdr(struct inpcb *inp, struct in_addr *faddr, struct in_addr *laddr,
 		sain.sin_len = sizeof(struct sockaddr_in);
 		sain.sin_addr.s_addr = faddr->s_addr;
 
-		ia = ifatoia(ifa_ifwithdstaddr(sintosa(&sain)));
+		ia = ifatoia(ifa_ifwithdstaddr(sintosa(&sain),
+					inp->inp_socket->so_fibnum));
 		if (ia == NULL)
-			ia = ifatoia(ifa_ifwithnet(sintosa(&sain), 0));
+			ia = ifatoia(ifa_ifwithnet(sintosa(&sain), 0,
+						inp->inp_socket->so_fibnum));
 		if (ia == NULL)
 			ia = ifatoia(ifa_ifwithaddr(sintosa(&sain)));
 
@@ -984,6 +1007,7 @@ in_pcbconnect_setup(struct inpcb *inp, struct sockaddr *nam,
     in_addr_t *laddrp, u_short *lportp, in_addr_t *faddrp, u_short *fportp,
     struct inpcb **oinpp, struct ucred *cred)
 {
+	struct rm_priotracker in_ifa_tracker;
 	struct sockaddr_in *sin = (struct sockaddr_in *)nam;
 	struct in_ifaddr *ia;
 	struct inpcb *oinp;
@@ -1020,20 +1044,20 @@ in_pcbconnect_setup(struct inpcb *inp, struct sockaddr *nam,
 		 * choose the broadcast address for that interface.
 		 */
 		if (faddr.s_addr == INADDR_ANY) {
-			IN_IFADDR_RLOCK();
+			IN_IFADDR_RLOCK(&in_ifa_tracker);
 			faddr =
 			    IA_SIN(TAILQ_FIRST(&V_in_ifaddrhead))->sin_addr;
-			IN_IFADDR_RUNLOCK();
+			IN_IFADDR_RUNLOCK(&in_ifa_tracker);
 			if (cred != NULL &&
 			    (error = prison_get_ip4(cred, &faddr)) != 0)
 				return (error);
 		} else if (faddr.s_addr == (u_long)INADDR_BROADCAST) {
-			IN_IFADDR_RLOCK();
+			IN_IFADDR_RLOCK(&in_ifa_tracker);
 			if (TAILQ_FIRST(&V_in_ifaddrhead)->ia_ifp->if_flags &
 			    IFF_BROADCAST)
 				faddr = satosin(&TAILQ_FIRST(
 				    &V_in_ifaddrhead)->ia_broadaddr)->sin_addr;
-			IN_IFADDR_RUNLOCK();
+			IN_IFADDR_RUNLOCK(&in_ifa_tracker);
 		}
 	}
 	if (laddr.s_addr == INADDR_ANY) {
@@ -1051,7 +1075,7 @@ in_pcbconnect_setup(struct inpcb *inp, struct sockaddr *nam,
 			imo = inp->inp_moptions;
 			if (imo->imo_multicast_ifp != NULL) {
 				ifp = imo->imo_multicast_ifp;
-				IN_IFADDR_RLOCK();
+				IN_IFADDR_RLOCK(&in_ifa_tracker);
 				TAILQ_FOREACH(ia, &V_in_ifaddrhead, ia_link) {
 					if ((ia->ia_ifp == ifp) &&
 					    (cred == NULL ||
@@ -1065,7 +1089,7 @@ in_pcbconnect_setup(struct inpcb *inp, struct sockaddr *nam,
 					laddr = ia->ia_addr.sin_addr;
 					error = 0;
 				}
-				IN_IFADDR_RUNLOCK();
+				IN_IFADDR_RUNLOCK(&in_ifa_tracker);
 			}
 		}
 		if (error)
@@ -1198,8 +1222,17 @@ in_pcbrele_wlocked(struct inpcb *inp)
 
 	INP_WLOCK_ASSERT(inp);
 
-	if (refcount_release(&inp->inp_refcount) == 0)
+	if (refcount_release(&inp->inp_refcount) == 0) {
+		/*
+		 * If the inpcb has been freed, let the caller know, even if
+		 * this isn't the last reference.
+		 */
+		if (inp->inp_flags2 & INP_FREED) {
+			INP_WUNLOCK(inp);
+			return (1);
+		}
 		return (0);
+	}
 
 	KASSERT(inp->inp_socket == NULL, ("%s: inp_socket != NULL", __func__));
 
@@ -1235,7 +1268,13 @@ in_pcbfree(struct inpcb *inp)
 
 	KASSERT(inp->inp_socket == NULL, ("%s: inp_socket != NULL", __func__));
 
-	INP_INFO_WLOCK_ASSERT(pcbinfo);
+#ifdef INVARIANTS
+	if (pcbinfo == &V_tcbinfo) {
+		INP_INFO_LOCK_ASSERT(pcbinfo);
+	} else {
+		INP_INFO_WLOCK_ASSERT(pcbinfo);
+	}
+#endif
 	INP_WLOCK_ASSERT(inp);
 
 	/* XXXRW: Do as much as possible here. */
@@ -1243,8 +1282,10 @@ in_pcbfree(struct inpcb *inp)
 	if (inp->inp_sp != NULL)
 		ipsec_delete_pcbpolicy(inp);
 #endif
+	INP_LIST_WLOCK(pcbinfo);
 	inp->inp_gencnt = ++pcbinfo->ipi_gencnt;
 	in_pcbremlists(inp);
+	INP_LIST_WUNLOCK(pcbinfo);
 #ifdef INET6
 	if (inp->inp_vflag & INP_IPV6PROTO) {
 		ip6_freepcbopts(inp->in6p_outputopts);
@@ -1258,6 +1299,13 @@ in_pcbfree(struct inpcb *inp)
 	if (inp->inp_moptions != NULL)
 		inp_freemoptions(inp->inp_moptions);
 #endif
+	if (inp->inp_route.ro_rt) {
+		RTFREE(inp->inp_route.ro_rt);
+		inp->inp_route.ro_rt = (struct rtentry *)NULL;
+	}
+	if (inp->inp_route.ro_lle)
+		LLE_FREE(inp->inp_route.ro_lle);	/* zeros ro_lle */
+
 	inp->inp_vflag = 0;
 	inp->inp_flags2 |= INP_FREED;
 	crfree(inp->inp_cred);
@@ -1401,7 +1449,7 @@ in_pcbpurgeif0(struct inpcbinfo *pcbinfo, struct ifnet *ifp)
 	struct ip_moptions *imo;
 	int i, gap;
 
-	INP_INFO_RLOCK(pcbinfo);
+	INP_INFO_WLOCK(pcbinfo);
 	LIST_FOREACH(inp, pcbinfo->ipi_listhead, inp_list) {
 		INP_WLOCK(inp);
 		imo = inp->inp_moptions;
@@ -1431,7 +1479,7 @@ in_pcbpurgeif0(struct inpcbinfo *pcbinfo, struct ifnet *ifp)
 		}
 		INP_WUNLOCK(inp);
 	}
-	INP_INFO_RUNLOCK(pcbinfo);
+	INP_INFO_WUNLOCK(pcbinfo);
 }
 
 /*
@@ -1637,11 +1685,6 @@ in_pcblookup_group(struct inpcbinfo *pcbinfo, struct inpcbgroup *pcbgroup,
 			    inp->inp_lport != lport)
 				continue;
 
-			/* XXX inp locking */
-			if (ifp && ifp->if_type == IFT_FAITH &&
-			    (inp->inp_flags & INP_FAITH) == 0)
-				continue;
-
 			injail = prison_flag(inp->inp_cred, PR_IP4);
 			if (injail) {
 				if (prison_check_ip4(inp->inp_cred,
@@ -1714,11 +1757,6 @@ in_pcblookup_group(struct inpcbinfo *pcbinfo, struct inpcbgroup *pcbgroup,
 #endif
 			if (inp->inp_faddr.s_addr != INADDR_ANY ||
 			    inp->inp_lport != lport)
-				continue;
-
-			/* XXX inp locking */
-			if (ifp && ifp->if_type == IFT_FAITH &&
-			    (inp->inp_flags & INP_FAITH) == 0)
 				continue;
 
 			injail = prison_flag(inp->inp_cred, PR_IP4);
@@ -1859,11 +1897,6 @@ in_pcblookup_hash_locked(struct inpcbinfo *pcbinfo, struct in_addr faddr,
 #endif
 			if (inp->inp_faddr.s_addr != INADDR_ANY ||
 			    inp->inp_lport != lport)
-				continue;
-
-			/* XXX inp locking */
-			if (ifp && ifp->if_type == IFT_FAITH &&
-			    (inp->inp_flags & INP_FAITH) == 0)
 				continue;
 
 			injail = prison_flag(inp->inp_cred, PR_IP4);
@@ -2046,7 +2079,7 @@ in_pcbinshash_internal(struct inpcb *inp, int do_pcbgroup_update)
 
 #ifdef INET6
 	if (inp->inp_vflag & INP_IPV6)
-		hashkey_faddr = inp->in6p_faddr.s6_addr32[3] /* XXX */;
+		hashkey_faddr = INP6_PCBHASHKEY(&inp->in6p_faddr);
 	else
 #endif
 	hashkey_faddr = inp->inp_faddr.s_addr;
@@ -2133,7 +2166,7 @@ in_pcbrehash_mbuf(struct inpcb *inp, struct mbuf *m)
 
 #ifdef INET6
 	if (inp->inp_vflag & INP_IPV6)
-		hashkey_faddr = inp->in6p_faddr.s6_addr32[3] /* XXX */;
+		hashkey_faddr = INP6_PCBHASHKEY(&inp->in6p_faddr);
 	else
 #endif
 	hashkey_faddr = inp->inp_faddr.s_addr;
@@ -2167,8 +2200,16 @@ in_pcbremlists(struct inpcb *inp)
 {
 	struct inpcbinfo *pcbinfo = inp->inp_pcbinfo;
 
-	INP_INFO_WLOCK_ASSERT(pcbinfo);
+#ifdef INVARIANTS
+	if (pcbinfo == &V_tcbinfo) {
+		INP_INFO_RLOCK_ASSERT(pcbinfo);
+	} else {
+		INP_INFO_WLOCK_ASSERT(pcbinfo);
+	}
+#endif
+
 	INP_WLOCK_ASSERT(inp);
+	INP_LIST_WLOCK_ASSERT(pcbinfo);
 
 	inp->inp_gencnt = ++pcbinfo->ipi_gencnt;
 	if (inp->inp_flags & INP_INHASHLIST) {
@@ -2189,6 +2230,25 @@ in_pcbremlists(struct inpcb *inp)
 #ifdef PCBGROUP
 	in_pcbgroup_remove(inp);
 #endif
+}
+
+/*
+ * Check for alternatives when higher level complains
+ * about service problems.  For now, invalidate cached
+ * routing information.  If the route was created dynamically
+ * (by a redirect), time to try a default gateway again.
+ */
+void
+in_losing(struct inpcb *inp)
+{
+
+	if (inp->inp_route.ro_rt) {
+		RTFREE(inp->inp_route.ro_rt);
+		inp->inp_route.ro_rt = (struct rtentry *)NULL;
+	}
+	if (inp->inp_route.ro_lle)
+		LLE_FREE(inp->inp_route.ro_lle);	/* zeros ro_lle */
+	return;
 }
 
 /*
@@ -2256,7 +2316,7 @@ ipport_tick_init(const void *unused __unused)
 {
 
 	/* Start ipport_tick. */
-	callout_init(&ipport_tick_callout, CALLOUT_MPSAFE);
+	callout_init(&ipport_tick_callout, 1);
 	callout_reset(&ipport_tick_callout, 1, ipport_tick, NULL);
 	EVENTHANDLER_REGISTER(shutdown_pre_sync, ip_fini, NULL,
 		SHUTDOWN_PRI_DEFAULT);
@@ -2313,13 +2373,13 @@ inp_apply_all(void (*func)(struct inpcb *, void *), void *arg)
 {
 	struct inpcb *inp;
 
-	INP_INFO_RLOCK(&V_tcbinfo);
+	INP_INFO_WLOCK(&V_tcbinfo);
 	LIST_FOREACH(inp, V_tcbinfo.ipi_listhead, inp_list) {
 		INP_WLOCK(inp);
 		func(inp, arg);
 		INP_WUNLOCK(inp);
 	}
-	INP_INFO_RUNLOCK(&V_tcbinfo);
+	INP_INFO_WUNLOCK(&V_tcbinfo);
 }
 
 struct socket *
@@ -2458,10 +2518,6 @@ db_print_inpflags(int inp_flags)
 	}
 	if (inp_flags & INP_MTUDISC) {
 		db_printf("%sINP_MTUDISC", comma ? ", " : "");
-		comma = 1;
-	}
-	if (inp_flags & INP_FAITH) {
-		db_printf("%sINP_FAITH", comma ? ", " : "");
 		comma = 1;
 	}
 	if (inp_flags & INP_RECVTTL) {

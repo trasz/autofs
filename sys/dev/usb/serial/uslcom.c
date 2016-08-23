@@ -60,7 +60,7 @@ __FBSDID("$FreeBSD$");
 static int uslcom_debug = 0;
 
 static SYSCTL_NODE(_hw_usb, OID_AUTO, uslcom, CTLFLAG_RW, 0, "USB uslcom");
-SYSCTL_INT(_hw_usb_uslcom, OID_AUTO, debug, CTLFLAG_RW,
+SYSCTL_INT(_hw_usb_uslcom, OID_AUTO, debug, CTLFLAG_RWTUN,
     &uslcom_debug, 0, "Debug level");
 #endif
 
@@ -382,6 +382,7 @@ DRIVER_MODULE(uslcom, uhub, uslcom_driver, uslcom_devclass, NULL, 0);
 MODULE_DEPEND(uslcom, ucom, 1, 1, 1);
 MODULE_DEPEND(uslcom, usb, 1, 1, 1);
 MODULE_VERSION(uslcom, 1);
+USB_PNP_HOST_INFO(uslcom_devs);
 
 static void
 uslcom_watchdog(void *arg)
@@ -703,6 +704,7 @@ uslcom_get_status(struct ucom_softc *ucom, uint8_t *lsr, uint8_t *msr)
 
 	DPRINTF("\n");
 
+	/* XXX Note: sc_lsr is always zero */
 	*lsr = sc->sc_lsr;
 	*msr = sc->sc_msr;
 }

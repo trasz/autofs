@@ -38,13 +38,14 @@
 
 struct cfiscsi_target {
 	TAILQ_ENTRY(cfiscsi_target)	ct_next;
-	uint32_t			ct_luns[CTL_MAX_LUNS];
 	struct cfiscsi_softc		*ct_softc;
 	volatile u_int			ct_refcount;
 	char				ct_name[CTL_ISCSI_NAME_LEN];
 	char				ct_alias[CTL_ISCSI_ALIAS_LEN];
+	uint16_t			ct_tag;
 	int				ct_state;
 	int				ct_online;
+	int				ct_target_id;
 	struct ctl_port			ct_port;
 };
 
@@ -56,6 +57,9 @@ struct cfiscsi_data_wait {
 	int				cdw_sg_index;
 	char				*cdw_sg_addr;
 	size_t				cdw_sg_len;
+	uint32_t			cdw_r2t_end;
+	uint32_t			cdw_datasn;
+	void				*cdw_icl_prv;
 };
 
 #define CFISCSI_SESSION_STATE_INVALID		0
@@ -77,12 +81,12 @@ struct cfiscsi_session {
 	struct cfiscsi_target		*cs_target;
 	struct callout			cs_callout;
 	int				cs_timeout;
-	int				cs_portal_group_tag;
 	struct cv			cs_maintenance_cv;
 	bool				cs_terminating;
 	bool				cs_tasks_aborted;
 	size_t				cs_max_data_segment_length;
 	size_t				cs_max_burst_length;
+	size_t				cs_first_burst_length;
 	bool				cs_immediate_data;
 	char				cs_initiator_name[CTL_ISCSI_NAME_LEN];
 	char				cs_initiator_addr[CTL_ISCSI_ADDR_LEN];
@@ -109,9 +113,11 @@ struct cfiscsi_softc {
 	struct mtx			lock;
 	char				port_name[32];
 	int				online;
+	int				last_target_id;
 	unsigned int			last_session_id;
 	TAILQ_HEAD(, cfiscsi_target)	targets;
 	TAILQ_HEAD(, cfiscsi_session)	sessions;
+	struct cv			sessions_cv;
 #ifdef ICL_KERNEL_PROXY
 	struct icl_listen		*listener;
 	struct cv			accept_cv;

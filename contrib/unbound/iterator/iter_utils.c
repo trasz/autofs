@@ -64,7 +64,8 @@
 #include "validator/val_kentry.h"
 #include "validator/val_utils.h"
 #include "validator/val_sigcrypt.h"
-#include "ldns/sbuffer.h"
+#include "sldns/sbuffer.h"
+#include "sldns/str2wire.h"
 
 /** time when nameserver glue is said to be 'recent' */
 #define SUSPICION_RECENT_EXPIRY 86400
@@ -105,6 +106,40 @@ read_fetch_policy(struct iter_env* ie, const char* str)
 	return 1;
 }
 
+/** apply config caps whitelist items to name tree */
+static int
+caps_white_apply_cfg(rbtree_t* ntree, struct config_file* cfg)
+{
+	struct config_strlist* p;
+	for(p=cfg->caps_whitelist; p; p=p->next) {
+		struct name_tree_node* n;
+		size_t len;
+		uint8_t* nm = sldns_str2wire_dname(p->str, &len);
+		if(!nm) {
+			log_err("could not parse %s", p->str);
+			return 0;
+		}
+		n = (struct name_tree_node*)calloc(1, sizeof(*n));
+		if(!n) {
+			log_err("out of memory");
+			free(nm);
+			return 0;
+		}
+		n->node.key = n;
+		n->name = nm;
+		n->len = len;
+		n->labs = dname_count_labels(nm);
+		n->dclass = LDNS_RR_CLASS_IN;
+		if(!name_tree_insert(ntree, n, nm, len, n->labs, n->dclass)) {
+			/* duplicate element ignored, idempotent */
+			free(n->name);
+			free(n);
+		}
+	}
+	name_tree_init_parents(ntree);
+	return 1;
+}
+
 int 
 iter_apply_cfg(struct iter_env* iter_env, struct config_file* cfg)
 {
@@ -127,6 +162,16 @@ iter_apply_cfg(struct iter_env* iter_env, struct config_file* cfg)
 	if(!iter_env->priv || !priv_apply_cfg(iter_env->priv, cfg)) {
 		log_err("Could not set private addresses");
 		return 0;
+	}
+	if(cfg->caps_whitelist) {
+		if(!iter_env->caps_white)
+			iter_env->caps_white = rbtree_create(name_tree_compare);
+		if(!iter_env->caps_white || !caps_white_apply_cfg(
+			iter_env->caps_white, cfg)) {
+			log_err("Could not set capsforid whitelist");
+			return 0;
+		}
+
 	}
 	iter_env->supports_ipv6 = cfg->do_ip6;
 	iter_env->supports_ipv4 = cfg->do_ip4;
@@ -210,7 +255,7 @@ iter_filter_unsuitable(struct iter_env* iter_env, struct module_env* env,
 			return -1; /* server is lame */
 		else if(rtt >= USEFUL_SERVER_TOP_TIMEOUT)
 			/* server is unresponsive,
-			 * we used to return TOP_TIMOUT, but fairly useless,
+			 * we used to return TOP_TIMEOUT, but fairly useless,
 			 * because if == TOP_TIMEOUT is dropped because
 			 * blacklisted later, instead, remove it here, so
 			 * other choices (that are not blacklisted) can be
@@ -261,7 +306,7 @@ iter_fill_rtt(struct iter_env* iter_env, struct module_env* env,
 	return got_it;
 }
 
-/** filter the addres list, putting best targets at front,
+/** filter the address list, putting best targets at front,
  * returns number of best targets (or 0, no suitable targets) */
 static int
 iter_filter_order(struct iter_env* iter_env, struct module_env* env,
@@ -425,10 +470,10 @@ dns_copy_msg(struct dns_msg* from, struct regional* region)
 void 
 iter_dns_store(struct module_env* env, struct query_info* msgqinf,
 	struct reply_info* msgrep, int is_referral, time_t leeway, int pside,
-	struct regional* region)
+	struct regional* region, uint16_t flags)
 {
 	if(!dns_cache_store(env, msgqinf, msgrep, is_referral, leeway,
-		pside, region))
+		pside, region, flags))
 		log_err("out of memory: cannot store data in cache");
 }
 
@@ -457,7 +502,8 @@ causes_cycle(struct module_qstate* qstate, uint8_t* name, size_t namelen,
 	fptr_ok(fptr_whitelist_modenv_detect_cycle(
 		qstate->env->detect_cycle));
 	return (*qstate->env->detect_cycle)(qstate, &qinf, 
-		(uint16_t)(BIT_RD|BIT_CD), qstate->is_priming);
+		(uint16_t)(BIT_RD|BIT_CD), qstate->is_priming,
+		qstate->is_valrec);
 }
 
 void 
@@ -666,7 +712,7 @@ rrset_equal(struct ub_packed_rrset_key* k1, struct ub_packed_rrset_key* k2)
 		k1->rk.rrset_class != k2->rk.rrset_class ||
 		query_dname_compare(k1->rk.dname, k2->rk.dname) != 0)
 		return 0;
-	if(d1->ttl != d2->ttl ||
+	if(	/* do not check ttl: d1->ttl != d2->ttl || */
 		d1->count != d2->count ||
 		d1->rrsig_count != d2->rrsig_count ||
 		d1->trust != d2->trust ||
@@ -675,7 +721,7 @@ rrset_equal(struct ub_packed_rrset_key* k1, struct ub_packed_rrset_key* k2)
 	t = d1->count + d1->rrsig_count;
 	for(i=0; i<t; i++) {
 		if(d1->rr_len[i] != d2->rr_len[i] ||
-			d1->rr_ttl[i] != d2->rr_ttl[i] ||
+			/* no ttl check: d1->rr_ttl[i] != d2->rr_ttl[i] ||*/
 			memcmp(d1->rr_data[i], d2->rr_data[i], 
 				d1->rr_len[i]) != 0)
 			return 0;
@@ -689,8 +735,11 @@ reply_equal(struct reply_info* p, struct reply_info* q, struct regional* region)
 	size_t i;
 	if(p->flags != q->flags ||
 		p->qdcount != q->qdcount ||
+		/* do not check TTL, this may differ */
+		/*
 		p->ttl != q->ttl ||
 		p->prefetch_ttl != q->prefetch_ttl ||
+		*/
 		p->security != q->security ||
 		p->an_numrrsets != q->an_numrrsets ||
 		p->ns_numrrsets != q->ns_numrrsets ||
@@ -708,6 +757,48 @@ reply_equal(struct reply_info* p, struct reply_info* q, struct regional* region)
 		}
 	}
 	return 1;
+}
+
+void 
+caps_strip_reply(struct reply_info* rep)
+{
+	size_t i;
+	if(!rep) return;
+	/* see if message is a referral, in which case the additional and
+	 * NS record cannot be removed */
+	/* referrals have the AA flag unset (strict check, not elsewhere in
+	 * unbound, but for 0x20 this is very convenient). */
+	if(!(rep->flags&BIT_AA))
+		return;
+	/* remove the additional section from the reply */
+	if(rep->ar_numrrsets != 0) {
+		verbose(VERB_ALGO, "caps fallback: removing additional section");
+		rep->rrset_count -= rep->ar_numrrsets;
+		rep->ar_numrrsets = 0;
+	}
+	/* is there an NS set in the authority section to remove? */
+	/* the failure case (Cisco firewalls) only has one rrset in authsec */
+	for(i=rep->an_numrrsets; i<rep->an_numrrsets+rep->ns_numrrsets; i++) {
+		struct ub_packed_rrset_key* s = rep->rrsets[i];
+		if(ntohs(s->rk.type) == LDNS_RR_TYPE_NS) {
+			/* remove NS rrset and break from loop (loop limits
+			 * have changed) */
+			/* move last rrset into this position (there is no
+			 * additional section any more) */
+			verbose(VERB_ALGO, "caps fallback: removing NS rrset");
+			if(i < rep->rrset_count-1)
+				rep->rrsets[i]=rep->rrsets[rep->rrset_count-1];
+			rep->rrset_count --;
+			rep->ns_numrrsets --;
+			break;
+		}
+	}
+}
+
+int caps_failed_rcode(struct reply_info* rep)
+{
+	return !(FLAGS_GET_RCODE(rep->flags) == LDNS_RCODE_NOERROR ||
+		FLAGS_GET_RCODE(rep->flags) == LDNS_RCODE_NXDOMAIN);
 }
 
 void 

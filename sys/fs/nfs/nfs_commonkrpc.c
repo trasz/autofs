@@ -89,7 +89,7 @@ uint32_t	nfscl_nfs4_done_probes[NFSV41_NPROCS + 1];
 NFSSTATESPINLOCK;
 NFSREQSPINLOCK;
 NFSDLOCKMUTEX;
-extern struct nfsstats newnfsstats;
+extern struct nfsstatsv1 nfsstatsv1;
 extern struct nfsreqhead nfsd_reqq;
 extern int nfscl_ticks;
 extern void (*ncl_call_invalcaches)(struct vnode *);
@@ -260,7 +260,7 @@ newnfs_connect(struct nfsmount *nmp, struct nfssockreq *nrp,
 
 	client = clnt_reconnect_create(nconf, saddr, nrp->nr_prog,
 	    nrp->nr_vers, sndreserve, rcvreserve);
-	CLNT_CONTROL(client, CLSET_WAITCHAN, "newnfsreq");
+	CLNT_CONTROL(client, CLSET_WAITCHAN, "nfsreq");
 	if (nmp != NULL) {
 		if ((nmp->nm_flag & NFSMNT_INT))
 			CLNT_CONTROL(client, CLSET_INTERRUPTIBLE, &one);
@@ -642,7 +642,7 @@ newnfs_request(struct nfsrv_descript *nd, struct nfsmount *nmp,
 		procnum = NFSV4PROC_COMPOUND;
 
 	if (nmp != NULL) {
-		NFSINCRGLOBAL(newnfsstats.rpcrequests);
+		NFSINCRGLOBAL(nfsstatsv1.rpcrequests);
 
 		/* Map the procnum to the old NFSv2 one, as required. */
 		if ((nd->nd_flag & ND_NFSV2) != 0) {
@@ -762,18 +762,18 @@ tryagain:
 	if (stat == RPC_SUCCESS) {
 		error = 0;
 	} else if (stat == RPC_TIMEDOUT) {
-		NFSINCRGLOBAL(newnfsstats.rpctimeouts);
+		NFSINCRGLOBAL(nfsstatsv1.rpctimeouts);
 		error = ETIMEDOUT;
 	} else if (stat == RPC_VERSMISMATCH) {
-		NFSINCRGLOBAL(newnfsstats.rpcinvalid);
+		NFSINCRGLOBAL(nfsstatsv1.rpcinvalid);
 		error = EOPNOTSUPP;
 	} else if (stat == RPC_PROGVERSMISMATCH) {
-		NFSINCRGLOBAL(newnfsstats.rpcinvalid);
+		NFSINCRGLOBAL(nfsstatsv1.rpcinvalid);
 		error = EPROTONOSUPPORT;
 	} else if (stat == RPC_INTR) {
 		error = EINTR;
 	} else {
-		NFSINCRGLOBAL(newnfsstats.rpcinvalid);
+		NFSINCRGLOBAL(nfsstatsv1.rpcinvalid);
 		error = EACCES;
 	}
 	if (error) {
@@ -1053,7 +1053,7 @@ nfs_sig_pending(sigset_t set)
 {
 	int i;
 	
-	for (i = 0 ; i < sizeof(newnfs_sig_set)/sizeof(int) ; i++)
+	for (i = 0 ; i < nitems(newnfs_sig_set); i++)
 		if (SIGISMEMBER(set, newnfs_sig_set[i]))
 			return (1);
 	return (0);
@@ -1078,7 +1078,7 @@ newnfs_set_sigmask(struct thread *td, sigset_t *oldset)
 	/* Remove the NFS set of signals from newset */
 	PROC_LOCK(p);
 	mtx_lock(&p->p_sigacts->ps_mtx);
-	for (i = 0 ; i < sizeof(newnfs_sig_set)/sizeof(int) ; i++) {
+	for (i = 0 ; i < nitems(newnfs_sig_set); i++) {
 		/*
 		 * But make sure we leave the ones already masked
 		 * by the process, ie. remove the signal from the
@@ -1166,10 +1166,10 @@ nfs_msg(struct thread *td, const char *server, const char *msg, int error)
 
 	p = td ? td->td_proc : NULL;
 	if (error) {
-		tprintf(p, LOG_INFO, "newnfs server %s: %s, error %d\n",
+		tprintf(p, LOG_INFO, "nfs server %s: %s, error %d\n",
 		    server, msg, error);
 	} else {
-		tprintf(p, LOG_INFO, "newnfs server %s: %s\n", server, msg);
+		tprintf(p, LOG_INFO, "nfs server %s: %s\n", server, msg);
 	}
 	return (0);
 }

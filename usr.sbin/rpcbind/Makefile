@@ -14,9 +14,12 @@ CFLAGS+= -DPORTMAP -DLIBWRAP
 CFLAGS+= -DINET6
 .endif
 
+.if ${MK_TESTS} != "no"
+SUBDIR+=	tests
+.endif
+
 WARNS?=	1
 
-DPADD=	${LIBWRAP} ${LIBUTIL}
-LDADD=	-lwrap -lutil
+LIBADD=	wrap
 
 .include <bsd.prog.mk>

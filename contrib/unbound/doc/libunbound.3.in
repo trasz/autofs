@@ -1,4 +1,4 @@
-.TH "libunbound" "3" "Mar 12, 2014" "NLnet Labs" "unbound 1.4.22"
+.TH "libunbound" "3" "Mar  2, 2016" "NLnet Labs" "unbound 1.5.8"
 .\"
 .\" libunbound.3 -- unbound library functions manual
 .\"
@@ -8,7 +8,6 @@
 .\"
 .\"
 .SH "NAME"
-.LP
 .B libunbound,
 .B unbound.h,
 .B ub_ctx,
@@ -20,9 +19,11 @@
 .B ub_ctx_get_option,
 .B ub_ctx_config,
 .B ub_ctx_set_fwd,
+.B ub_ctx_set_stub,
 .B ub_ctx_resolvconf,
 .B ub_ctx_hosts,
 .B ub_ctx_add_ta,
+.B ub_ctx_add_ta_autr,
 .B ub_ctx_add_ta_file,
 .B ub_ctx_trustedkeys,
 .B ub_ctx_debugout,
@@ -42,9 +43,8 @@
 .B ub_ctx_zone_remove,
 .B ub_ctx_data_add,
 .B ub_ctx_data_remove
-\- Unbound DNS validating resolver 1.4.22 functions.
+\- Unbound DNS validating resolver 1.5.8 functions.
 .SH "SYNOPSIS"
-.LP
 .B #include <unbound.h>
 .LP
 \fIstruct ub_ctx *\fR
@@ -66,6 +66,12 @@
 \fBub_ctx_set_fwd\fR(\fIstruct ub_ctx*\fR ctx, \fIchar*\fR addr);
 .LP
 \fIint\fR
+\fBub_ctx_set_stub\fR(\fIstruct ub_ctx*\fR ctx, \fIchar*\fR zone,
+\fIchar*\fR addr,
+.br
+		\fIint\fR isprime);
+.LP
+\fIint\fR
 \fBub_ctx_resolvconf\fR(\fIstruct ub_ctx*\fR ctx, \fIchar*\fR fname);
 .LP
 \fIint\fR
@@ -73,6 +79,9 @@
 .LP
 \fIint\fR
 \fBub_ctx_add_ta\fR(\fIstruct ub_ctx*\fR ctx, \fIchar*\fR ta);
+.LP
+\fIint\fR
+\fBub_ctx_add_ta_autr\fR(\fIstruct ub_ctx*\fR ctx, \fIchar*\fR fname);
 .LP
 \fIint\fR
 \fBub_ctx_add_ta_file\fR(\fIstruct ub_ctx*\fR ctx, \fIchar*\fR fname);
@@ -137,7 +146,6 @@
 \fIint\fR
 \fBub_ctx_data_remove\fR(\fIstruct ub_ctx*\fR ctx, \fIchar*\fR data);
 .SH "DESCRIPTION"
-.LP
 .B Unbound 
 is an implementation of a DNS resolver, that does caching and 
 DNSSEC validation. This is the library API, for using the \-lunbound library.
@@ -174,6 +182,7 @@ to read them.
 Before you call this, use the openssl functions CRYPTO_set_id_callback and
 CRYPTO_set_locking_callback to set up asyncronous operation if you use
 lib openssl (the application calls these functions once for initialisation).
+Openssl 1.0.0 or later uses the CRYPTO_THREADID_set_callback function.
 .TP
 .B ub_ctx_delete
 Delete validation context and free associated resources.
@@ -205,6 +214,15 @@ that case the addresses are used as backup servers.
 At this time it is only possible to set configuration before the
 first resolve is done.
 .TP
+.B ub_ctx_set_stub
+Set a stub zone, authoritative dns servers to use for a particular zone.
+IP4 or IP6 address.  If the address is NULL the stub entry is removed.
+Set isprime true if you configure root hints with it.  Otherwise similar to
+the stub zone item from unbound's config file.  Can be called several times,
+for different zones, or to add multiple addresses for a particular zone.
+At this time it is only possible to set configuration before the
+first resolve is done.
+.TP
 .B ub_ctx_resolvconf
 By default the root servers are queried and full resolver mode is used, but
 you can use this call to read the list of nameservers to use from the
@@ -233,6 +251,15 @@ At this time it is only possible to add trusted keys before the
 first resolve is done.
 The format is a string, similar to the zone\-file format,
 [domainname] [type] [rdata contents]. Both DS and DNSKEY records are accepted.
+.TP
+.B ub_ctx_add_ta_autr
+Add filename with automatically tracked trust anchor to the given context.
+Pass name of a file with the managed trust anchor.  You can create this
+file with \fIunbound\-anchor\fR(8) for the root anchor.  You can also
+create it with an initial file with one line with a DNSKEY or DS record.
+If the file is writable, it is updated when the trust anchor changes.
+At this time it is only possible to add trusted keys before the
+first resolve is done.
 .TP
 .B ub_ctx_add_ta_file
 Add trust anchors to the given context.
@@ -342,7 +369,6 @@ Add resource record data to local authority info, like local\-data
 .B ub_ctx_data_remove
 Delete local authority data from the name given.
 .SH "RESULT DATA STRUCTURE"
-.LP
 The result of the DNS resolution and validation is returned as 
 \fIstruct ub_result\fR. The result structure contains the following entries.
 .P

@@ -38,11 +38,14 @@ __FBSDID("$FreeBSD$");
 #include <sys/systm.h>
 #include <sys/counter.h>
 #include <sys/kernel.h>
+#include <sys/ktr.h>
 #include <sys/limits.h>
+#include <sys/malloc.h>
 #include <sys/mbuf.h>
 #include <sys/socket.h>
 #include <sys/syslog.h>
 #include <sys/ctype.h>
+#include <vm/uma.h>
 
 #include <net/if.h>
 #include <net/ethernet.h>
@@ -259,7 +262,7 @@ ng_netflow_constructor(node_p node)
 		priv->ifaces[i].info.conf = NG_NETFLOW_CONF_INGRESS;
 
 	/* Initialize callout handle */
-	callout_init(&priv->exp_callout, CALLOUT_MPSAFE);
+	callout_init(&priv->exp_callout, 1);
 
 	/* Allocate memory and set up flow cache */
 	ng_netflow_cache_init(priv);
@@ -606,7 +609,7 @@ ng_netflow_rcvdata (hook_p hook, item_p item)
 		 */
 		log(LOG_ERR, "ng_netflow: incoming data on export hook!\n");
 		ERROUT(EINVAL);
-	};
+	}
 
 	if (hook == iface->hook) {
 		if ((iface->info.conf & NG_NETFLOW_CONF_INGRESS) == 0)
@@ -823,7 +826,7 @@ ng_netflow_rcvdata (hook_p hook, item_p item)
 			goto bypass;
 
 		/*
-		 * Loop thru IPv6 extended headers to get upper
+		 * Loop through IPv6 extended headers to get upper
 		 * layer header / frag.
 		 */
 		for (;;) {

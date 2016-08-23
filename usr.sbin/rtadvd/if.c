@@ -38,7 +38,6 @@
 #include <net/if.h>
 #include <net/if_dl.h>
 #include <net/if_types.h>
-#include <net/if_var.h>
 #include <net/ethernet.h>
 #include <net/route.h>
 #include <netinet/in.h>
@@ -359,8 +358,7 @@ update_persist_ifinfo(struct ifilist_head_t *ifi_head, const char *ifname)
 
 		ELM_MALLOC(ifi, exit(1));
 		ifi->ifi_ifindex = 0;
-		strncpy(ifi->ifi_ifname, ifname, sizeof(ifi->ifi_ifname)-1);
-		ifi->ifi_ifname[sizeof(ifi->ifi_ifname)-1] = '\0';
+		strlcpy(ifi->ifi_ifname, ifname, sizeof(ifi->ifi_ifname));
 		ifi->ifi_rainfo = NULL;
 		ifi->ifi_state = IFI_STATE_UNCONFIGURED;
 		TAILQ_INSERT_TAIL(ifi_head, ifi, ifi_next);
@@ -389,7 +387,7 @@ update_ifinfo_nd_flags(struct ifinfo *ifi)
 	}
 	/* ND flags */
 	memset(&nd, 0, sizeof(nd));
-	strncpy(nd.ifname, ifi->ifi_ifname,
+	strlcpy(nd.ifname, ifi->ifi_ifname,
 	    sizeof(nd.ifname));
 	error = ioctl(s, SIOCGIFINFO_IN6, (caddr_t)&nd);
 	if (error) {
@@ -518,7 +516,7 @@ update_ifinfo(struct ifilist_head_t *ifi_head, int ifindex)
 			if (ifi->ifi_phymtu == 0) {
 				memset(&ifr, 0, sizeof(ifr));
 				ifr.ifr_addr.sa_family = AF_INET6;
-				strncpy(ifr.ifr_name, ifi->ifi_ifname,
+				strlcpy(ifr.ifr_name, ifi->ifi_ifname,
 				    sizeof(ifr.ifr_name));
 				error = ioctl(s, SIOCGIFMTU, (caddr_t)&ifr);
 				if (error) {

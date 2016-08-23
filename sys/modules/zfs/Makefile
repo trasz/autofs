@@ -4,7 +4,7 @@ SYSDIR?=${.CURDIR}/../..
 
 KMOD=	zfs
 
-SRCS=	bus_if.h device_if.h vnode_if.h
+SRCS=	bus_if.h device_if.h vnode_if.h opt_kstack_pages.h
 
 SUNW=	${SYSDIR}/cddl/contrib/opensolaris
 
@@ -13,14 +13,15 @@ SRCS+=	acl_common.c
 .PATH:	${SUNW}/common/avl
 SRCS+=	avl.c
 .PATH:	${SUNW}/common/nvpair
-SRCS+=	nvpair.c
-SRCS+=	nvpair_alloc_fixed.c
-SRCS+=	fnvpair.c
+SRCS+=	opensolaris_nvpair.c
+SRCS+=	opensolaris_nvpair_alloc_fixed.c
+SRCS+=	opensolaris_fnvpair.c
 .PATH:	${SYSDIR}/cddl/contrib/opensolaris/common/unicode
 SRCS+=	u8_textprep.c
 
 .PATH:	${SYSDIR}/cddl/compat/opensolaris/kern
 SRCS+=	opensolaris_acl.c
+SRCS+=	opensolaris_dtrace.c
 SRCS+=	opensolaris_kobj.c
 SRCS+=	opensolaris_kstat.c
 SRCS+=	opensolaris_lookup.c
@@ -67,7 +68,10 @@ SRCS+=	zmod_subr.c
 SRCS+=	zutil.c
 
 .PATH:	${SYSDIR}/crypto/sha2
-SRCS+=	sha2.c sha256c.c
+SRCS+=	sha256c.c sha512c.c
+
+.PATH:	${SYSDIR}/crypto/skein
+SRCS+=	skein.c skein_block.c
 
 .PATH:	${SUNW}/common/zfs
 .include "${SUNW}/uts/common/Makefile.files"
@@ -93,14 +97,15 @@ CFLAGS+=-DBUILDING_ZFS
 CFLAGS+=-mminimal-toc
 .endif
 
-#CFLAGS+=-DDEBUG=1
-#DEBUG_FLAGS=-g
+.ifdef ZFS_DEBUG
+CFLAGS+=-DDEBUG=1
+DEBUG_FLAGS=-g
+.endif
 
 .include <bsd.kmod.mk>
 
 CFLAGS+=	-include ${SYSDIR}/cddl/compat/opensolaris/sys/debug_compat.h
 
-CWARNFLAGS+=-Wno-unknown-pragmas
 CWARNFLAGS+=-Wno-missing-prototypes
 CWARNFLAGS+=-Wno-undef
 CWARNFLAGS+=-Wno-strict-prototypes

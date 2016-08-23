@@ -79,7 +79,7 @@ __FBSDID("$FreeBSD$");
 static int uhid_debug = 0;
 
 static SYSCTL_NODE(_hw_usb, OID_AUTO, uhid, CTLFLAG_RW, 0, "USB uhid");
-SYSCTL_INT(_hw_usb_uhid, OID_AUTO, debug, CTLFLAG_RW,
+SYSCTL_INT(_hw_usb_uhid, OID_AUTO, debug, CTLFLAG_RWTUN,
     &uhid_debug, 0, "Debug level");
 #endif
 
@@ -518,7 +518,9 @@ uhid_open(struct usb_fifo *fifo, int fflags)
 	 */
 	if (fflags & FREAD) {
 		/* reset flags */
+		mtx_lock(&sc->sc_mtx);
 		sc->sc_flags &= ~UHID_FLAG_IMMED;
+		mtx_unlock(&sc->sc_mtx);
 
 		if (usb_fifo_alloc_buffer(fifo,
 		    sc->sc_isize + 1, UHID_FRAME_NUM)) {
@@ -734,7 +736,7 @@ uhid_attach(device_t dev)
 		if (uaa->info.idProduct == USB_PRODUCT_WACOM_GRAPHIRE) {
 
 			sc->sc_repdesc_size = sizeof(uhid_graphire_report_descr);
-			sc->sc_repdesc_ptr = (void *)&uhid_graphire_report_descr;
+			sc->sc_repdesc_ptr = __DECONST(void *, &uhid_graphire_report_descr);
 			sc->sc_flags |= UHID_FLAG_STATIC_DESC;
 
 		} else if (uaa->info.idProduct == USB_PRODUCT_WACOM_GRAPHIRE3_4X5) {
@@ -755,7 +757,7 @@ uhid_attach(device_t dev)
 				    usbd_errstr(error));
 			}
 			sc->sc_repdesc_size = sizeof(uhid_graphire3_4x5_report_descr);
-			sc->sc_repdesc_ptr = (void *)&uhid_graphire3_4x5_report_descr;
+			sc->sc_repdesc_ptr = __DECONST(void *, &uhid_graphire3_4x5_report_descr);
 			sc->sc_flags |= UHID_FLAG_STATIC_DESC;
 		}
 	} else if ((uaa->info.bInterfaceClass == UICLASS_VENDOR) &&
@@ -775,7 +777,7 @@ uhid_attach(device_t dev)
 		}
 		/* the Xbox 360 gamepad has no report descriptor */
 		sc->sc_repdesc_size = sizeof(uhid_xb360gp_report_descr);
-		sc->sc_repdesc_ptr = (void *)&uhid_xb360gp_report_descr;
+		sc->sc_repdesc_ptr = __DECONST(void *, &uhid_xb360gp_report_descr);
 		sc->sc_flags |= UHID_FLAG_STATIC_DESC;
 	}
 	if (sc->sc_repdesc_ptr == NULL) {
@@ -876,3 +878,4 @@ static driver_t uhid_driver = {
 DRIVER_MODULE(uhid, uhub, uhid_driver, uhid_devclass, NULL, 0);
 MODULE_DEPEND(uhid, usb, 1, 1, 1);
 MODULE_VERSION(uhid, 1);
+USB_PNP_HOST_INFO(uhid_devs);

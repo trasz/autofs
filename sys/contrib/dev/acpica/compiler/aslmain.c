@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2013, Intel Corp.
+ * Copyright (C) 2000 - 2016, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -51,6 +51,17 @@
 #define _COMPONENT          ACPI_COMPILER
         ACPI_MODULE_NAME    ("aslmain")
 
+/*
+ * Main routine for the iASL compiler.
+ *
+ * Portability note: The compiler depends upon the host for command-line
+ * wildcard support - it is not implemented locally. For example:
+ *
+ * Linux/Unix systems: Shell expands wildcards automatically.
+ *
+ * Windows: The setargv.obj module must be linked in to automatically
+ * expand wildcards.
+ */
 
 /* Local prototypes */
 
@@ -83,11 +94,22 @@ Usage (
     printf ("%s\n\n", ASL_COMPLIANCE);
     ACPI_USAGE_HEADER ("iasl [Options] [Files]");
 
-    printf ("\nGlobal:\n");
+    printf ("\nGeneral:\n");
     ACPI_OPTION ("-@ <file>",       "Specify command file");
     ACPI_OPTION ("-I <dir>",        "Specify additional include directory");
-    ACPI_OPTION ("-T <sig>|ALL|*",  "Create table template file for ACPI <Sig>");
+    ACPI_OPTION ("-T <sig list>|ALL",   "Create ACPI table template/example files");
+    ACPI_OPTION ("-T <count>",      "Emit DSDT and <count> SSDTs to same file");
+    ACPI_OPTION ("-p <prefix>",     "Specify path/filename prefix for all output files");
     ACPI_OPTION ("-v",              "Display compiler version");
+    ACPI_OPTION ("-vo",             "Enable optimization comments");
+    ACPI_OPTION ("-vs",             "Disable signon");
+
+    printf ("\nHelp:\n");
+    ACPI_OPTION ("-h",              "This message");
+    ACPI_OPTION ("-hc",             "Display operators allowed in constant expressions");
+    ACPI_OPTION ("-hf",             "Display help for output filename generation");
+    ACPI_OPTION ("-hr",             "Display ACPI reserved method names");
+    ACPI_OPTION ("-ht",             "Display currently supported ACPI table names");
 
     printf ("\nPreprocessor:\n");
     ACPI_OPTION ("-D <symbol>",     "Define symbol for preprocessor use");
@@ -95,13 +117,11 @@ Usage (
     ACPI_OPTION ("-P",              "Preprocess only and create preprocessor output file (*.i)");
     ACPI_OPTION ("-Pn",             "Disable preprocessor");
 
-    printf ("\nGeneral Processing:\n");
-    ACPI_OPTION ("-p <prefix>",     "Specify path/filename prefix for all output files");
-    ACPI_OPTION ("-va",             "Disable all errors and warnings (summary only)");
+    printf ("\nErrors, Warnings, and Remarks:\n");
+    ACPI_OPTION ("-va",             "Disable all errors/warnings/remarks");
+    ACPI_OPTION ("-ve",             "Report only errors (ignore warnings and remarks)");
     ACPI_OPTION ("-vi",             "Less verbose errors and warnings for use with IDEs");
-    ACPI_OPTION ("-vo",             "Enable optimization comments");
     ACPI_OPTION ("-vr",             "Disable remarks");
-    ACPI_OPTION ("-vs",             "Disable signon");
     ACPI_OPTION ("-vw <messageid>", "Disable specific warning or remark");
     ACPI_OPTION ("-w1 -w2 -w3",     "Set warning reporting level");
     ACPI_OPTION ("-we",             "Report warnings as errors");
@@ -111,6 +131,7 @@ Usage (
     ACPI_OPTION ("-of",             "Disable constant folding");
     ACPI_OPTION ("-oi",             "Disable integer optimization to Zero/One/Ones");
     ACPI_OPTION ("-on",             "Disable named reference string optimization");
+    ACPI_OPTION ("-ot",             "Disable typechecking");
     ACPI_OPTION ("-cr",             "Disable Resource Descriptor error checking");
     ACPI_OPTION ("-in",             "Ignore NoOp operators");
     ACPI_OPTION ("-r <revision>",   "Override table header Revision (1-255)");
@@ -123,39 +144,39 @@ Usage (
 
     printf ("\nOptional Listing Files:\n");
     ACPI_OPTION ("-l",              "Create mixed listing file (ASL source and AML) (*.lst)");
+    ACPI_OPTION ("-lm",             "Create hardware summary map file (*.map)");
     ACPI_OPTION ("-ln",             "Create namespace file (*.nsp)");
     ACPI_OPTION ("-ls",             "Create combined source file (expanded includes) (*.src)");
+    ACPI_OPTION ("-lx",             "Create cross-reference file (*.xrf)");
 
     printf ("\nData Table Compiler:\n");
     ACPI_OPTION ("-G",              "Compile custom table that contains generic operators");
     ACPI_OPTION ("-vt",             "Create verbose template files (full disassembly)");
 
     printf ("\nAML Disassembler:\n");
-    ACPI_OPTION ("-d  <f1,f2>",     "Disassemble or decode binary ACPI tables to file (*.dsl)");
+    ACPI_OPTION ("-d  <f1 f2 ...>", "Disassemble or decode binary ACPI tables to file (*.dsl)");
     ACPI_OPTION ("",                "  (Optional, file type is automatically detected)");
-    ACPI_OPTION ("-da <f1,f2>",     "Disassemble multiple tables from single namespace");
+    ACPI_OPTION ("-da <f1 f2 ...>", "Disassemble multiple tables from single namespace");
     ACPI_OPTION ("-db",             "Do not translate Buffers to Resource Templates");
-    ACPI_OPTION ("-dc <f1,f2>",     "Disassemble AML and immediately compile it");
+    ACPI_OPTION ("-dc <f1 f2 ...>", "Disassemble AML and immediately compile it");
     ACPI_OPTION ("",                "  (Obtain DSDT from current system if no input file)");
-    ACPI_OPTION ("-e  <f1,f2>",     "Include ACPI table(s) for external symbol resolution");
+    ACPI_OPTION ("-df",             "Force disassembler to assume table contains valid AML");
+    ACPI_OPTION ("-dl",             "Emit legacy ASL code only (no C-style operators)");
+    ACPI_OPTION ("-e  <f1 f2 ...>", "Include ACPI table(s) for external symbol resolution");
     ACPI_OPTION ("-fe <file>",      "Specify external symbol declaration file");
-    ACPI_OPTION ("-g",              "Get ACPI tables and write to files (*.dat)");
     ACPI_OPTION ("-in",             "Ignore NoOp opcodes");
+    ACPI_OPTION ("-l",              "Disassemble to mixed ASL and AML code");
     ACPI_OPTION ("-vt",             "Dump binary table data in hex format within output file");
 
-    printf ("\nHelp:\n");
-    ACPI_OPTION ("-h",              "This message");
-    ACPI_OPTION ("-hc",             "Display operators allowed in constant expressions");
-    ACPI_OPTION ("-hf",             "Display help for output filename generation");
-    ACPI_OPTION ("-hr",             "Display ACPI reserved method names");
-    ACPI_OPTION ("-ht",             "Display currently supported ACPI table names");
-
     printf ("\nDebug Options:\n");
-    ACPI_OPTION ("-bf -bt",         "Create debug file (full or parse tree only) (*.txt)");
+    ACPI_OPTION ("-bf",             "Create debug file (full output) (*.txt)");
+    ACPI_OPTION ("-bs",             "Create debug file (parse tree only) (*.txt)");
+    ACPI_OPTION ("-bp <depth>",     "Prune ASL parse tree");
+    ACPI_OPTION ("-bt <type>",      "Object type to be pruned from the parse tree");
     ACPI_OPTION ("-f",              "Ignore errors, force creation of AML output file(s)");
     ACPI_OPTION ("-m <size>",       "Set internal line buffer size (in Kbytes)");
     ACPI_OPTION ("-n",              "Parse only, no output generation");
-    ACPI_OPTION ("-ot",             "Display compile times and statistics");
+    ACPI_OPTION ("-oc",             "Display compile times and statistics");
     ACPI_OPTION ("-x <level>",      "Set debug level for trace output");
     ACPI_OPTION ("-z",              "Do not insert new compiler ID for DataTables");
 }
@@ -214,7 +235,7 @@ AslSignalHandler (
 
     /* Close all open files */
 
-    Gbl_Files[ASL_FILE_PREPROCESSOR].Handle = NULL; /* the .i file is same as source file */
+    Gbl_Files[ASL_FILE_PREPROCESSOR].Handle = NULL; /* the .pre file is same as source file */
 
     for (i = ASL_FILE_INPUT; i < ASL_MAX_FILE_TYPE; i++)
     {
@@ -251,6 +272,14 @@ AslInitialize (
     UINT32                  i;
 
 
+    AcpiGbl_DmOpt_Verbose = FALSE;
+
+    /* Default integer width is 64 bits */
+
+    AcpiGbl_IntegerBitWidth = 64;
+    AcpiGbl_IntegerNybbleWidth = 16;
+    AcpiGbl_IntegerByteWidth = 8;
+
     for (i = 0; i < ASL_NUM_FILES; i++)
     {
         Gbl_Files[i].Handle = NULL;
@@ -286,8 +315,22 @@ main (
     ACPI_STATUS             Status;
     int                     Index1;
     int                     Index2;
+    int                     ReturnStatus = 0;
 
 
+    /*
+     * Big-endian machines are not currently supported. ACPI tables must
+     * be little-endian, and support for big-endian machines needs to
+     * be implemented.
+     */
+    if (UtIsBigEndianMachine ())
+    {
+        fprintf (stderr,
+            "iASL is not currently supported on big-endian machines.\n");
+        return (-1);
+    }
+
+    AcpiOsInitialize ();
     ACPI_DEBUG_INITIALIZE (); /* For debug version only */
 
     /* Initialize preprocessor and compiler before command line processing */
@@ -307,21 +350,11 @@ main (
 
     /* Perform global actions first/only */
 
-    if (Gbl_GetAllTables)
-    {
-        Status = AslDoOneFile (NULL);
-        if (ACPI_FAILURE (Status))
-        {
-            return (-1);
-        }
-        return (0);
-    }
-
     if (Gbl_DisassembleAll)
     {
         while (argv[Index1])
         {
-            Status = AslDoOnePathname (argv[Index1], AcpiDmAddToExternalFileList);
+            Status = AcpiDmAddToExternalFileList (argv[Index1]);
             if (ACPI_FAILURE (Status))
             {
                 return (-1);
@@ -335,19 +368,36 @@ main (
 
     while (argv[Index2])
     {
-        Status = AslDoOnePathname (argv[Index2], AslDoOneFile);
+        /*
+         * If -p not specified, we will use the input filename as the
+         * output filename prefix
+         */
+        if (Gbl_UseDefaultAmlFilename)
+        {
+            Gbl_OutputFilenamePrefix = argv[Index2];
+            UtConvertBackslashes (Gbl_OutputFilenamePrefix);
+        }
+
+        Status = AslDoOneFile (argv[Index2]);
         if (ACPI_FAILURE (Status))
         {
-            return (-1);
+            ReturnStatus = -1;
+            goto CleanupAndExit;
         }
 
         Index2++;
     }
+
+
+CleanupAndExit:
+
+    UtFreeLineBuffers ();
+    AslParserCleanup ();
 
     if (AcpiGbl_ExternalFileList)
     {
         AcpiDmClearExternalFileList();
     }
 
-    return (0);
+    return (ReturnStatus);
 }

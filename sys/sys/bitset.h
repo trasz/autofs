@@ -32,6 +32,13 @@
 #ifndef _SYS_BITSET_H_
 #define	_SYS_BITSET_H_
 
+#define	__bitset_mask(_s, n)						\
+	(1L << ((__bitset_words((_s)) == 1) ?				\
+	    (__size_t)(n) : ((n) % _BITSET_BITS)))
+
+#define	__bitset_word(_s, n)						\
+	((__bitset_words((_s)) == 1) ? 0 : ((n) / _BITSET_BITS))
+
 #define	BIT_CLR(_s, n, p)						\
 	((p)->__bits[__bitset_word(_s, n)] &= ~__bitset_mask((_s), (n)))
 
@@ -135,6 +142,10 @@
 	atomic_set_long(&(p)->__bits[__bitset_word(_s, n)],		\
 	    __bitset_mask((_s), n))
 
+#define	BIT_SET_ATOMIC_ACQ(_s, n, p)					\
+	atomic_set_acq_long(&(p)->__bits[__bitset_word(_s, n)],		\
+	    __bitset_mask((_s), n))
+
 /* Convenience functions catering special cases. */
 #define	BIT_AND_ATOMIC(_s, d, s) do {					\
 	__size_t __i;							\
@@ -171,5 +182,27 @@
 	}								\
 	__bit;								\
 })
+
+#define	BIT_COUNT(_s, p) __extension__ ({				\
+	__size_t __i;							\
+	int __count;							\
+									\
+	__count = 0;							\
+	for (__i = 0; __i < __bitset_words((_s)); __i++)		\
+		__count += __bitcountl((p)->__bits[__i]);		\
+	__count;							\
+})
+
+#define	BITSET_T_INITIALIZER(x)						\
+	{ .__bits = { x } }
+
+#define	BITSET_FSET(n)							\
+	[ 0 ... ((n) - 1) ] = (-1L)
+
+/*
+ * Dynamically allocate a bitset.
+ */
+#define BITSET_ALLOC(_s, mt, mf)					\
+	malloc(__bitset_words(_s) * sizeof(long), mt, (mf))
 
 #endif /* !_SYS_BITSET_H_ */

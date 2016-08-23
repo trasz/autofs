@@ -67,6 +67,9 @@ void
 /*
  * Function prototypes
  */
+int32_t
+sctp_map_assoc_state(int);
+
 uint32_t
 sctp_get_ifa_hash_val(struct sockaddr *addr);
 
@@ -80,7 +83,7 @@ uint32_t sctp_select_initial_TSN(struct sctp_pcb *);
 
 uint32_t sctp_select_a_tag(struct sctp_inpcb *, uint16_t lport, uint16_t rport, int);
 
-int sctp_init_asoc(struct sctp_inpcb *, struct sctp_tcb *, uint32_t, uint32_t);
+int sctp_init_asoc(struct sctp_inpcb *, struct sctp_tcb *, uint32_t, uint32_t, uint16_t);
 
 void sctp_fill_random_store(struct sctp_pcb *);
 
@@ -105,6 +108,14 @@ void
      sctp_mtu_size_reset(struct sctp_inpcb *, struct sctp_association *, uint32_t);
 
 void
+sctp_wakeup_the_read_socket(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
+    int so_locked
+#if !defined(__APPLE__) && !defined(SCTP_SO_LOCK_TESTING)
+    SCTP_UNUSED
+#endif
+);
+
+void
 sctp_add_to_readq(struct sctp_inpcb *inp,
     struct sctp_tcb *stcb,
     struct sctp_queued_to_read *control,
@@ -116,16 +127,6 @@ sctp_add_to_readq(struct sctp_inpcb *inp,
     SCTP_UNUSED
 #endif
 );
-
-int
-sctp_append_to_readq(struct sctp_inpcb *inp,
-    struct sctp_tcb *stcb,
-    struct sctp_queued_to_read *control,
-    struct mbuf *m,
-    int end,
-    int new_cumack,
-    struct sockbuf *sb);
-
 
 void sctp_iterator_worker(void);
 
@@ -208,7 +209,7 @@ sctp_handle_ootb(struct mbuf *, int, int,
     struct sockaddr *, struct sockaddr *,
     struct sctphdr *, struct sctp_inpcb *,
     struct mbuf *,
-    uint8_t, uint32_t,
+    uint8_t, uint32_t, uint16_t,
     uint32_t, uint16_t);
 
 int 
@@ -217,7 +218,8 @@ sctp_connectx_helper_add(struct sctp_tcb *stcb, struct sockaddr *addr,
 
 struct sctp_tcb *
 sctp_connectx_helper_find(struct sctp_inpcb *inp, struct sockaddr *addr,
-    int *totaddr, int *num_v4, int *num_v6, int *error, int limit, int *bad_addr);
+    unsigned int *totaddr, unsigned int *num_v4, unsigned int *num_v6,
+    int *error, unsigned int limit, int *bad_addr);
 
 int sctp_is_there_an_abort_here(struct mbuf *, int, uint32_t *);
 
@@ -349,8 +351,14 @@ void sctp_log_strm_del_alt(struct sctp_tcb *stcb, uint32_t, uint16_t, uint16_t, 
 void sctp_log_nagle_event(struct sctp_tcb *stcb, int action);
 
 
+#ifdef SCTP_MBUF_LOGGING
 void
      sctp_log_mb(struct mbuf *m, int from);
+
+void
+     sctp_log_mbc(struct mbuf *m, int from);
+
+#endif
 
 void
 sctp_sblog(struct sockbuf *sb,
@@ -367,9 +375,8 @@ void sctp_log_closing(struct sctp_inpcb *inp, struct sctp_tcb *stcb, int16_t loc
 
 void sctp_log_lock(struct sctp_inpcb *inp, struct sctp_tcb *stcb, uint8_t from);
 void sctp_log_maxburst(struct sctp_tcb *stcb, struct sctp_nets *, int, int, uint8_t);
-void sctp_log_block(uint8_t, struct sctp_association *, int);
+void sctp_log_block(uint8_t, struct sctp_association *, size_t);
 void sctp_log_rwnd(uint8_t, uint32_t, uint32_t, uint32_t);
-void sctp_log_mbcnt(uint8_t, uint32_t, uint32_t, uint32_t, uint32_t);
 void sctp_log_rwnd_set(uint8_t, uint32_t, uint32_t, uint32_t, uint32_t);
 int sctp_fill_stat_log(void *, size_t *);
 void sctp_log_fr(uint32_t, uint32_t, uint32_t, int);

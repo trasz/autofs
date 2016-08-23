@@ -195,6 +195,26 @@ static const struct inst db_inst_0f0x[] = {
 /*0f*/	{ "",      FALSE, NONE,  0,	      0 },
 };
 
+static const struct inst db_inst_0f1x[] = {
+/*10*/	{ "",      FALSE, NONE,  0,	      0 },
+/*11*/	{ "",      FALSE, NONE,  0,	      0 },
+/*12*/	{ "",      FALSE, NONE,  0,	      0 },
+/*13*/	{ "",      FALSE, NONE,  0,	      0 },
+/*14*/	{ "",      FALSE, NONE,  0,	      0 },
+/*15*/	{ "",      FALSE, NONE,  0,	      0 },
+/*16*/	{ "",      FALSE, NONE,  0,	      0 },
+/*17*/	{ "",      FALSE, NONE,  0,	      0 },
+
+/*18*/	{ "",      FALSE, NONE,  0,	      0 },
+/*19*/	{ "",      FALSE, NONE,  0,	      0 },
+/*1a*/	{ "",      FALSE, NONE,  0,	      0 },
+/*1b*/	{ "",      FALSE, NONE,  0,	      0 },
+/*1c*/	{ "",      FALSE, NONE,  0,	      0 },
+/*1d*/	{ "",      FALSE, NONE,  0,	      0 },
+/*1e*/	{ "",      FALSE, NONE,  0,	      0 },
+/*1f*/	{ "nopl",  TRUE,  SDEP,  0,	      "nopw" },
+};
+
 static const struct inst db_inst_0f2x[] = {
 /*20*/	{ "mov",   TRUE,  LONG,  op2(CR,El),  0 },
 /*21*/	{ "mov",   TRUE,  LONG,  op2(DR,El),  0 },
@@ -356,7 +376,7 @@ static const struct inst db_inst_0fcx[] = {
 
 static const struct inst * const db_inst_0f[] = {
 	db_inst_0f0x,
-	0,
+	db_inst_0f1x,
 	db_inst_0f2x,
 	db_inst_0f3x,
 	db_inst_0f4x,
@@ -933,17 +953,17 @@ db_read_address(loc, short_addr, regmodrm, addrp)
 	    return (loc);
 	}
 	addrp->is_reg = FALSE;
-	addrp->index = 0;
+	addrp->index = NULL;
 
 	if (short_addr) {
-	    addrp->index = 0;
+	    addrp->index = NULL;
 	    addrp->ss = 0;
 	    switch (mod) {
 		case 0:
 		    if (rm == 6) {
 			get_value_inc(disp, loc, 2, FALSE);
 			addrp->disp = disp;
-			addrp->base = 0;
+			addrp->base = NULL;
 		    }
 		    else {
 			addrp->disp = 0;
@@ -977,7 +997,7 @@ db_read_address(loc, short_addr, regmodrm, addrp)
 		case 0:
 		    if (rm == 5) {
 			get_value_inc(addrp->disp, loc, 4, FALSE);
-			addrp->base = 0;
+			addrp->base = NULL;
 		    }
 		    else {
 			addrp->disp = 0;
@@ -1017,7 +1037,7 @@ db_print_address(seg, size, addrp)
 	}
 
 	db_printsym((db_addr_t)addrp->disp, DB_STGY_ANY);
-	if (addrp->base != 0 || addrp->index != 0) {
+	if (addrp->base != NULL || addrp->index != NULL) {
 	    db_printf("(");
 	    if (addrp->base)
 		db_printf("%s", addrp->base);
@@ -1128,9 +1148,7 @@ db_disasm_esc(loc, inst, short_addr, size, seg)
  * next instruction.
  */
 db_addr_t
-db_disasm(loc, altfmt)
-	db_addr_t	loc;
-	boolean_t	altfmt;
+db_disasm(db_addr_t loc, bool altfmt)
 {
 	int	inst;
 	int	size;
@@ -1153,7 +1171,7 @@ db_disasm(loc, altfmt)
 	get_value_inc(inst, loc, 1, FALSE);
 	short_addr = FALSE;
 	size = LONG;
-	seg = 0;
+	seg = NULL;
 
 	/*
 	 * Get prefixes
@@ -1221,7 +1239,7 @@ db_disasm(loc, altfmt)
 	if (inst == 0x0f) {
 	    get_value_inc(inst, loc, 1, FALSE);
 	    ip = db_inst_0f[inst>>4];
-	    if (ip == 0) {
+	    if (ip == NULL) {
 		ip = &db_bad_inst;
 	    }
 	    else {

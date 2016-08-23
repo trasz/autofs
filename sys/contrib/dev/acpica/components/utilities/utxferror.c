@@ -5,7 +5,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2013, Intel Corp.
+ * Copyright (C) 2000 - 2016, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -41,7 +41,7 @@
  * POSSIBILITY OF SUCH DAMAGES.
  */
 
-#define __UTXFERROR_C__
+#define EXPORT_ACPI_INTERFACES
 
 #include <contrib/dev/acpica/include/acpi.h>
 #include <contrib/dev/acpica/include/accommon.h>
@@ -54,6 +54,8 @@
  * This module is used for the in-kernel ACPICA as well as the ACPICA
  * tools/applications.
  */
+
+#ifndef ACPI_NO_ERROR_MESSAGES /* Entire module */
 
 /*******************************************************************************
  *
@@ -121,7 +123,19 @@ AcpiException (
 
 
     ACPI_MSG_REDIRECT_BEGIN;
-    AcpiOsPrintf (ACPI_MSG_EXCEPTION "%s, ", AcpiFormatException (Status));
+
+    /* For AE_OK, just print the message */
+
+    if (ACPI_SUCCESS (Status))
+    {
+        AcpiOsPrintf (ACPI_MSG_EXCEPTION);
+
+    }
+    else
+    {
+        AcpiOsPrintf (ACPI_MSG_EXCEPTION "%s, ",
+            AcpiFormatException (Status));
+    }
 
     va_start (ArgList, Format);
     AcpiOsVprintf (Format, ArgList);
@@ -191,8 +205,6 @@ ACPI_EXPORT_SYMBOL (AcpiWarning)
 
 void ACPI_INTERNAL_VAR_XFACE
 AcpiInfo (
-    const char              *ModuleName,
-    UINT32                  LineNumber,
     const char              *Format,
     ...)
 {
@@ -294,3 +306,5 @@ AcpiBiosWarning (
 }
 
 ACPI_EXPORT_SYMBOL (AcpiBiosWarning)
+
+#endif /* ACPI_NO_ERROR_MESSAGES */

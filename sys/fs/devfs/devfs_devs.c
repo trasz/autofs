@@ -61,7 +61,7 @@ static MALLOC_DEFINE(M_DEVFS2, "DEVFS2", "DEVFS data 2");
 static MALLOC_DEFINE(M_DEVFS3, "DEVFS3", "DEVFS data 3");
 static MALLOC_DEFINE(M_CDEVP, "DEVFS1", "DEVFS cdev_priv storage");
 
-static SYSCTL_NODE(_vfs, OID_AUTO, devfs, CTLFLAG_RW, 0, "DEVFS filesystem");
+SYSCTL_NODE(_vfs, OID_AUTO, devfs, CTLFLAG_RW, 0, "DEVFS filesystem");
 
 static unsigned devfs_generation;
 SYSCTL_UINT(_vfs_devfs, OID_AUTO, generation, CTLFLAG_RD,
@@ -109,10 +109,10 @@ SYSCTL_PROC(_kern, OID_AUTO, devname,
     NULL, 0, sysctl_devname, "", "devname(3) handler");
 
 SYSCTL_INT(_debug_sizeof, OID_AUTO, cdev, CTLFLAG_RD,
-    0, sizeof(struct cdev), "sizeof(struct cdev)");
+    SYSCTL_NULL_INT_PTR, sizeof(struct cdev), "sizeof(struct cdev)");
 
 SYSCTL_INT(_debug_sizeof, OID_AUTO, cdev_priv, CTLFLAG_RD,
-    0, sizeof(struct cdev_priv), "sizeof(struct cdev_priv)");
+    SYSCTL_NULL_INT_PTR, sizeof(struct cdev_priv), "sizeof(struct cdev_priv)");
 
 struct cdev *
 devfs_alloc(int flags)
@@ -127,16 +127,11 @@ devfs_alloc(int flags)
 		return (NULL);
 
 	cdp->cdp_dirents = &cdp->cdp_dirent0;
-	cdp->cdp_dirent0 = NULL;
-	cdp->cdp_maxdirent = 0;
-	cdp->cdp_inode = 0;
 
 	cdev = &cdp->cdp_c;
-
 	LIST_INIT(&cdev->si_children);
 	vfs_timestamp(&ts);
 	cdev->si_atime = cdev->si_mtime = cdev->si_ctime = ts;
-	cdev->si_cred = NULL;
 
 	return (cdev);
 }
@@ -186,6 +181,16 @@ devfs_find(struct devfs_dirent *dd, const char *name, int namelen, int type)
 			continue;
 		if (type != 0 && type != de->de_dirent->d_type)
 			continue;
+
+		/*
+		 * The race with finding non-active name is not
+		 * completely closed by the check, but it is similar
+		 * to the devfs_allocv() in making it unlikely enough.
+		 */
+		if (de->de_dirent->d_type == DT_CHR &&
+		    (de->de_cdp->cdp_flags & CDP_ACTIVE) == 0)
+			continue;
+
 		if (bcmp(name, de->de_dirent->d_name, namelen) != 0)
 			continue;
 		break;
@@ -294,6 +299,13 @@ devfs_vmkdir(struct devfs_mount *dmp, char *name, int namelen, struct devfs_dire
 void
 devfs_dirent_free(struct devfs_dirent *de)
 {
+	struct vnode *vp;
+
+	vp = de->de_vnode;
+	mtx_lock(&devfs_de_interlock);
+	if (vp != NULL && vp->v_data == de)
+		vp->v_data = NULL;
+	mtx_unlock(&devfs_de_interlock);
 	free(de, M_DEVFS3);
 }
 

@@ -53,14 +53,15 @@ on 1 byte), but shoehorning those bytes into integers efficiently is messy.
 #ifdef HAVE_SYS_TYPES_H
 # include <sys/types.h> /* attempt to define endianness (solaris) */
 #endif
-#ifdef linux
-# include <endian.h>    /* attempt to define endianness */
+#if defined(linux) || defined(__OpenBSD__)
+#  ifdef HAVE_ENDIAN_H
+#    include <endian.h>    /* attempt to define endianness */
+#  else
+#    include <machine/endian.h> /* on older OpenBSD */
+#  endif
 #endif
 #if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
 #include <sys/endian.h> /* attempt to define endianness */
-#endif
-#ifdef __OpenBSD__
-#include <machine/endian.h> /* attempt to define endianness */
 #endif
 
 /* random initial value */
@@ -355,7 +356,7 @@ uint32_t hashlittle( const void *key, size_t length, uint32_t initval)
      * rest of the string.  Every machine with memory protection I've seen
      * does it on word boundaries, so is OK with this.  But VALGRIND will
      * still catch it and complain.  The masking trick does make the hash
-     * noticably faster for short strings (like English words).
+     * noticeably faster for short strings (like English words).
      */
 #ifndef VALGRIND
 
@@ -543,7 +544,7 @@ void hashlittle2(
      * rest of the string.  Every machine with memory protection I've seen
      * does it on word boundaries, so is OK with this.  But VALGRIND will
      * still catch it and complain.  The masking trick does make the hash
-     * noticably faster for short strings (like English words).
+     * noticeably faster for short strings (like English words).
      */
 #ifndef VALGRIND
 
@@ -724,7 +725,7 @@ uint32_t hashbig( const void *key, size_t length, uint32_t initval)
      * rest of the string.  Every machine with memory protection I've seen
      * does it on word boundaries, so is OK with this.  But VALGRIND will
      * still catch it and complain.  The masking trick does make the hash
-     * noticably faster for short strings (like English words).
+     * noticeably faster for short strings (like English words).
      */
 #ifndef VALGRIND
 
@@ -857,7 +858,7 @@ void driver2()
     {
       for (j=0; j<8; ++j)   /*------------------------ for each input bit, */
       {
-	for (m=1; m<8; ++m) /*------------ for serveral possible initvals, */
+	for (m=1; m<8; ++m) /*------------ for several possible initvals, */
 	{
 	  for (l=0; l<HASHSTATE; ++l)
 	    e[l]=f[l]=g[l]=h[l]=x[l]=y[l]=~((uint32_t)0);

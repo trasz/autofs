@@ -168,9 +168,9 @@ adv_clear_state_really(struct adv_softc *adv, union ccb* ccb)
 			ccb_h = LIST_FIRST(&adv->pending_ccbs);
 			while (ccb_h != NULL) {
 				cinfo = ccb_h->ccb_cinfo_ptr;
-				callout_reset(&cinfo->timer,
-				    ccb_h->timeout * hz / 1000, adv_timeout,
-				    ccb_h);
+				callout_reset_sbt(&cinfo->timer,
+				    SBT_1MS * ccb_h->timeout, 0,
+				    adv_timeout, ccb_h, 0);
 				ccb_h = LIST_NEXT(ccb_h, sim_links.le);
 			}
 			adv->state &= ~ADV_IN_TIMEOUT;
@@ -569,8 +569,8 @@ adv_execute_ccb(void *arg, bus_dma_segment_t *dm_segs,
 	ccb_h->status |= CAM_SIM_QUEUED;
 	LIST_INSERT_HEAD(&adv->pending_ccbs, ccb_h, sim_links.le);
 	/* Schedule our timeout */
-	callout_reset(&cinfo->timer, ccb_h->timeout * hz /1000, adv_timeout,
-	    csio);
+	callout_reset_sbt(&cinfo->timer, SBT_1MS * ccb_h->timeout, 0,
+	    adv_timeout, csio, 0);
 }
 
 static struct adv_ccb_info *
@@ -633,7 +633,7 @@ adv_timeout(void *arg)
 		 * means that the driver attempts to clear only one error
 		 * condition at a time.  In general, timeouts that occur
 		 * close together are related anyway, so there is no benefit
-		 * in attempting to handle errors in parrallel.  Timeouts will
+		 * in attempting to handle errors in parallel.  Timeouts will
 		 * be reinstated when the recovery process ends.
 		 */
 		adv_set_state(adv, ADV_IN_TIMEOUT);
@@ -1123,7 +1123,7 @@ adv_done(struct adv_softc *adv, union ccb *ccb, u_int done_stat,
 			 * from this initiator are in effect, but this
 			 * ignores multi-initiator setups and there is
 			 * evidence that the firmware gets its per-device
-			 * transaction counts screwed up occassionally.
+			 * transaction counts screwed up occasionally.
 			 */
 			ccb->ccb_h.status |= CAM_SCSI_STATUS_ERROR;
 			if ((ccb->ccb_h.flags & CAM_TAG_ACTION_VALID) != 0

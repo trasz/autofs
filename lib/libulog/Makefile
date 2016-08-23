@@ -1,5 +1,6 @@
 # $FreeBSD$
 
+PACKAGE=lib${LIB}
 SHLIBDIR?=/lib
 
 .include <src.opts.mk>
@@ -19,8 +20,7 @@ MLINKS+=ulog_login.3 ulog_login_pseudo.3 \
 	utempter_remove_added_record.3 removeFromUtmp.3 \
 	utempter_remove_record.3 removeLineFromUtmp.3
 
-DPADD=	${LIBMD}
-LDADD=	-lmd
+LIBADD=	md
 
 VERSION_DEF= ${.CURDIR}/../libc/Versions.def
 SYMBOL_MAPS= ${.CURDIR}/Symbol.map

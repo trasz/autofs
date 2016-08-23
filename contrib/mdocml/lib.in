@@ -1,6 +1,7 @@
-/*	$Id: lib.in,v 1.17 2013/10/13 15:24:03 schwarze Exp $ */
+/*	$Id: lib.in,v 1.18 2014/01/06 00:53:33 schwarze Exp $ */
 /*
  * Copyright (c) 2009 Kristaps Dzonsons <kristaps@bsd.lv>
+ * Copyright (c) 2009, 2012 Joerg Sonnenberger <joerg@netbsd.org>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -23,6 +24,7 @@
  * Be sure to escape strings.
  */
 
+LINE("lib80211",	"802.11 Wireless Network Management Library (lib80211, \\-l80211)")
 LINE("libarchive",	"Streaming Archive Library (libarchive, \\-larchive)")
 LINE("libarm",		"ARM Architecture Library (libarm, \\-larm)")
 LINE("libarm32",	"ARM32 Architecture Library (libarm32, \\-larm32)")
@@ -32,13 +34,15 @@ LINE("libc",		"Standard C\\~Library (libc, \\-lc)")
 LINE("libc_r",		"Reentrant C\\~Library (libc_r, \\-lc_r)")
 LINE("libcalendar",	"Calendar Arithmetic Library (libcalendar, \\-lcalendar)")
 LINE("libcam",		"Common Access Method User Library (libcam, \\-lcam)")
-LINE("libcapsicum",	"Capsicum Library (libcapsicum, \\-lcapsicum)")
+LINE("libcasper",	"Casper Library (libcasper, \\-lcapser)")
 LINE("libcdk",		"Curses Development Kit Library (libcdk, \\-lcdk)")
 LINE("libcipher",	"FreeSec Crypt Library (libcipher, \\-lcipher)")
 LINE("libcompat",	"Compatibility Library (libcompat, \\-lcompat)")
 LINE("libcrypt",	"Crypt Library (libcrypt, \\-lcrypt)")
 LINE("libcurses",	"Curses Library (libcurses, \\-lcurses)")
+LINE("libcuse", 	"Userland Character Device Library (libcuse, \\-lcuse)")
 LINE("libdevattr",	"Device attribute and event library (libdevattr, \\-ldevattr)")
+LINE("libdevctl",	"Device Control Library (libdevctl, \\-ldevctl)")
 LINE("libdevinfo",	"Device and Resource Information Utility Library (libdevinfo, \\-ldevinfo)")
 LINE("libdevstat",	"Device Statistics Library (libdevstat, \\-ldevstat)")
 LINE("libdisk",		"Interface to Slice and Partition Labels Library (libdisk, \\-ldisk)")
@@ -54,7 +58,7 @@ LINE("libfsid",		"Filesystem Identification Library (libfsid, \\-lfsid)")
 LINE("libftpio",	"FTP Connection Management Library (libftpio, \\-lftpio)")
 LINE("libform",		"Curses Form Library (libform, \\-lform)")
 LINE("libgeom",		"Userland API Library for Kernel GEOM subsystem (libgeom, \\-lgeom)")
-LINE("libgpib",		"General-Purpose Instrument Bus (GPIB) library (libgpib, \\-lgpib)")
+LINE("libgpio",		"General-Purpose Input Output (GPIO) library (libgpio, \\-lgpio)")
 LINE("libhammer",	"HAMMER Filesystem Userland Library (libhammer, \\-lhammer)")
 LINE("libi386",		"i386 Architecture Library (libi386, \\-li386)")
 LINE("libintl",		"Internationalized Message Handling Library (libintl, \\-lintl)")
@@ -107,6 +111,7 @@ LINE("libsdp",		"Bluetooth Service Discovery Protocol User Library (libsdp, \\-l
 LINE("libssp",		"Buffer Overflow Protection Library (libssp, \\-lssp)")
 LINE("libstdthreads",	"C11 Threads Library (libstdthreads, \\-lstdthreads)")
 LINE("libSystem",	"System Library (libSystem, \\-lSystem)")
+LINE("libsysdecode",	"System Argument Decoding Library (libsysdecode, \\-lsysdecode)")
 LINE("libtacplus",	"TACACS+ Client Library (libtacplus, \\-ltacplus)")
 LINE("libtcplay",	"TrueCrypt-compatible API library (libtcplay, \\-ltcplay)")
 LINE("libtermcap",	"Termcap Access Library (libtermcap, \\-ltermcap)")
@@ -119,4 +124,5 @@ LINE("libusbhid",	"USB Human Interface Devices Library (libusbhid, \\-lusbhid)")
 LINE("libutil",		"System Utilities Library (libutil, \\-lutil)")
 LINE("libvgl",		"Video Graphics Library (libvgl, \\-lvgl)")
 LINE("libx86_64",	"x86_64 Architecture Library (libx86_64, \\-lx86_64)")
+LINE("libxo",		"Text, XML, JSON, and HTML Output Emission Library (libxo, \\-lxo)")
 LINE("libz",		"Compression Library (libz, \\-lz)")

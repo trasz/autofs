@@ -461,7 +461,7 @@ long double	fmal(long double, long double, long double);
 long double	fmaxl(long double, long double) __pure2;
 long double	fminl(long double, long double) __pure2;
 long double	fmodl(long double, long double);
-long double	frexpl(long double value, int *); /* fundamentally !__pure2 */
+long double	frexpl(long double, int *); /* fundamentally !__pure2 */
 long double	hypotl(long double, long double);
 int		ilogbl(long double) __pure2;
 long double	ldexpl(long double, int);
@@ -496,8 +496,12 @@ long double	tanhl(long double);
 long double	tanl(long double);
 long double	tgammal(long double);
 long double	truncl(long double);
-
 #endif /* __ISO_C_VISIBLE >= 1999 */
+
+#if __BSD_VISIBLE
+long double	lgammal_r(long double, int *);
+#endif
+
 __END_DECLS
 
 #endif /* !_MATH_H_ */

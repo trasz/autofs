@@ -110,9 +110,6 @@ MALLOC_DEFINE(M_CACHE, "cache", "Various Dynamically allocated caches");
 MALLOC_DEFINE(M_DEVBUF, "devbuf", "device driver memory");
 MALLOC_DEFINE(M_TEMP, "temp", "misc temporary data buffers");
 
-MALLOC_DEFINE(M_IP6OPT, "ip6opt", "IPv6 options");
-MALLOC_DEFINE(M_IP6NDP, "ip6ndp", "IPv6 Neighbor Discovery");
-
 static struct malloc_type *kmemstatistics;
 static int kmemcount;
 
@@ -475,6 +472,8 @@ malloc(unsigned long size, struct malloc_type *mtp, int flags)
 	if (flags & M_WAITOK)
 		KASSERT(curthread->td_intr_nesting_level == 0,
 		   ("malloc(M_WAITOK) in interrupt context"));
+	KASSERT(curthread->td_critnest == 0 || SCHEDULER_STOPPED(),
+	    ("malloc: called with spinlock or critical section held"));
 
 #ifdef DEBUG_MEMGUARD
 	if (memguard_cmp_mtp(mtp, size)) {
@@ -541,6 +540,8 @@ free(void *addr, struct malloc_type *mtp)
 	u_long size;
 
 	KASSERT(mtp->ks_magic == M_MAGIC, ("free: bad malloc type magic"));
+	KASSERT(curthread->td_critnest == 0 || SCHEDULER_STOPPED(),
+	    ("free: called with spinlock or critical section held"));
 
 	/* free(NULL, ...) does nothing */
 	if (addr == NULL)
@@ -604,6 +605,8 @@ realloc(void *addr, unsigned long size, struct malloc_type *mtp, int flags)
 
 	KASSERT(mtp->ks_magic == M_MAGIC,
 	    ("realloc: bad malloc type magic"));
+	KASSERT(curthread->td_critnest == 0 || SCHEDULER_STOPPED(),
+	    ("realloc: called with spinlock or critical section held"));
 
 	/* realloc(NULL, ...) is equivalent to malloc(...) */
 	if (addr == NULL)
@@ -665,13 +668,15 @@ reallocf(void *addr, unsigned long size, struct malloc_type *mtp, int flags)
 }
 
 /*
- * Wake the page daemon when we exhaust KVA.  It will call the lowmem handler
- * and uma_reclaim() callbacks in a context that is safe.
+ * Wake the uma reclamation pagedaemon thread when we exhaust KVA.  It
+ * will call the lowmem handler and uma_reclaim() callbacks in a
+ * context that is safe.
  */
 static void
 kmem_reclaim(vmem_t *vm, int flags)
 {
 
+	uma_reclaim_wakeup();
 	pagedaemon_wakeup();
 }
 
@@ -717,6 +722,8 @@ kmeminit(void)
 	 * a given architecture.
 	 */
 	mem_size = vm_cnt.v_page_count;
+	if (mem_size <= 32768) /* delphij XXX 128MB */
+		kmem_zmax = PAGE_SIZE;
 
 	if (vm_kmem_size_scale < 1)
 		vm_kmem_size_scale = VM_KMEM_SIZE_SCALE;
@@ -916,6 +923,7 @@ sysctl_kern_malloc_stats(SYSCTL_HANDLER_ARGS)
 	if (error != 0)
 		return (error);
 	sbuf_new_for_sysctl(&sbuf, NULL, 128, req);
+	sbuf_clear_flags(&sbuf, SBUF_INCLUDENUL);
 	mtx_lock(&malloc_mtx);
 
 	/*

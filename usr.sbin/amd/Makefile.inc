@@ -11,6 +11,8 @@
 
 .include <src.opts.mk>
 
+PACKAGE= amd
+
 CFLAGS+= -I. -I${.CURDIR} 
 CFLAGS+= -I${.CURDIR}/../include
 .if exists(${.OBJDIR}/../include)
@@ -28,13 +30,6 @@ CFLAGS+= -DYES_HESIOD
 .endif
 
 CFLAGS+= -DHOST_CPU=\"${MACHINE_CPUARCH}\" -DHOST_ARCH=\"${MACHINE_ARCH}\"
-
-.if exists(${.OBJDIR}/../libamu)
-LIBAMUDIR=	${.OBJDIR}/../libamu
-.else
-LIBAMUDIR=	${.CURDIR}/../libamu
-.endif
-LIBAMU=		${LIBAMUDIR}/libamu.a
 
 RPCCOM=		RPCGEN_CPP=${CPP:Q} rpcgen
 MOUNT_X=	${DESTDIR}/usr/include/rpcsvc/mount.x

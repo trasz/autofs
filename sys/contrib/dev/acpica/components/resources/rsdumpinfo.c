@@ -5,7 +5,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2013, Intel Corp.
+ * Copyright (C) 2000 - 2016, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -41,9 +41,6 @@
  * POSSIBILITY OF SUCH DAMAGES.
  */
 
-
-#define __RSDUMPINFO_C__
-
 #include <contrib/dev/acpica/include/acpi.h>
 #include <contrib/dev/acpica/include/accommon.h>
 #include <contrib/dev/acpica/include/acresrc.h>
@@ -52,7 +49,7 @@
         ACPI_MODULE_NAME    ("rsdumpinfo")
 
 
-#if defined(ACPI_DEBUG_OUTPUT) || defined(ACPI_DEBUGGER)
+#if defined(ACPI_DEBUG_OUTPUT) || defined(ACPI_DISASSEMBLER) || defined(ACPI_DEBUGGER)
 
 
 #define ACPI_RSD_OFFSET(f)          (UINT8) ACPI_OFFSET (ACPI_RESOURCE_DATA,f)
@@ -164,11 +161,12 @@ ACPI_RSDUMP_INFO        AcpiRsDumpAddress16[8] =
 {
     {ACPI_RSD_TITLE,    ACPI_RSD_TABLE_SIZE (AcpiRsDumpAddress16),          "16-Bit WORD Address Space",NULL},
     {ACPI_RSD_ADDRESS,  0,                                                  NULL,                       NULL},
-    {ACPI_RSD_UINT16,   ACPI_RSD_OFFSET (Address16.Granularity),            "Granularity",              NULL},
-    {ACPI_RSD_UINT16,   ACPI_RSD_OFFSET (Address16.Minimum),                "Address Minimum",          NULL},
-    {ACPI_RSD_UINT16,   ACPI_RSD_OFFSET (Address16.Maximum),                "Address Maximum",          NULL},
-    {ACPI_RSD_UINT16,   ACPI_RSD_OFFSET (Address16.TranslationOffset),      "Translation Offset",       NULL},
-    {ACPI_RSD_UINT16,   ACPI_RSD_OFFSET (Address16.AddressLength),          "Address Length",           NULL},
+    {ACPI_RSD_UINT16,   ACPI_RSD_OFFSET (Address16.Address.Granularity),    "Granularity",              NULL},
+    {ACPI_RSD_UINT16,   ACPI_RSD_OFFSET (Address16.Address.Minimum),        "Address Minimum",          NULL},
+    {ACPI_RSD_UINT16,   ACPI_RSD_OFFSET (Address16.Address.Maximum),        "Address Maximum",          NULL},
+    {ACPI_RSD_UINT16,   ACPI_RSD_OFFSET (Address16.Address.TranslationOffset),
+                                                                            "Translation Offset",       NULL},
+    {ACPI_RSD_UINT16,   ACPI_RSD_OFFSET (Address16.Address.AddressLength),  "Address Length",           NULL},
     {ACPI_RSD_SOURCE,   ACPI_RSD_OFFSET (Address16.ResourceSource),         NULL,                       NULL}
 };
 
@@ -176,11 +174,12 @@ ACPI_RSDUMP_INFO        AcpiRsDumpAddress32[8] =
 {
     {ACPI_RSD_TITLE,    ACPI_RSD_TABLE_SIZE (AcpiRsDumpAddress32),         "32-Bit DWORD Address Space", NULL},
     {ACPI_RSD_ADDRESS,  0,                                                  NULL,                       NULL},
-    {ACPI_RSD_UINT32,   ACPI_RSD_OFFSET (Address32.Granularity),            "Granularity",              NULL},
-    {ACPI_RSD_UINT32,   ACPI_RSD_OFFSET (Address32.Minimum),                "Address Minimum",          NULL},
-    {ACPI_RSD_UINT32,   ACPI_RSD_OFFSET (Address32.Maximum),                "Address Maximum",          NULL},
-    {ACPI_RSD_UINT32,   ACPI_RSD_OFFSET (Address32.TranslationOffset),      "Translation Offset",       NULL},
-    {ACPI_RSD_UINT32,   ACPI_RSD_OFFSET (Address32.AddressLength),          "Address Length",           NULL},
+    {ACPI_RSD_UINT32,   ACPI_RSD_OFFSET (Address32.Address.Granularity),    "Granularity",              NULL},
+    {ACPI_RSD_UINT32,   ACPI_RSD_OFFSET (Address32.Address.Minimum),        "Address Minimum",          NULL},
+    {ACPI_RSD_UINT32,   ACPI_RSD_OFFSET (Address32.Address.Maximum),        "Address Maximum",          NULL},
+    {ACPI_RSD_UINT32,   ACPI_RSD_OFFSET (Address32.Address.TranslationOffset),
+                                                                            "Translation Offset",       NULL},
+    {ACPI_RSD_UINT32,   ACPI_RSD_OFFSET (Address32.Address.AddressLength),  "Address Length",           NULL},
     {ACPI_RSD_SOURCE,   ACPI_RSD_OFFSET (Address32.ResourceSource),         NULL,                       NULL}
 };
 
@@ -188,11 +187,12 @@ ACPI_RSDUMP_INFO        AcpiRsDumpAddress64[8] =
 {
     {ACPI_RSD_TITLE,    ACPI_RSD_TABLE_SIZE (AcpiRsDumpAddress64),          "64-Bit QWORD Address Space", NULL},
     {ACPI_RSD_ADDRESS,  0,                                                  NULL,                       NULL},
-    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (Address64.Granularity),            "Granularity",              NULL},
-    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (Address64.Minimum),                "Address Minimum",          NULL},
-    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (Address64.Maximum),                "Address Maximum",          NULL},
-    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (Address64.TranslationOffset),      "Translation Offset",       NULL},
-    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (Address64.AddressLength),          "Address Length",           NULL},
+    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (Address64.Address.Granularity),    "Granularity",              NULL},
+    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (Address64.Address.Minimum),        "Address Minimum",          NULL},
+    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (Address64.Address.Maximum),        "Address Maximum",          NULL},
+    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (Address64.Address.TranslationOffset),
+                                                                            "Translation Offset",       NULL},
+    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (Address64.Address.AddressLength),  "Address Length",           NULL},
     {ACPI_RSD_SOURCE,   ACPI_RSD_OFFSET (Address64.ResourceSource),         NULL,                       NULL}
 };
 
@@ -200,11 +200,13 @@ ACPI_RSDUMP_INFO        AcpiRsDumpExtAddress64[8] =
 {
     {ACPI_RSD_TITLE,    ACPI_RSD_TABLE_SIZE (AcpiRsDumpExtAddress64),       "64-Bit Extended Address Space", NULL},
     {ACPI_RSD_ADDRESS,  0,                                                  NULL,                       NULL},
-    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (ExtAddress64.Granularity),         "Granularity",              NULL},
-    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (ExtAddress64.Minimum),             "Address Minimum",          NULL},
-    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (ExtAddress64.Maximum),             "Address Maximum",          NULL},
-    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (ExtAddress64.TranslationOffset),   "Translation Offset",       NULL},
-    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (ExtAddress64.AddressLength),       "Address Length",           NULL},
+    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (ExtAddress64.Address.Granularity), "Granularity",              NULL},
+    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (ExtAddress64.Address.Minimum),     "Address Minimum",          NULL},
+    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (ExtAddress64.Address.Maximum),     "Address Maximum",          NULL},
+    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (ExtAddress64.Address.TranslationOffset),
+                                                                            "Translation Offset",       NULL},
+    {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (ExtAddress64.Address.AddressLength),
+                                                                            "Address Length",           NULL},
     {ACPI_RSD_UINT64,   ACPI_RSD_OFFSET (ExtAddress64.TypeSpecific),        "Type-Specific Attribute",  NULL}
 };
 
@@ -263,19 +265,20 @@ ACPI_RSDUMP_INFO        AcpiRsDumpFixedDma[4] =
     {ACPI_RSD_UINT8,    ACPI_RSD_OFFSET (CommonSerialBus.Type),             "Type",                     AcpiGbl_SbtDecode}, \
     {ACPI_RSD_1BITFLAG, ACPI_RSD_OFFSET (CommonSerialBus.ProducerConsumer), "ProducerConsumer",         AcpiGbl_ConsumeDecode}, \
     {ACPI_RSD_1BITFLAG, ACPI_RSD_OFFSET (CommonSerialBus.SlaveMode),        "SlaveMode",                AcpiGbl_SmDecode}, \
+    {ACPI_RSD_1BITFLAG, ACPI_RSD_OFFSET (CommonSerialBus.ConnectionSharing),"ConnectionSharing",        AcpiGbl_ShrDecode}, \
     {ACPI_RSD_UINT8,    ACPI_RSD_OFFSET (CommonSerialBus.TypeRevisionId),   "TypeRevisionId",           NULL}, \
     {ACPI_RSD_UINT16,   ACPI_RSD_OFFSET (CommonSerialBus.TypeDataLength),   "TypeDataLength",           NULL}, \
     {ACPI_RSD_SOURCE,   ACPI_RSD_OFFSET (CommonSerialBus.ResourceSource),   "ResourceSource",           NULL}, \
     {ACPI_RSD_UINT16,   ACPI_RSD_OFFSET (CommonSerialBus.VendorLength),     "VendorLength",             NULL}, \
     {ACPI_RSD_SHORTLISTX,ACPI_RSD_OFFSET (CommonSerialBus.VendorData),      "VendorData",               NULL},
 
-ACPI_RSDUMP_INFO        AcpiRsDumpCommonSerialBus[10] =
+ACPI_RSDUMP_INFO        AcpiRsDumpCommonSerialBus[11] =
 {
     {ACPI_RSD_TITLE,    ACPI_RSD_TABLE_SIZE (AcpiRsDumpCommonSerialBus),    "Common Serial Bus",        NULL},
     ACPI_RS_DUMP_COMMON_SERIAL_BUS
 };
 
-ACPI_RSDUMP_INFO        AcpiRsDumpI2cSerialBus[13] =
+ACPI_RSDUMP_INFO        AcpiRsDumpI2cSerialBus[14] =
 {
     {ACPI_RSD_TITLE,    ACPI_RSD_TABLE_SIZE (AcpiRsDumpI2cSerialBus),       "I2C Serial Bus",           NULL},
     ACPI_RS_DUMP_COMMON_SERIAL_BUS
@@ -284,7 +287,7 @@ ACPI_RSDUMP_INFO        AcpiRsDumpI2cSerialBus[13] =
     {ACPI_RSD_UINT16,   ACPI_RSD_OFFSET (I2cSerialBus.SlaveAddress),        "SlaveAddress",             NULL},
 };
 
-ACPI_RSDUMP_INFO        AcpiRsDumpSpiSerialBus[17] =
+ACPI_RSDUMP_INFO        AcpiRsDumpSpiSerialBus[18] =
 {
     {ACPI_RSD_TITLE,    ACPI_RSD_TABLE_SIZE (AcpiRsDumpSpiSerialBus),       "Spi Serial Bus",           NULL},
     ACPI_RS_DUMP_COMMON_SERIAL_BUS
@@ -297,7 +300,7 @@ ACPI_RSDUMP_INFO        AcpiRsDumpSpiSerialBus[17] =
     {ACPI_RSD_UINT32,   ACPI_RSD_OFFSET (SpiSerialBus.ConnectionSpeed),     "ConnectionSpeed",          NULL},
 };
 
-ACPI_RSDUMP_INFO        AcpiRsDumpUartSerialBus[19] =
+ACPI_RSDUMP_INFO        AcpiRsDumpUartSerialBus[20] =
 {
     {ACPI_RSD_TITLE,    ACPI_RSD_TABLE_SIZE (AcpiRsDumpUartSerialBus),       "Uart Serial Bus",         NULL},
     ACPI_RS_DUMP_COMMON_SERIAL_BUS

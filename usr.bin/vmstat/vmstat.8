@@ -28,7 +28,7 @@
 .\"	@(#)vmstat.8	8.1 (Berkeley) 6/6/93
 .\" $FreeBSD$
 .\"
-.Dd August 8, 2014
+.Dd November 19, 2015
 .Dt VMSTAT 8
 .Os
 .Sh NAME
@@ -37,7 +37,8 @@
 .Sh SYNOPSIS
 .Nm
 .\" .Op Fl fimst
-.Op Fl afHhimPsz
+.Op Fl -libxo
+.Op Fl afHhimoPsz
 .Op Fl M Ar core Op Fl N Ar system
 .Op Fl c Ar count
 .Op Fl n Ar devs
@@ -68,6 +69,13 @@ the default image).
 .Pp
 The options are as follows:
 .Bl -tag -width indent
+.It Fl -libxo
+Generate output via
+.Xr libxo 3
+in a selection of different human and machine readable formats.
+See
+.Xr xo_parse_args 3
+for details on command line arguments.
 .It Fl a
 When used with
 .Fl i ,
@@ -119,6 +127,9 @@ Report on the usage of kernel dynamic memory allocated using
 by type.
 .It Fl n
 Change the maximum number of disks to display from the default of 2.
+.It Fl o
+Display a list of virtual memory objects in the system and the resident
+memory used by each object.
 .It Fl P
 Report per-cpu system/user/idle cpu statistics.
 .It Fl p
@@ -358,6 +369,8 @@ statistics every second.
 .Xr ps 1 ,
 .Xr systat 1 ,
 .Xr libmemstat 3 ,
+.Xr libxo 3 ,
+.Xr xo_parse_args 3 ,
 .Xr gstat 8 ,
 .Xr iostat 8 ,
 .Xr pstat 8 ,

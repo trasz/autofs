@@ -32,10 +32,10 @@ __FBSDID("$FreeBSD$");
 #include <sys/bus.h>
 #include <sys/conf.h>
 #include <machine/bus.h>
-#include <machine/fdt.h>
 
 #include <dev/uart/uart.h>
 #include <dev/uart/uart_cpu.h>
+#include <dev/uart/uart_cpu_fdt.h>
 #include <dev/uart/uart_bus.h>
 
 #include <dev/ic/ns16550.h>
@@ -48,9 +48,9 @@ __FBSDID("$FreeBSD$");
 static bus_space_handle_t bsh_clkpwr;
 
 #define	lpc_ns8250_get_clkreg(_bas, _reg)	\
-    bus_space_read_4(fdtbus_bs_tag, bsh_clkpwr, (_reg))
+    bus_space_read_4((_bas)->bst, bsh_clkpwr, (_reg))
 #define	lpc_ns8250_set_clkreg(_bas, _reg, _val)	\
-    bus_space_write_4(fdtbus_bs_tag, bsh_clkpwr, (_reg), (_val))
+    bus_space_write_4((_bas)->bst, bsh_clkpwr, (_reg), (_val))
 
 /*
  * Clear pending interrupts. THRE is cleared by reading IIR. Data
@@ -291,7 +291,7 @@ lpc_ns8250_init(struct uart_bas *bas, int baudrate, int databits, int stopbits,
 	u_long	clkmode;
 	
 	/* Enable UART clock */
-	bus_space_map(fdtbus_bs_tag, LPC_CLKPWR_PHYS_BASE, LPC_CLKPWR_SIZE, 0,
+	bus_space_map(bas->bst, LPC_CLKPWR_PHYS_BASE, LPC_CLKPWR_SIZE, 0,
 	    &bsh_clkpwr);
 	clkmode = lpc_ns8250_get_clkreg(bas, LPC_UART_CLKMODE);
 	lpc_ns8250_set_clkreg(bas, LPC_UART_CLKMODE, clkmode | 
@@ -421,14 +421,21 @@ static kobj_method_t lpc_ns8250_methods[] = {
 	{ 0, 0 }
 };
 
-struct uart_class uart_lpc_class = {
+static struct uart_class uart_lpc_class = {
 	"lpc_ns8250",
 	lpc_ns8250_methods,
 	sizeof(struct lpc_ns8250_softc),
 	.uc_ops = &uart_lpc_ns8250_ops,
 	.uc_range = 8,
-	.uc_rclk = DEFAULT_RCLK
+	.uc_rclk = DEFAULT_RCLK,
+	.uc_rshift = 0
 };
+
+static struct ofw_compat_data compat_data[] = {
+	{"lpc,uart",		(uintptr_t)&uart_lpc_class},
+	{NULL,			(uintptr_t)NULL},
+};
+UART_FDT_CLASS_AND_DEVICE(compat_data);
 
 #define	SIGCHG(c, i, s, d)				\
 	if (c) {					\
@@ -651,6 +658,7 @@ lpc_ns8250_bus_ipend(struct uart_softc *sc)
 		if (iir & IIR_TXRDY) {
 			ipend |= SER_INT_TXIDLE;
 			uart_setreg(bas, REG_IER, lpc_ns8250->ier);
+			uart_barrier(bas);
 		} else
 			ipend |= SER_INT_SIGCHG;
 	}
@@ -795,7 +803,7 @@ done:
 #if 0
 	/*
 	 * XXX there are some issues related to hardware flow control and
-	 * it's likely that uart(4) is the cause. This basicly needs more
+	 * it's likely that uart(4) is the cause. This basically needs more
 	 * investigation, but we avoid using for hardware flow control
 	 * until then.
 	 */
@@ -884,12 +892,12 @@ lpc_ns8250_bus_transmit(struct uart_softc *sc)
 	uart_lock(sc->sc_hwmtx);
 	while ((uart_getreg(bas, REG_LSR) & LSR_THRE) == 0)
 		;
-	uart_setreg(bas, REG_IER, lpc_ns8250->ier | IER_ETXRDY);
-	uart_barrier(bas);
 	for (i = 0; i < sc->sc_txdatasz; i++) {
 		uart_setreg(bas, REG_DATA, sc->sc_txbuf[i]);
 		uart_barrier(bas);
 	}
+	uart_setreg(bas, REG_IER, lpc_ns8250->ier | IER_ETXRDY);
+	uart_barrier(bas);
 	sc->sc_txbusy = 1;
 	uart_unlock(sc->sc_hwmtx);
 	return (0);
@@ -903,7 +911,7 @@ lpc_ns8250_bus_grab(struct uart_softc *sc)
 	/*
 	 * turn off all interrupts to enter polling mode. Leave the
 	 * saved mask alone. We'll restore whatever it was in ungrab.
-	 * All pending interupt signals are reset when IER is set to 0.
+	 * All pending interrupt signals are reset when IER is set to 0.
 	 */
 	uart_lock(sc->sc_hwmtx);
 	uart_setreg(bas, REG_IER, 0);

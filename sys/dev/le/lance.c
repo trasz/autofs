@@ -72,6 +72,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/endian.h>
 #include <sys/lock.h>
 #include <sys/kernel.h>
+#include <sys/malloc.h>
 #include <sys/mbuf.h>
 #include <sys/mutex.h>
 #include <sys/socket.h>
@@ -398,8 +399,7 @@ lance_get(struct lance_softc *sc, int boff, int totlen)
 
 	while (totlen > 0) {
 		if (totlen >= MINCLSIZE) {
-			MCLGET(m, M_NOWAIT);
-			if ((m->m_flags & M_EXT) == 0)
+			if (!(MCLGET(m, M_NOWAIT)))
 				goto bad;
 			len = MCLBYTES;
 		}
@@ -446,7 +446,7 @@ lance_watchdog(void *xsc)
 	}
 
 	if_printf(ifp, "device timeout\n");
-	++ifp->if_oerrors;
+	if_inc_counter(ifp, IFCOUNTER_OERRORS, 1);
 	lance_init_locked(sc);
 }
 

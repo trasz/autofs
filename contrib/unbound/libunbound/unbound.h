@@ -304,6 +304,27 @@ int ub_ctx_config(struct ub_ctx* ctx, const char* fname);
 int ub_ctx_set_fwd(struct ub_ctx* ctx, const char* addr);
 
 /**
+ * Add a stub zone, with given address to send to.  This is for custom
+ * root hints or pointing to a local authoritative dns server.
+ * For dns resolvers and the 'DHCP DNS' ip address, use ub_ctx_set_fwd.
+ * This is similar to a stub-zone entry in unbound.conf.
+ *
+ * @param ctx: context.
+ *	It is only possible to set configuration before the
+ *	first resolve is done.
+ * @param zone: name of the zone, string.
+ * @param addr: address, IP4 or IP6 in string format.
+ * 	The addr is added to the list of stub-addresses if the entry exists.
+ * 	If the addr is NULL the stub entry is removed.
+ * @param isprime: set to true to set stub-prime to yes for the stub.
+ * 	For local authoritative servers, people usually set it to false,
+ * 	For root hints it should be set to true.
+ * @return 0 if OK, else error.
+ */
+int ub_ctx_set_stub(struct ub_ctx* ctx, const char* zone, const char* addr,
+	int isprime);
+
+/**
  * Read list of nameservers to use from the filename given.
  * Usually "/etc/resolv.conf". Uses those nameservers as caching proxies.
  * If they do not support DNSSEC, validation may fail.
@@ -355,6 +376,21 @@ int ub_ctx_add_ta(struct ub_ctx* ctx, const char* ta);
  * @return 0 if OK, else error.
  */
 int ub_ctx_add_ta_file(struct ub_ctx* ctx, const char* fname);
+
+/**
+ * Add trust anchor to the given context that is tracked with RFC5011
+ * automated trust anchor maintenance.  The file is written to when the
+ * trust anchor is changed.
+ * Pass the name of a file that was output from eg. unbound-anchor,
+ * or you can start it by providing a trusted DNSKEY or DS record on one
+ * line in the file.
+ * @param ctx: context.
+ *	At this time it is only possible to add trusted keys before the
+ *	first resolve is done.
+ * @param fname: filename of file with trust anchor.
+ * @return 0 if OK, else error.
+ */
+int ub_ctx_add_ta_autr(struct ub_ctx* ctx, const char* fname);
 
 /**
  * Add trust anchors to the given context.
@@ -508,7 +544,7 @@ void ub_resolve_free(struct ub_result* result);
 
 /** 
  * Convert error value to a human readable string.
- * @param err: error code from one of the ub_val* functions.
+ * @param err: error code from one of the libunbound functions.
  * @return pointer to constant text string, zero terminated.
  */
 const char* ub_strerror(int err);

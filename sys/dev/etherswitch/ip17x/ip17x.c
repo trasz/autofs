@@ -51,7 +51,7 @@
 #include <machine/bus.h>
 #include <dev/mii/mii.h>
 #include <dev/mii/miivar.h>
-#include <dev/etherswitch/mdio.h>
+#include <dev/mdio/mdio.h>
 
 #include <dev/etherswitch/etherswitch.h>
 #include <dev/etherswitch/ip17x/ip17x_phy.h>
@@ -84,7 +84,7 @@ ip17x_probe(device_t dev)
 	phy_id1 = MDIO_READREG(device_get_parent(dev), 0, MII_PHYIDR1);
 	phy_id2 = MDIO_READREG(device_get_parent(dev), 0, MII_PHYIDR2);
 
-	oui = MII_OUI(phy_id1, phy_id2),
+	oui = MII_OUI(phy_id1, phy_id2);
 	model = MII_MODEL(phy_id2);
 	/* We only care about IC+ devices. */
 	if (oui != IP17X_OUI) {

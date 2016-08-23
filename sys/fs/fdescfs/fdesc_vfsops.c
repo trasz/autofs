@@ -13,7 +13,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -42,6 +42,7 @@
 #include <sys/systm.h>
 #include <sys/filedesc.h>
 #include <sys/kernel.h>
+#include <sys/jail.h>
 #include <sys/lock.h>
 #include <sys/mutex.h>
 #include <sys/malloc.h>
@@ -78,7 +79,11 @@ fdesc_mount(struct mount *mp)
 {
 	int error = 0;
 	struct fdescmount *fmp;
+	struct thread *td = curthread;
 	struct vnode *rvp;
+
+	if (!prison_allow(td->td_ucred, PR_ALLOW_MOUNT_FDESCFS))
+		return (EPERM);
 
 	/*
 	 * Update is a no-op
@@ -114,9 +119,7 @@ fdesc_mount(struct mount *mp)
 }
 
 static int
-fdesc_unmount(mp, mntflags)
-	struct mount *mp;
-	int mntflags;
+fdesc_unmount(struct mount *mp, int mntflags)
 {
 	struct fdescmount *fmp;
 	caddr_t data;
@@ -157,10 +160,7 @@ fdesc_unmount(mp, mntflags)
 }
 
 static int
-fdesc_root(mp, flags, vpp)
-	struct mount *mp;
-	int flags;
-	struct vnode **vpp;
+fdesc_root(struct mount *mp, int flags, struct vnode **vpp)
 {
 	struct vnode *vp;
 
@@ -174,9 +174,7 @@ fdesc_root(mp, flags, vpp)
 }
 
 static int
-fdesc_statfs(mp, sbp)
-	struct mount *mp;
-	struct statfs *sbp;
+fdesc_statfs(struct mount *mp, struct statfs *sbp)
 {
 	struct thread *td;
 	struct filedesc *fdp;
@@ -194,9 +192,7 @@ fdesc_statfs(mp, sbp)
 	 * limit is ever reduced below the current number
 	 * of open files... ]
 	 */
-	PROC_LOCK(td->td_proc);
-	lim = lim_cur(td->td_proc, RLIMIT_NOFILE);
-	PROC_UNLOCK(td->td_proc);
+	lim = lim_cur(td, RLIMIT_NOFILE);
 	fdp = td->td_proc->p_fd;
 	FILEDESC_SLOCK(fdp);
 	limit = racct_get_limit(td->td_proc, RACCT_NOFILE);
@@ -237,4 +233,4 @@ static struct vfsops fdesc_vfsops = {
 	.vfs_unmount =		fdesc_unmount,
 };
 
-VFS_SET(fdesc_vfsops, fdescfs, VFCF_SYNTHETIC);
+VFS_SET(fdesc_vfsops, fdescfs, VFCF_SYNTHETIC | VFCF_JAIL);

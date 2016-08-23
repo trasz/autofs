@@ -46,7 +46,6 @@ __FBSDID("$FreeBSD$");
 #include <arpa/inet.h>
 
 #include <net/if.h>
-#include <net/if_var.h>
 #include <net/ethernet.h>
 
 #include <dev/an/if_aironet_ieee.h>
@@ -574,9 +573,9 @@ an_dumpstats(const char *iface)
 	printf("Management frames transmitted:\t\t\t[ %u ]\n",
 	    stats->an_tx_mgmt_pkts);
 	printf("Refresh frames received:\t\t\t[ %u ]\n",
-	    stats->an_rx_refresh_pkts),
+	    stats->an_rx_refresh_pkts);
 	printf("Refresh frames transmitted:\t\t\t[ %u ]\n",
-	    stats->an_tx_refresh_pkts),
+	    stats->an_tx_refresh_pkts);
 	printf("Poll frames received:\t\t\t\t[ %u ]\n",
 	    stats->an_rx_poll_pkts);
 	printf("Poll frames transmitted:\t\t\t[ %u ]\n",

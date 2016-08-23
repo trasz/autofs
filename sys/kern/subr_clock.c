@@ -67,8 +67,8 @@ sysctl_machdep_adjkerntz(SYSCTL_HANDLER_ARGS)
 		resettodr();
 	return (error);
 }
-SYSCTL_PROC(_machdep, OID_AUTO, adjkerntz, CTLTYPE_INT|CTLFLAG_RW,
-    &adjkerntz, 0, sysctl_machdep_adjkerntz, "I",
+SYSCTL_PROC(_machdep, OID_AUTO, adjkerntz, CTLTYPE_INT | CTLFLAG_RW |
+    CTLFLAG_MPSAFE, &adjkerntz, 0, sysctl_machdep_adjkerntz, "I",
     "Local offset from UTC in seconds");
 
 static int ct_debug;
@@ -133,7 +133,6 @@ print_ct(struct clocktime *ct)
 int
 clock_ct_to_ts(struct clocktime *ct, struct timespec *ts)
 {
-	time_t secs;
 	int i, year, days;
 
 	year = ct->year;
@@ -167,11 +166,10 @@ clock_ct_to_ts(struct clocktime *ct, struct timespec *ts)
 	  	days += days_in_month(year, i);
 	days += (ct->day - 1);
 
-	/* Add hours, minutes, seconds. */
-	secs = ((days * 24 + ct->hour) * 60 + ct->min) * 60 + ct->sec;
-
-	ts->tv_sec = secs;
+	ts->tv_sec = (((time_t)days * 24 + ct->hour) * 60 + ct->min) * 60 +
+	    ct->sec;
 	ts->tv_nsec = ct->nsec;
+
 	if (ct_debug)
 		printf(" = %ld.%09ld\n", (long)ts->tv_sec, (long)ts->tv_nsec);
 	return (0);

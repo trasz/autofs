@@ -107,7 +107,7 @@ mvs_ch_probe(device_t dev)
 {
 
 	device_set_desc_copy(dev, "Marvell SATA channel");
-	return (0);
+	return (BUS_PROBE_DEFAULT);
 }
 
 static int
@@ -122,6 +122,7 @@ mvs_ch_attach(device_t dev)
 	ch->unit = (intptr_t)device_get_ivars(dev);
 	ch->quirks = ctlr->quirks;
 	mtx_init(&ch->mtx, "MVS channel lock", NULL, MTX_DEF);
+	ch->pm_level = 0;
 	resource_int_value(device_get_name(dev),
 	    device_get_unit(dev), "pm_level", &ch->pm_level);
 	if (ch->pm_level > 3)
@@ -474,7 +475,7 @@ mvs_setup_edma_queues(device_t dev)
 	ATA_OUTL(ch->r_mem, EDMA_REQQOP, work & 0xffffffff);
 	bus_dmamap_sync(ch->dma.workrq_tag, ch->dma.workrq_map,
 	    BUS_DMASYNC_PREWRITE);
-	/* Reponses queue. */
+	/* Responses queue. */
 	memset(ch->dma.workrp, 0xff, MVS_WORKRP_SIZE);
 	work = ch->dma.workrp_bus;
 	ATA_OUTL(ch->r_mem, EDMA_RESQBAH, work >> 32);
@@ -505,7 +506,7 @@ mvs_set_edma_mode(device_t dev, enum mvs_edma_mode mode)
 				device_printf(dev, "stopping EDMA engine failed\n");
 				break;
 			}
-		};
+		}
 	}
 	ch->curr_mode = mode;
 	ch->fbs_enabled = 0;
@@ -1041,7 +1042,7 @@ mvs_crbq_intr(device_t dev)
 		slot = le16toh(crpb->id) & MVS_CRPB_TAG_MASK;
 		flags = le16toh(crpb->rspflg);
 		/*
-		 * Handle only successfull completions here.
+		 * Handle only successful completions here.
 		 * Errors will be handled by main intr handler.
 		 */
 #if defined(__i386__) || defined(__amd64__)
@@ -1414,8 +1415,8 @@ mvs_legacy_execute_transaction(struct mvs_slot *slot)
 		}
 	}
 	/* Start command execution timeout */
-	callout_reset(&slot->timeout, (int)ccb->ccb_h.timeout * hz / 1000,
-	    (timeout_t*)mvs_timeout, slot);
+	callout_reset_sbt(&slot->timeout, SBT_1MS * ccb->ccb_h.timeout, 0,
+	    (timeout_t*)mvs_timeout, slot, 0);
 }
 
 /* Must be called with channel locked. */
@@ -1528,8 +1529,8 @@ mvs_execute_transaction(struct mvs_slot *slot)
 	ATA_OUTL(ch->r_mem, EDMA_REQQIP,
 	    ch->dma.workrq_bus + MVS_CRQB_OFFSET + (MVS_CRQB_SIZE * ch->out_idx));
 	/* Start command execution timeout */
-	callout_reset(&slot->timeout, (int)ccb->ccb_h.timeout * hz / 1000,
-	    (timeout_t*)mvs_timeout, slot);
+	callout_reset_sbt(&slot->timeout, SBT_1MS * ccb->ccb_h.timeout, 0,
+	    (timeout_t*)mvs_timeout, slot, 0);
 	return;
 }
 
@@ -1566,9 +1567,9 @@ mvs_rearm_timeout(device_t dev)
 			continue;
 		if ((ch->toslots & (1 << i)) == 0)
 			continue;
-		callout_reset(&slot->timeout,
-		    (int)slot->ccb->ccb_h.timeout * hz / 2000,
-		    (timeout_t*)mvs_timeout, slot);
+		callout_reset_sbt(&slot->timeout,
+		    SBT_1MS * slot->ccb->ccb_h.timeout / 2, 0,
+		    (timeout_t*)mvs_timeout, slot, 0);
 	}
 }
 
@@ -2244,6 +2245,12 @@ mvs_check_ids(device_t dev, union ccb *ccb)
 		xpt_done(ccb);
 		return (-1);
 	}
+	/*
+	 * It's a programming error to see AUXILIARY register requests.
+	 */
+	KASSERT(ccb->ccb_h.func_code != XPT_ATA_IO ||
+	    ((ccb->ataio.ata_flags & ATA_FLAG_AUX) == 0),
+	    ("AUX register unsupported"));
 	return (0);
 }
 

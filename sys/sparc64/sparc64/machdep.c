@@ -114,10 +114,6 @@ __FBSDID("$FreeBSD$");
 
 typedef int ofw_vec_t(void *);
 
-#ifdef DDB
-extern vm_offset_t ksym_start, ksym_end;
-#endif
-
 int dtlb_slots;
 int itlb_slots;
 struct tlb_entry *kernel_tlbs;
@@ -249,7 +245,7 @@ find_bsp(phandle_t node, uint32_t bspid, u_int cpu_impl)
 {
 	char type[sizeof("cpu")];
 	phandle_t child;
-	uint32_t cpuid;
+	uint32_t portid;
 
 	for (; node != 0; node = OF_peer(node)) {
 		child = OF_child(node);
@@ -263,10 +259,10 @@ find_bsp(phandle_t node, uint32_t bspid, u_int cpu_impl)
 				continue;
 			if (strcmp(type, "cpu") != 0)
 				continue;
-			if (OF_getprop(node, cpu_cpuid_prop(cpu_impl), &cpuid,
-			    sizeof(cpuid)) <= 0)
+			if (OF_getprop(node, cpu_portid_prop(cpu_impl),
+			    &portid, sizeof(portid)) <= 0)
 				continue;
-			if (cpuid == bspid)
+			if (portid == bspid)
 				return (node);
 		}
 	}
@@ -274,7 +270,7 @@ find_bsp(phandle_t node, uint32_t bspid, u_int cpu_impl)
 }
 
 const char *
-cpu_cpuid_prop(u_int cpu_impl)
+cpu_portid_prop(u_int cpu_impl)
 {
 
 	switch (cpu_impl) {
@@ -383,7 +379,8 @@ sparc64_init(caddr_t mdp, u_long o1, u_long o2, u_long o3, ofw_vec_t *vec)
 		kmdp = preload_search_by_type("elf kernel");
 		if (kmdp != NULL) {
 			boothowto = MD_FETCH(kmdp, MODINFOMD_HOWTO, int);
-			kern_envp = MD_FETCH(kmdp, MODINFOMD_ENVP, char *);
+			init_static_kenv(MD_FETCH(kmdp, MODINFOMD_ENVP, char *),
+			    0);
 			end = MD_FETCH(kmdp, MODINFOMD_KERNEND, vm_offset_t);
 			kernel_tlb_slots = MD_FETCH(kmdp, MODINFOMD_DTLB_SLOTS,
 			    int);
@@ -503,7 +500,7 @@ sparc64_init(caddr_t mdp, u_long o1, u_long o2, u_long o3, ofw_vec_t *vec)
 	}
 
 #ifdef SMP
-	mp_init(cpu_impl);
+	mp_init();
 #endif
 
 	/*
@@ -515,7 +512,7 @@ sparc64_init(caddr_t mdp, u_long o1, u_long o2, u_long o3, ofw_vec_t *vec)
 	 * Initialize tunables.
 	 */
 	init_param2(physmem);
-	env = getenv("kernelname");
+	env = kern_getenv("kernelname");
 	if (env != NULL) {
 		strlcpy(kernelname, env, sizeof(kernelname));
 		freeenv(env);
@@ -649,7 +646,7 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
 	/* Allocate and validate space for the signal handler context. */
 	if ((td->td_pflags & TDP_ALTSTACK) != 0 && !oonstack &&
 	    SIGISMEMBER(psp->ps_sigonstack, sig)) {
-		sfp = (struct sigframe *)(td->td_sigstk.ss_sp +
+		sfp = (struct sigframe *)((uintptr_t)td->td_sigstk.ss_sp +
 		    td->td_sigstk.ss_size - sizeof(struct sigframe));
 	} else
 		sfp = (struct sigframe *)sp - 1;
@@ -657,10 +654,6 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
 	PROC_UNLOCK(p);
 
 	fp = (struct frame *)sfp - 1;
-
-	/* Translate the signal if appropriate. */
-	if (p->p_sysent->sv_sigtbl && sig <= p->p_sysent->sv_sigsize)
-		sig = p->p_sysent->sv_sigtbl[_SIG_IDX(sig)];
 
 	/* Build the argument list for the signal handler. */
 	tf->tf_out[0] = sig;
@@ -815,7 +808,7 @@ get_mcontext(struct thread *td, mcontext_t *mc, int flags)
 }
 
 int
-set_mcontext(struct thread *td, const mcontext_t *mc)
+set_mcontext(struct thread *td, mcontext_t *mc)
 {
 	struct trapframe *tf;
 	struct pcb *pcb;

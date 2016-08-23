@@ -39,8 +39,6 @@
  *	@(#)procfs_status.c	8.4 (Berkeley) 6/15/94
  */
 
-#include "opt_compat.h"
-
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
@@ -53,21 +51,24 @@ __FBSDID("$FreeBSD$");
 #include <sys/filedesc.h>
 #include <sys/jail.h>
 #include <sys/kernel.h>
+#include <sys/limits.h>
 #include <sys/linker.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
-#include <sys/mount.h>
 #include <sys/msg.h>
 #include <sys/mutex.h>
 #include <sys/namei.h>
 #include <sys/proc.h>
 #include <sys/ptrace.h>
 #include <sys/resourcevar.h>
+#include <sys/resource.h>
 #include <sys/sbuf.h>
 #include <sys/sem.h>
 #include <sys/smp.h>
 #include <sys/socket.h>
+#include <sys/syscallsubr.h>
 #include <sys/sysctl.h>
+#include <sys/sysent.h>
 #include <sys/systm.h>
 #include <sys/time.h>
 #include <sys/tty.h>
@@ -79,7 +80,7 @@ __FBSDID("$FreeBSD$");
 
 #include <net/if.h>
 #include <net/if_var.h>
-#include <net/vnet.h>
+#include <net/if_types.h>
 
 #include <vm/vm.h>
 #include <vm/vm_extern.h>
@@ -99,11 +100,7 @@ __FBSDID("$FreeBSD$");
 #include <machine/md_var.h>
 #endif /* __i386__ || __amd64__ */
 
-#ifdef COMPAT_FREEBSD32
-#include <compat/freebsd32/freebsd32_util.h>
-#endif
-
-#include <compat/linux/linux_ioctl.h>
+#include <compat/linux/linux.h>
 #include <compat/linux/linux_mib.h>
 #include <compat/linux/linux_misc.h>
 #include <compat/linux/linux_util.h>
@@ -326,11 +323,12 @@ static int
 linprocfs_domtab(PFS_FILL_ARGS)
 {
 	struct nameidata nd;
-	struct mount *mp;
 	const char *lep;
 	char *dlep, *flep, *mntto, *mntfrom, *fstype;
 	size_t lep_len;
 	int error;
+	struct statfs *buf, *sp;
+	size_t count;
 
 	/* resolve symlinks etc. in the emulation tree prefix */
 	NDINIT(&nd, LOOKUP, FOLLOW, UIO_SYSSPACE, linux_emul_path, td);
@@ -344,20 +342,26 @@ linprocfs_domtab(PFS_FILL_ARGS)
 	}
 	lep_len = strlen(lep);
 
-	mtx_lock(&mountlist_mtx);
-	error = 0;
-	TAILQ_FOREACH(mp, &mountlist, mnt_list) {
+	buf = NULL;
+	error = kern_getfsstat(td, &buf, SIZE_T_MAX, &count,
+	    UIO_SYSSPACE, MNT_WAIT);
+	if (error != 0) {
+		free(buf, M_TEMP);
+		free(flep, M_TEMP);
+		return (error);
+	}
+
+	for (sp = buf; count > 0; sp++, count--) {
 		/* determine device name */
-		mntfrom = mp->mnt_stat.f_mntfromname;
+		mntfrom = sp->f_mntfromname;
 
 		/* determine mount point */
-		mntto = mp->mnt_stat.f_mntonname;
-		if (strncmp(mntto, lep, lep_len) == 0 &&
-		    mntto[lep_len] == '/')
+		mntto = sp->f_mntonname;
+		if (strncmp(mntto, lep, lep_len) == 0 && mntto[lep_len] == '/')
 			mntto += lep_len;
 
 		/* determine fs type */
-		fstype = mp->mnt_stat.f_fstypename;
+		fstype = sp->f_fstypename;
 		if (strcmp(fstype, pn->pn_info->pi_name) == 0)
 			mntfrom = fstype = "proc";
 		else if (strcmp(fstype, "procfs") == 0)
@@ -365,16 +369,16 @@ linprocfs_domtab(PFS_FILL_ARGS)
 
 		if (strcmp(fstype, "linsysfs") == 0) {
 			sbuf_printf(sb, "/sys %s sysfs %s", mntto,
-			    mp->mnt_stat.f_flags & MNT_RDONLY ? "ro" : "rw");
+			    sp->f_flags & MNT_RDONLY ? "ro" : "rw");
 		} else {
 			/* For Linux msdosfs is called vfat */
 			if (strcmp(fstype, "msdosfs") == 0)
 				fstype = "vfat";
 			sbuf_printf(sb, "%s %s %s %s", mntfrom, mntto, fstype,
-			    mp->mnt_stat.f_flags & MNT_RDONLY ? "ro" : "rw");
+			    sp->f_flags & MNT_RDONLY ? "ro" : "rw");
 		}
 #define ADD_OPTION(opt, name) \
-	if (mp->mnt_stat.f_flags & (opt)) sbuf_printf(sb, "," name);
+	if (sp->f_flags & (opt)) sbuf_printf(sb, "," name);
 		ADD_OPTION(MNT_SYNCHRONOUS,	"sync");
 		ADD_OPTION(MNT_NOEXEC,		"noexec");
 		ADD_OPTION(MNT_NOSUID,		"nosuid");
@@ -387,14 +391,14 @@ linprocfs_domtab(PFS_FILL_ARGS)
 		/* a real Linux mtab will also show NFS options */
 		sbuf_printf(sb, " 0 0\n");
 	}
-	mtx_unlock(&mountlist_mtx);
+
+	free(buf, M_TEMP);
 	free(flep, M_TEMP);
 	return (error);
 }
 
 /*
  * Filler function for proc/partitions
- *
  */
 static int
 linprocfs_dopartitions(PFS_FILL_ARGS)
@@ -402,27 +406,9 @@ linprocfs_dopartitions(PFS_FILL_ARGS)
 	struct g_class *cp;
 	struct g_geom *gp;
 	struct g_provider *pp;
-	struct nameidata nd;
-	const char *lep;
-	char  *dlep, *flep;
-	size_t lep_len;
-	int error;
 	int major, minor;
 
-	/* resolve symlinks etc. in the emulation tree prefix */
-	NDINIT(&nd, LOOKUP, FOLLOW, UIO_SYSSPACE, linux_emul_path, td);
-	flep = NULL;
-	error = namei(&nd);
-	lep = linux_emul_path;
-	if (error == 0) {
-		if (vn_fullpath(td, nd.ni_vp, &dlep, &flep) == 0)
-			lep = dlep;
-		vrele(nd.ni_vp);
-	}
-	lep_len = strlen(lep);
-
 	g_topology_lock();
-	error = 0;
 	sbuf_printf(sb, "major minor  #blocks  name rio rmerge rsect "
 	    "ruse wio wmerge wsect wuse running use aveq\n");
 
@@ -448,8 +434,7 @@ linprocfs_dopartitions(PFS_FILL_ARGS)
 	}
 	g_topology_unlock();
 
-	free(flep, M_TEMP);
-	return (error);
+	return (0);
 }
 
 
@@ -462,9 +447,11 @@ linprocfs_dostat(PFS_FILL_ARGS)
 	struct pcpu *pcpu;
 	long cp_time[CPUSTATES];
 	long *cp;
+	struct timeval boottime;
 	int i;
 
 	read_cpu_time(cp_time);
+	getboottime(&boottime);
 	sbuf_printf(sb, "cpu %ld %ld %ld %ld\n",
 	    T2J(cp_time[CP_USER]),
 	    T2J(cp_time[CP_NICE]),
@@ -505,7 +492,6 @@ linprocfs_doswaps(PFS_FILL_ARGS)
 	char devname[SPECNAMELEN + 1];
 
 	sbuf_printf(sb, "Filename\t\t\t\tType\t\tSize\tUsed\tPriority\n");
-	mtx_lock(&Giant);
 	for (n = 0; ; n++) {
 		if (swap_dev_info(n, &xsw, devname, sizeof(devname)) != 0)
 			break;
@@ -519,7 +505,6 @@ linprocfs_doswaps(PFS_FILL_ARGS)
 		sbuf_printf(sb, "/dev/%-34s unknown\t\t%jd\t%jd\t-1\n",
 		    devname, total, used);
 	}
-	mtx_unlock(&Giant);
 	return (0);
 }
 
@@ -641,10 +626,12 @@ static int
 linprocfs_doprocstat(PFS_FILL_ARGS)
 {
 	struct kinfo_proc kp;
+	struct timeval boottime;
 	char state;
 	static int ratelimit = 0;
 	vm_offset_t startcode, startdata;
 
+	getboottime(&boottime);
 	sx_slock(&proctree_lock);
 	PROC_LOCK(p);
 	fill_kinfo_proc(p, &kp);
@@ -655,7 +642,7 @@ linprocfs_doprocstat(PFS_FILL_ARGS)
 	} else {
 	   startcode = 0;
 	   startdata = 0;
-	};
+	}
 	sbuf_printf(sb, "%d", p->p_pid);
 #define PS_ADD(name, fmt, arg) sbuf_printf(sb, " " fmt, arg)
 	PS_ADD("comm",		"(%s)",	p->p_comm);
@@ -674,7 +661,7 @@ linprocfs_doprocstat(PFS_FILL_ARGS)
 	PS_ADD("pgrp",		"%d",	p->p_pgid);
 	PS_ADD("session",	"%d",	p->p_session->s_sid);
 	PROC_UNLOCK(p);
-	PS_ADD("tty",		"%d",	kp.ki_tdev);
+	PS_ADD("tty",		"%ju",	(uintmax_t)kp.ki_tdev);
 	PS_ADD("tpgid",		"%d",	kp.ki_tpgid);
 	PS_ADD("flags",		"%u",	0); /* XXX */
 	PS_ADD("minflt",	"%lu",	kp.ki_rusage.ru_minflt);
@@ -759,6 +746,7 @@ linprocfs_doprocstatus(PFS_FILL_ARGS)
 	segsz_t lsize;
 	struct thread *td2;
 	struct sigacts *ps;
+	l_sigset_t siglist, sigignore, sigcatch;
 	int i;
 
 	sx_slock(&proctree_lock);
@@ -850,28 +838,24 @@ linprocfs_doprocstatus(PFS_FILL_ARGS)
 
 	/*
 	 * Signal masks
-	 *
-	 * We support up to 128 signals, while Linux supports 32,
-	 * but we only define 32 (the same 32 as Linux, to boot), so
-	 * just show the lower 32 bits of each mask. XXX hack.
-	 *
-	 * NB: on certain platforms (Sparc at least) Linux actually
-	 * supports 64 signals, but this code is a long way from
-	 * running on anything but i386, so ignore that for now.
 	 */
 	PROC_LOCK(p);
-	sbuf_printf(sb, "SigPnd:\t%08x\n",	p->p_siglist.__bits[0]);
-	/*
-	 * I can't seem to find out where the signal mask is in
-	 * relation to struct proc, so SigBlk is left unimplemented.
-	 */
-	sbuf_printf(sb, "SigBlk:\t%08x\n",	0); /* XXX */
+	bsd_to_linux_sigset(&p->p_siglist, &siglist);
 	ps = p->p_sigacts;
 	mtx_lock(&ps->ps_mtx);
-	sbuf_printf(sb, "SigIgn:\t%08x\n",	ps->ps_sigignore.__bits[0]);
-	sbuf_printf(sb, "SigCgt:\t%08x\n",	ps->ps_sigcatch.__bits[0]);
+	bsd_to_linux_sigset(&ps->ps_sigignore, &sigignore);
+	bsd_to_linux_sigset(&ps->ps_sigcatch, &sigcatch);
 	mtx_unlock(&ps->ps_mtx);
 	PROC_UNLOCK(p);
+
+	sbuf_printf(sb, "SigPnd:\t%016jx\n",	siglist.__mask);
+	/*
+	 * XXX. SigBlk - target thread's signal mask, td_sigmask.
+	 * To implement SigBlk pseudofs should support proc/tid dir entries.
+	 */
+	sbuf_printf(sb, "SigBlk:\t%016x\n",	0);
+	sbuf_printf(sb, "SigIgn:\t%016jx\n",	sigignore.__mask);
+	sbuf_printf(sb, "SigCgt:\t%016jx\n",	sigcatch.__mask);
 
 	/*
 	 * Linux also prints the capability masks, but we don't have
@@ -892,10 +876,20 @@ linprocfs_doprocstatus(PFS_FILL_ARGS)
 static int
 linprocfs_doproccwd(PFS_FILL_ARGS)
 {
+	struct filedesc *fdp;
+	struct vnode *vp;
 	char *fullpath = "unknown";
 	char *freepath = NULL;
 
-	vn_fullpath(td, p->p_fd->fd_cdir, &fullpath, &freepath);
+	fdp = p->p_fd;
+	FILEDESC_SLOCK(fdp);
+	vp = fdp->fd_cdir;
+	if (vp != NULL)
+		VREF(vp);
+	FILEDESC_SUNLOCK(fdp);
+	vn_fullpath(td, vp, &fullpath, &freepath);
+	if (vp != NULL)
+		vrele(vp);
 	sbuf_printf(sb, "%s", fullpath);
 	if (freepath)
 		free(freepath, M_TEMP);
@@ -908,12 +902,20 @@ linprocfs_doproccwd(PFS_FILL_ARGS)
 static int
 linprocfs_doprocroot(PFS_FILL_ARGS)
 {
-	struct vnode *rvp;
+	struct filedesc *fdp;
+	struct vnode *vp;
 	char *fullpath = "unknown";
 	char *freepath = NULL;
 
-	rvp = jailed(p->p_ucred) ? p->p_fd->fd_jdir : p->p_fd->fd_rdir;
-	vn_fullpath(td, rvp, &fullpath, &freepath);
+	fdp = p->p_fd;
+	FILEDESC_SLOCK(fdp);
+	vp = jailed(p->p_ucred) ? fdp->fd_jdir : fdp->fd_rdir;
+	if (vp != NULL)
+		VREF(vp);
+	FILEDESC_SUNLOCK(fdp);
+	vn_fullpath(td, vp, &fullpath, &freepath);
+	if (vp != NULL)
+		vrele(vp);
 	sbuf_printf(sb, "%s", fullpath);
 	if (freepath)
 		free(freepath, M_TEMP);
@@ -965,33 +967,21 @@ linprocfs_doproccmdline(PFS_FILL_ARGS)
 static int
 linprocfs_doprocenviron(PFS_FILL_ARGS)
 {
-	int ret;
-
-	PROC_LOCK(p);
-	if ((ret = p_candebug(td, p)) != 0) {
-		PROC_UNLOCK(p);
-		return (ret);
-	}
 
 	/*
 	 * Mimic linux behavior and pass only processes with usermode
 	 * address space as valid.  Return zero silently otherwize.
 	 */
-	if (p->p_vmspace == &vmspace0) {
-		PROC_UNLOCK(p);
+	if (p->p_vmspace == &vmspace0)
 		return (0);
-	}
 
-	if ((p->p_flag & P_SYSTEM) != 0) {
-		PROC_UNLOCK(p);
-		return (0);
-	}
-
-	PROC_UNLOCK(p);
-
-	ret = proc_getenvv(td, p, sb);
-	return (ret);
+	return (proc_getenvv(td, p, sb));
 }
+
+static char l32_map_str[] = "%08lx-%08lx %s%s%s%s %08lx %02x:%02x %lu%s%s\n";
+static char l64_map_str[] = "%016lx-%016lx %s%s%s%s %08lx %02x:%02x %lu%s%s\n";
+static char vdso_str[] = "      [vdso]";
+static char stack_str[] = "      [stack]";
 
 /*
  * Filler function for proc/pid/maps
@@ -1008,6 +998,7 @@ linprocfs_doprocmaps(PFS_FILL_ARGS)
 	vm_prot_t e_prot;
 	unsigned int last_timestamp;
 	char *name = "", *freename = NULL;
+	const char *l_map_str;
 	ino_t ino;
 	int ref_count, shadow_count, flags;
 	int error;
@@ -1027,6 +1018,11 @@ linprocfs_doprocmaps(PFS_FILL_ARGS)
 	vm = vmspace_acquire_ref(p);
 	if (vm == NULL)
 		return (ESRCH);
+
+	if (SV_CURPROC_FLAG(SV_LP64))
+		l_map_str = l64_map_str;
+	else
+		l_map_str = l32_map_str;
 	map = &vm->vm_map;
 	vm_map_lock_read(map);
 	for (entry = map->header.next; entry != &map->header;
@@ -1050,25 +1046,26 @@ linprocfs_doprocmaps(PFS_FILL_ARGS)
 		ino = 0;
 		if (lobj) {
 			off = IDX_TO_OFF(lobj->size);
-			if (lobj->type == OBJT_VNODE) {
-				vp = lobj->handle;
-				if (vp)
-					vref(vp);
-			}
-			else
-				vp = NULL;
+			vp = vm_object_vnode(lobj);
+			if (vp != NULL)
+				vref(vp);
 			if (lobj != obj)
 				VM_OBJECT_RUNLOCK(lobj);
 			flags = obj->flags;
 			ref_count = obj->ref_count;
 			shadow_count = obj->shadow_count;
 			VM_OBJECT_RUNLOCK(obj);
-			if (vp) {
+			if (vp != NULL) {
 				vn_fullpath(td, vp, &name, &freename);
 				vn_lock(vp, LK_SHARED | LK_RETRY);
 				VOP_GETATTR(vp, &vat, td->td_ucred);
 				ino = vat.va_fileid;
 				vput(vp);
+			} else if (SV_PROC_ABI(p) == SV_ABI_LINUX) {
+				if (e_start == p->p_sysent->sv_shared_page_base)
+					name = vdso_str;
+				if (e_end == p->p_sysent->sv_usrstack)
+					name = stack_str;
 			}
 		} else {
 			flags = 0;
@@ -1080,8 +1077,7 @@ linprocfs_doprocmaps(PFS_FILL_ARGS)
 		 * format:
 		 *  start, end, access, offset, major, minor, inode, name.
 		 */
-		error = sbuf_printf(sb,
-		    "%08lx-%08lx %s%s%s%s %08lx %02x:%02x %lu%s%s\n",
+		error = sbuf_printf(sb, l_map_str,
 		    (u_long)e_start, (u_long)e_end,
 		    (e_prot & VM_PROT_READ)?"r":"-",
 		    (e_prot & VM_PROT_WRITE)?"w":"-",
@@ -1118,6 +1114,35 @@ linprocfs_doprocmaps(PFS_FILL_ARGS)
 }
 
 /*
+ * Criteria for interface name translation
+ */
+#define IFP_IS_ETH(ifp) (ifp->if_type == IFT_ETHER)
+
+static int
+linux_ifname(struct ifnet *ifp, char *buffer, size_t buflen)
+{
+	struct ifnet *ifscan;
+	int ethno;
+
+	IFNET_RLOCK_ASSERT();
+
+	/* Short-circuit non ethernet interfaces */
+	if (!IFP_IS_ETH(ifp))
+		return (strlcpy(buffer, ifp->if_xname, buflen));
+
+	/* Determine the (relative) unit number for ethernet interfaces */
+	ethno = 0;
+	TAILQ_FOREACH(ifscan, &V_ifnet, if_link) {
+		if (ifscan == ifp)
+			return (snprintf(buffer, buflen, "eth%d", ethno));
+		if (IFP_IS_ETH(ifscan))
+			ethno++;
+	}
+
+	return (0);
+}
+
+/*
  * Filler function for proc/net/dev
  */
 static int
@@ -1139,26 +1164,26 @@ linprocfs_donetdev(PFS_FILL_ARGS)
 		linux_ifname(ifp, ifname, sizeof ifname);
 		sbuf_printf(sb, "%6.6s: ", ifname);
 		sbuf_printf(sb, "%7ju %7ju %4ju %4ju %4lu %5lu %10lu %9ju ",
-		    (uintmax_t )ifp->if_ibytes,	/* rx_bytes */
-		    (uintmax_t )ifp->if_ipackets,	/* rx_packets */
-		    (uintmax_t )ifp->if_ierrors,	/* rx_errors */
-		    (uintmax_t )ifp->if_iqdrops,	/* rx_dropped +
-							 * rx_missed_errors */
+		    (uintmax_t )ifp->if_get_counter(ifp, IFCOUNTER_IBYTES),
+		    (uintmax_t )ifp->if_get_counter(ifp, IFCOUNTER_IPACKETS),
+		    (uintmax_t )ifp->if_get_counter(ifp, IFCOUNTER_IERRORS),
+		    (uintmax_t )ifp->if_get_counter(ifp, IFCOUNTER_IQDROPS),
+							/* rx_missed_errors */
 		    0UL,				/* rx_fifo_errors */
 		    0UL,				/* rx_length_errors +
 							 * rx_over_errors +
 							 * rx_crc_errors +
 							 * rx_frame_errors */
 		    0UL,				/* rx_compressed */
-		    (uintmax_t )ifp->if_imcasts);	/* multicast,
-							 * XXX-BZ rx only? */
-		sbuf_printf(sb, "%8ju %7ju %4ju %4lu %4lu %5ju %7lu %10lu\n",
-		    (uintmax_t )ifp->if_obytes,	/* tx_bytes */
-		    (uintmax_t )ifp->if_opackets,	/* tx_packets */
-		    (uintmax_t )ifp->if_oerrors,	/* tx_errors */
-		    0UL,				/* tx_dropped */
+		    (uintmax_t )ifp->if_get_counter(ifp, IFCOUNTER_IMCASTS));
+							/* XXX-BZ rx only? */
+		sbuf_printf(sb, "%8ju %7ju %4ju %4ju %4lu %5ju %7lu %10lu\n",
+		    (uintmax_t )ifp->if_get_counter(ifp, IFCOUNTER_OBYTES),
+		    (uintmax_t )ifp->if_get_counter(ifp, IFCOUNTER_OPACKETS),
+		    (uintmax_t )ifp->if_get_counter(ifp, IFCOUNTER_OERRORS),
+		    (uintmax_t )ifp->if_get_counter(ifp, IFCOUNTER_OQDROPS),
 		    0UL,				/* tx_fifo_errors */
-		    (uintmax_t )ifp->if_collisions,	/* collisions */
+		    (uintmax_t )ifp->if_get_counter(ifp, IFCOUNTER_COLLISIONS),
 		    0UL,				/* tx_carrier_errors +
 							 * tx_aborted_errors +
 							 * tx_window_errors +
@@ -1265,8 +1290,6 @@ linprocfs_doscsiscsi(PFS_FILL_ARGS)
 	return (0);
 }
 
-extern struct cdevsw *cdevsw[];
-
 /*
  * Filler function for proc/devices
  */
@@ -1305,13 +1328,13 @@ linprocfs_dofilesystems(PFS_FILL_ARGS)
 {
 	struct vfsconf *vfsp;
 
-	mtx_lock(&Giant);
+	vfsconf_slock();
 	TAILQ_FOREACH(vfsp, &vfsconf, vfc_list) {
 		if (vfsp->vfc_flags & VFCF_SYNTHETIC)
 			sbuf_printf(sb, "nodev");
 		sbuf_printf(sb, "\t%s\n", vfsp->vfc_name);
 	}
-	mtx_unlock(&Giant);
+	vfsconf_sunlock();
 	return(0);
 }
 
@@ -1346,6 +1369,97 @@ linprocfs_dofdescfs(PFS_FILL_ARGS)
 	return (0);
 }
 
+/*
+ * Filler function for proc/pid/limits
+ */
+static const struct linux_rlimit_ident {
+	const char	*desc;
+	const char	*unit;
+	unsigned int	rlim_id;
+} linux_rlimits_ident[] = {
+	{ "Max cpu time",	"seconds",	RLIMIT_CPU },
+	{ "Max file size", 	"bytes",	RLIMIT_FSIZE },
+	{ "Max data size",	"bytes", 	RLIMIT_DATA },
+	{ "Max stack size",	"bytes", 	RLIMIT_STACK },
+	{ "Max core file size",  "bytes",	RLIMIT_CORE },
+	{ "Max resident set",	"bytes",	RLIMIT_RSS },
+	{ "Max processes",	"processes",	RLIMIT_NPROC },
+	{ "Max open files",	"files",	RLIMIT_NOFILE },
+	{ "Max locked memory",	"bytes",	RLIMIT_MEMLOCK },
+	{ "Max address space",	"bytes",	RLIMIT_AS },
+	{ "Max file locks",	"locks",	LINUX_RLIMIT_LOCKS },
+	{ "Max pending signals", "signals",	LINUX_RLIMIT_SIGPENDING },
+	{ "Max msgqueue size",	"bytes",	LINUX_RLIMIT_MSGQUEUE },
+	{ "Max nice priority", 		"",	LINUX_RLIMIT_NICE },
+	{ "Max realtime priority",	"",	LINUX_RLIMIT_RTPRIO },
+	{ "Max realtime timeout",	"us",	LINUX_RLIMIT_RTTIME },
+	{ 0, 0, 0 }
+};
+
+static int
+linprocfs_doproclimits(PFS_FILL_ARGS)
+{
+	const struct linux_rlimit_ident *li;
+	struct plimit *limp;
+	struct rlimit rl;
+	ssize_t size;
+	int res, error;
+
+	error = 0;
+
+	PROC_LOCK(p);
+	limp = lim_hold(p->p_limit);
+	PROC_UNLOCK(p);
+	size = sizeof(res);
+	sbuf_printf(sb, "%-26s%-21s%-21s%-21s\n", "Limit", "Soft Limit",
+			"Hard Limit", "Units");
+	for (li = linux_rlimits_ident; li->desc != NULL; ++li) {
+		switch (li->rlim_id)
+		{
+		case LINUX_RLIMIT_LOCKS:
+			/* FALLTHROUGH */
+		case LINUX_RLIMIT_RTTIME:
+			rl.rlim_cur = RLIM_INFINITY;
+			break;
+		case LINUX_RLIMIT_SIGPENDING:
+			error = kernel_sysctlbyname(td,
+			    "kern.sigqueue.max_pending_per_proc",
+			    &res, &size, 0, 0, 0, 0);
+			if (error != 0)
+				goto out;
+			rl.rlim_cur = res;
+			rl.rlim_max = res;
+			break;
+		case LINUX_RLIMIT_MSGQUEUE:
+			error = kernel_sysctlbyname(td,
+			    "kern.ipc.msgmnb", &res, &size, 0, 0, 0, 0);
+			if (error != 0)
+				goto out;
+			rl.rlim_cur = res;
+			rl.rlim_max = res;
+			break;
+		case LINUX_RLIMIT_NICE:
+			/* FALLTHROUGH */
+		case LINUX_RLIMIT_RTPRIO:
+			rl.rlim_cur = 0;
+			rl.rlim_max = 0;
+			break;
+		default:
+			rl = limp->pl_rlimit[li->rlim_id];
+			break;
+		}
+		if (rl.rlim_cur == RLIM_INFINITY)
+			sbuf_printf(sb, "%-26s%-21s%-21s%-10s\n",
+			    li->desc, "unlimited", "unlimited", li->unit);
+		else
+			sbuf_printf(sb, "%-26s%-21llu%-21llu%-10s\n",
+			    li->desc, (unsigned long long)rl.rlim_cur,
+			    (unsigned long long)rl.rlim_max, li->unit);
+	}
+out:
+	lim_free(limp);
+	return (error);
+}
 
 /*
  * Filler function for proc/sys/kernel/random/uuid
@@ -1361,6 +1475,52 @@ linprocfs_douuid(PFS_FILL_ARGS)
 	return(0);
 }
 
+/*
+ * Filler function for proc/pid/auxv
+ */
+static int
+linprocfs_doauxv(PFS_FILL_ARGS)
+{
+	struct sbuf *asb;
+	off_t buflen, resid;
+	int error;
+
+	/*
+	 * Mimic linux behavior and pass only processes with usermode
+	 * address space as valid. Return zero silently otherwise.
+	 */
+	if (p->p_vmspace == &vmspace0)
+		return (0);
+
+	if (uio->uio_resid == 0)
+		return (0);
+	if (uio->uio_offset < 0 || uio->uio_resid < 0)
+		return (EINVAL);
+
+	asb = sbuf_new_auto();
+	if (asb == NULL)
+		return (ENOMEM);
+	error = proc_getauxv(td, p, asb);
+	if (error == 0)
+		error = sbuf_finish(asb);
+
+	resid = sbuf_len(asb) - uio->uio_offset;
+	if (resid > uio->uio_resid)
+		buflen = uio->uio_resid;
+	else
+		buflen = resid;
+	if (buflen > IOSIZE_MAX)
+		return (EINVAL);
+	if (buflen > MAXPHYS)
+		buflen = MAXPHYS;
+	if (resid <= 0)
+		return (0);
+
+	if (error == 0)
+		error = uiomove(sbuf_data(asb) + uio->uio_offset, buflen, uio);
+	sbuf_delete(asb);
+	return (error);
+}
 
 /*
  * Constructor
@@ -1419,7 +1579,7 @@ linprocfs_init(PFS_INIT_ARGS)
 	pfs_create_link(dir, "cwd", &linprocfs_doproccwd,
 	    NULL, NULL, NULL, 0);
 	pfs_create_file(dir, "environ", &linprocfs_doprocenviron,
-	    NULL, NULL, NULL, PFS_RD);
+	    NULL, &procfs_candebug, NULL, PFS_RD);
 	pfs_create_link(dir, "exe", &procfs_doprocfile,
 	    NULL, &procfs_notsystem, NULL, 0);
 	pfs_create_file(dir, "maps", &linprocfs_doprocmaps,
@@ -1436,6 +1596,10 @@ linprocfs_init(PFS_INIT_ARGS)
 	    NULL, NULL, NULL, PFS_RD);
 	pfs_create_link(dir, "fd", &linprocfs_dofdescfs,
 	    NULL, NULL, NULL, 0);
+	pfs_create_file(dir, "auxv", &linprocfs_doauxv,
+	    NULL, &procfs_candebug, NULL, PFS_RD|PFS_RAWRD);
+	pfs_create_file(dir, "limits", &linprocfs_doproclimits,
+	    NULL, NULL, NULL, PFS_RD);
 
 	/* /proc/scsi/... */
 	dir = pfs_create_dir(root, "scsi", NULL, NULL, NULL, 0);
@@ -1480,8 +1644,12 @@ linprocfs_uninit(PFS_INIT_ARGS)
 	return (0);
 }
 
-PSEUDOFS(linprocfs, 1, 0);
+PSEUDOFS(linprocfs, 1, PR_ALLOW_MOUNT_LINPROCFS);
+#if defined(__amd64__)
+MODULE_DEPEND(linprocfs, linux_common, 1, 1, 1);
+#else
 MODULE_DEPEND(linprocfs, linux, 1, 1, 1);
+#endif
 MODULE_DEPEND(linprocfs, procfs, 1, 1, 1);
 MODULE_DEPEND(linprocfs, sysvmsg, 1, 1, 1);
 MODULE_DEPEND(linprocfs, sysvsem, 1, 1, 1);

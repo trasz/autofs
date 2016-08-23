@@ -473,10 +473,6 @@ trm_ExecuteSRB(void *arg, bus_dma_segment_t *dm_segs, int nseg, int error)
 		return;
 	}
 	ccb->ccb_h.status |= CAM_SIM_QUEUED;
-#if 0
-	/* XXX Need a timeout handler */
-	ccb->ccb_h.timeout_ch = timeout(trmtimeout, (caddr_t)srb, (ccb->ccb_h.timeout * hz) / 1000);
-#endif
 	trm_SendSRB(pACB, pSRB);
 	splx(flags);
 	return;
@@ -1125,7 +1121,7 @@ trm_reset(PACB pACB)
 	pACB->pActiveDCB = NULL;
 	pACB->ACBFlag = 0;/* RESET_DETECT, RESET_DONE ,RESET_DEV */
 	trm_DoWaitingSRB(pACB);
-	/* Tell the XPT layer that a bus reset occured    */
+	/* Tell the XPT layer that a bus reset occurred    */
 	if (pACB->ppath != NULL)
 		xpt_async(AC_BUS_RESET, pACB->ppath, NULL);
 	splx(intflag);
@@ -1894,7 +1890,7 @@ trm_MsgInPhase0(PACB pACB, PSRB pSRB, u_int16_t *pscsi_status)
 		}
 	} else {	
 	  /* 
-   	   * Parsing incomming extented messages 
+   	   * Parsing incoming extented messages 
 	   */
 		*pSRB->pMsgPtr = message_in_code;
 		pSRB->MsgCnt++;
@@ -3385,7 +3381,7 @@ trm_init(u_int16_t unit, device_t dev)
 	/*highaddr*/	BUS_SPACE_MAXADDR,
 	/*filter*/	NULL, 
 	/*filterarg*/	NULL,
-	/*maxsize*/	MAXBSIZE,
+	/*maxsize*/	TRM_MAXPHYS,
 	/*nsegments*/	TRM_NSEG,
 	/*maxsegsz*/	TRM_MAXTRANSFER_SIZE,
 	/*flags*/	BUS_DMA_ALLOCNOW,

@@ -134,6 +134,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/stat.h>
 #include <sys/sx.h>
 #include <sys/sysctl.h>
+#include <sys/taskqueue.h>
 #include <sys/uio.h>
 #include <sys/jail.h>
 #include <sys/syslog.h>
@@ -193,10 +194,10 @@ VNET_DEFINE(struct hhook_head *, socket_hhh[HHOOK_SOCKET_LAST + 1]);
 /*
  * Limit on the number of connections in the listen queue waiting
  * for accept(2).
- * NB: The orginal sysctl somaxconn is still available but hidden
+ * NB: The original sysctl somaxconn is still available but hidden
  * to prevent confusion about the actual purpose of this number.
  */
-static int somaxconn = SOMAXCONN;
+static u_int somaxconn = SOMAXCONN;
 
 static int
 sysctl_somaxconn(SYSCTL_HANDLER_ARGS)
@@ -209,7 +210,13 @@ sysctl_somaxconn(SYSCTL_HANDLER_ARGS)
 	if (error || !req->newptr )
 		return (error);
 
-	if (val < 1 || val > USHRT_MAX)
+	/*
+	 * The purpose of the UINT_MAX / 3 limit, is so that the formula
+	 *   3 * so_qlimit / 2
+	 * below, will not overflow.
+         */
+
+	if (val < 1 || val > UINT_MAX / 3)
 		return (EINVAL);
 
 	somaxconn = val;
@@ -351,7 +358,7 @@ sysctl_maxsockets(SYSCTL_HANDLER_ARGS)
 }
 SYSCTL_PROC(_kern_ipc, OID_AUTO, maxsockets, CTLTYPE_INT|CTLFLAG_RW,
     &maxsockets, 0, sysctl_maxsockets, "IU",
-    "Maximum number of sockets avaliable");
+    "Maximum number of sockets available");
 
 /*
  * Socket operation routines.  These routines are called by the routines in
@@ -390,26 +397,28 @@ soalloc(struct vnet *vnet)
 	SOCKBUF_LOCK_INIT(&so->so_rcv, "so_rcv");
 	sx_init(&so->so_snd.sb_sx, "so_snd_sx");
 	sx_init(&so->so_rcv.sb_sx, "so_rcv_sx");
-	TAILQ_INIT(&so->so_aiojobq);
+	TAILQ_INIT(&so->so_snd.sb_aiojobq);
+	TAILQ_INIT(&so->so_rcv.sb_aiojobq);
+	TASK_INIT(&so->so_snd.sb_aiotask, 0, soaio_snd, so);
+	TASK_INIT(&so->so_rcv.sb_aiotask, 0, soaio_rcv, so);
+#ifdef VIMAGE
+	VNET_ASSERT(vnet != NULL, ("%s:%d vnet is NULL, so=%p",
+	    __func__, __LINE__, so));
+	so->so_vnet = vnet;
+#endif
+	/* We shouldn't need the so_global_mtx */
+	if (hhook_run_socket(so, NULL, HHOOK_SOCKET_CREATE)) {
+		/* Do we need more comprehensive error returns? */
+		uma_zfree(socket_zone, so);
+		return (NULL);
+	}
 	mtx_lock(&so_global_mtx);
 	so->so_gencnt = ++so_gencnt;
 	++numopensockets;
 #ifdef VIMAGE
-	VNET_ASSERT(vnet != NULL, ("%s:%d vnet is NULL, so=%p",
-	    __func__, __LINE__, so));
 	vnet->vnet_sockcnt++;
-	so->so_vnet = vnet;
 #endif
 	mtx_unlock(&so_global_mtx);
-
-	CURVNET_SET(vnet);
-	/* We shouldn't need the so_global_mtx */
-	if (V_socket_hhh[HHOOK_SOCKET_CREATE]->hhh_nhooks > 0) {
-		if (hhook_run_socket(so, NULL, HHOOK_SOCKET_CREATE))
-			/* Do we need more comprehensive error returns? */
-			so = NULL;
-	}
-	CURVNET_RESTORE();
 
 	return (so);
 }
@@ -441,16 +450,13 @@ sodealloc(struct socket *so)
 	if (so->so_snd.sb_hiwat)
 		(void)chgsbsize(so->so_cred->cr_uidinfo,
 		    &so->so_snd.sb_hiwat, 0, RLIM_INFINITY);
-	/* remove acccept filter if one is present. */
+	/* remove accept filter if one is present. */
 	if (so->so_accf != NULL)
 		do_setopt_accept_filter(so, NULL);
 #ifdef MAC
 	mac_socket_destroy(so);
 #endif
-	CURVNET_SET(so->so_vnet);
-	if (V_socket_hhh[HHOOK_SOCKET_CLOSE]->hhh_nhooks > 0)
-		hhook_run_socket(so, NULL, HHOOK_SOCKET_CLOSE);
-	CURVNET_RESTORE();
+	hhook_run_socket(so, NULL, HHOOK_SOCKET_CLOSE);
 
 	crfree(so->so_cred);
 	khelp_destroy_osd(&so->osd);
@@ -544,7 +550,7 @@ SYSCTL_INT(_regression, OID_AUTO, sonewconn_earlytest, CTLFLAG_RW,
 /*
  * When an attempt at a new connection is noted on a socket which accepts
  * connections, sonewconn is called.  If the connection is possible (subject
- * to space constraints, etc.) then we allocate a new structure, propoerly
+ * to space constraints, etc.) then we allocate a new structure, properly
  * linked into the data structure of the original socket, and return this.
  * Connstatus may be 0, or SS_ISCONFIRMING, or SS_ISCONNECTED.
  *
@@ -809,7 +815,7 @@ sofree(struct socket *so)
 
 	VNET_SO_ASSERT(so);
 	if (pr->pr_flags & PR_RIGHTS && pr->pr_domain->dom_dispose != NULL)
-		(*pr->pr_domain->dom_dispose)(so->so_rcv.sb_mb);
+		(*pr->pr_domain->dom_dispose)(so);
 	if (pr->pr_usrreqs->pru_detach != NULL)
 		(*pr->pr_usrreqs->pru_detach)(so);
 
@@ -1158,7 +1164,7 @@ sosend_dgram(struct socket *so, struct sockaddr *addr, struct uio *uio,
 	}
 	/*
 	 * XXX all the SBS_CANTSENDMORE checks previously done could be out
-	 * of date.  We could have recieved a reset packet in an interrupt or
+	 * of date.  We could have received a reset packet in an interrupt or
 	 * maybe we slept while doing page faults in uiomove() etc.  We could
 	 * probably recheck again inside the locking protection here, but
 	 * there are probably other places that this also happens.  We must
@@ -1317,8 +1323,11 @@ restart:
 			} else {
 				/*
 				 * Copy the data from userland into a mbuf
-				 * chain.  If no data is to be copied in,
-				 * a single empty mbuf is returned.
+				 * chain.  If resid is 0, which can happen
+				 * only if we have control to send, then
+				 * a single empty mbuf is returned.  This
+				 * is a workaround to prevent protocol send
+				 * methods to panic.
 				 */
 				top = m_uiotombuf(uio, M_WAITOK, space,
 				    (atomic ? max_hdr : 0),
@@ -1338,7 +1347,7 @@ restart:
 			}
 			/*
 			 * XXX all the SBS_CANTSENDMORE checks previously
-			 * done could be out of date.  We could have recieved
+			 * done could be out of date.  We could have received
 			 * a reset packet in an interrupt or maybe we slept
 			 * while doing page faults in uiomove() etc.  We
 			 * could probably recheck again inside the locking
@@ -1526,12 +1535,12 @@ restart:
 	 *   2. MSG_DONTWAIT is not set
 	 */
 	if (m == NULL || (((flags & MSG_DONTWAIT) == 0 &&
-	    so->so_rcv.sb_cc < uio->uio_resid) &&
-	    so->so_rcv.sb_cc < so->so_rcv.sb_lowat &&
+	    sbavail(&so->so_rcv) < uio->uio_resid) &&
+	    sbavail(&so->so_rcv) < so->so_rcv.sb_lowat &&
 	    m->m_nextpkt == NULL && (pr->pr_flags & PR_ATOMIC) == 0)) {
-		KASSERT(m != NULL || !so->so_rcv.sb_cc,
-		    ("receive: m == %p so->so_rcv.sb_cc == %u",
-		    m, so->so_rcv.sb_cc));
+		KASSERT(m != NULL || !sbavail(&so->so_rcv),
+		    ("receive: m == %p sbavail == %u",
+		    m, sbavail(&so->so_rcv)));
 		if (so->so_error) {
 			if (m != NULL)
 				goto dontblock;
@@ -1710,7 +1719,8 @@ dontblock:
 	 */
 	moff = 0;
 	offset = 0;
-	while (m != NULL && uio->uio_resid > 0 && error == 0) {
+	while (m != NULL && !(m->m_flags & M_NOTAVAIL) && uio->uio_resid > 0
+	    && error == 0) {
 		/*
 		 * If the type of mbuf has changed since the last mbuf
 		 * examined ('type'), end the receive operation.
@@ -1813,9 +1823,7 @@ dontblock:
 						SOCKBUF_LOCK(&so->so_rcv);
 					}
 				}
-				m->m_data += len;
-				m->m_len -= len;
-				so->so_rcv.sb_cc -= len;
+				sbcut_locked(&so->so_rcv, len);
 			}
 		}
 		SOCKBUF_LOCK_ASSERT(&so->so_rcv);
@@ -1980,7 +1988,7 @@ restart:
 
 	/* Abort if socket has reported problems. */
 	if (so->so_error) {
-		if (sb->sb_cc > 0)
+		if (sbavail(sb) > 0)
 			goto deliver;
 		if (oresid > uio->uio_resid)
 			goto out;
@@ -1992,32 +2000,32 @@ restart:
 
 	/* Door is closed.  Deliver what is left, if any. */
 	if (sb->sb_state & SBS_CANTRCVMORE) {
-		if (sb->sb_cc > 0)
+		if (sbavail(sb) > 0)
 			goto deliver;
 		else
 			goto out;
 	}
 
 	/* Socket buffer is empty and we shall not block. */
-	if (sb->sb_cc == 0 &&
+	if (sbavail(sb) == 0 &&
 	    ((so->so_state & SS_NBIO) || (flags & (MSG_DONTWAIT|MSG_NBIO)))) {
 		error = EAGAIN;
 		goto out;
 	}
 
 	/* Socket buffer got some data that we shall deliver now. */
-	if (sb->sb_cc > 0 && !(flags & MSG_WAITALL) &&
-	    ((sb->sb_flags & SS_NBIO) ||
+	if (sbavail(sb) > 0 && !(flags & MSG_WAITALL) &&
+	    ((so->so_state & SS_NBIO) ||
 	     (flags & (MSG_DONTWAIT|MSG_NBIO)) ||
-	     sb->sb_cc >= sb->sb_lowat ||
-	     sb->sb_cc >= uio->uio_resid ||
-	     sb->sb_cc >= sb->sb_hiwat) ) {
+	     sbavail(sb) >= sb->sb_lowat ||
+	     sbavail(sb) >= uio->uio_resid ||
+	     sbavail(sb) >= sb->sb_hiwat) ) {
 		goto deliver;
 	}
 
 	/* On MSG_WAITALL we must wait until all data or error arrives. */
 	if ((flags & MSG_WAITALL) &&
-	    (sb->sb_cc >= uio->uio_resid || sb->sb_cc >= sb->sb_hiwat))
+	    (sbavail(sb) >= uio->uio_resid || sbavail(sb) >= sb->sb_hiwat))
 		goto deliver;
 
 	/*
@@ -2031,7 +2039,7 @@ restart:
 
 deliver:
 	SOCKBUF_LOCK_ASSERT(&so->so_rcv);
-	KASSERT(sb->sb_cc > 0, ("%s: sockbuf empty", __func__));
+	KASSERT(sbavail(sb) > 0, ("%s: sockbuf empty", __func__));
 	KASSERT(sb->sb_mb != NULL, ("%s: sb_mb == NULL", __func__));
 
 	/* Statistics. */
@@ -2039,7 +2047,7 @@ deliver:
 		uio->uio_td->td_ru.ru_msgrcv++;
 
 	/* Fill uio until full or current end of socket buffer is reached. */
-	len = min(uio->uio_resid, sb->sb_cc);
+	len = min(uio->uio_resid, sbavail(sb));
 	if (mp0 != NULL) {
 		/* Dequeue as many mbufs as possible. */
 		if (!(flags & MSG_PEEK) && len >= sb->sb_mb->m_len) {
@@ -2050,6 +2058,8 @@ deliver:
 			for (m = sb->sb_mb;
 			     m != NULL && m->m_len <= len;
 			     m = m->m_next) {
+				KASSERT(!(m->m_flags & M_NOTAVAIL),
+				    ("%s: m %p not available", __func__, m));
 				len -= m->m_len;
 				uio->uio_resid -= m->m_len;
 				sbfree(sb, m);
@@ -2174,9 +2184,9 @@ soreceive_dgram(struct socket *so, struct sockaddr **psa, struct uio *uio,
 	 */
 	SOCKBUF_LOCK(&so->so_rcv);
 	while ((m = so->so_rcv.sb_mb) == NULL) {
-		KASSERT(so->so_rcv.sb_cc == 0,
-		    ("soreceive_dgram: sb_mb NULL but sb_cc %u",
-		    so->so_rcv.sb_cc));
+		KASSERT(sbavail(&so->so_rcv) == 0,
+		    ("soreceive_dgram: sb_mb NULL but sbavail %u",
+		    sbavail(&so->so_rcv)));
 		if (so->so_error) {
 			error = so->so_error;
 			so->so_error = 0;
@@ -2255,7 +2265,8 @@ soreceive_dgram(struct socket *so, struct sockaddr **psa, struct uio *uio,
 	 * Process one or more MT_CONTROL mbufs present before any data mbufs
 	 * in the first mbuf chain on the socket buffer.  We call into the
 	 * protocol to perform externalization (or freeing if controlp ==
-	 * NULL).
+	 * NULL). In some cases there can be only MT_CONTROL mbufs without
+	 * MT_DATA mbufs.
 	 */
 	if (m->m_type == MT_CONTROL) {
 		struct mbuf *cm = NULL, *cmn;
@@ -2285,8 +2296,8 @@ soreceive_dgram(struct socket *so, struct sockaddr **psa, struct uio *uio,
 			cm = cmn;
 		}
 	}
-	KASSERT(m->m_type == MT_DATA, ("soreceive_dgram: !data"));
-
+	KASSERT(m == NULL || m->m_type == MT_DATA,
+	    ("soreceive_dgram: !data"));
 	while (m != NULL && uio->uio_resid > 0) {
 		len = uio->uio_resid;
 		if (len > m->m_len)
@@ -2303,9 +2314,10 @@ soreceive_dgram(struct socket *so, struct sockaddr **psa, struct uio *uio,
 			m->m_len -= len;
 		}
 	}
-	if (m != NULL)
+	if (m != NULL) {
 		flags |= MSG_TRUNC;
-	m_freem(m);
+		m_freem(m);
+	}
 	if (flagsp != NULL)
 		*flagsp |= flags;
 	return (0);
@@ -2332,6 +2344,9 @@ soshutdown(struct socket *so, int how)
 
 	if (!(how == SHUT_RD || how == SHUT_WR || how == SHUT_RDWR))
 		return (EINVAL);
+	if ((so->so_state &
+	    (SS_ISCONNECTED | SS_ISCONNECTING | SS_ISDISCONNECTING)) == 0)
+		return (ENOTCONN);
 
 	CURVNET_SET(so->so_vnet);
 	if (pr->pr_usrreqs->pru_flush != NULL)
@@ -2354,7 +2369,7 @@ sorflush(struct socket *so)
 {
 	struct sockbuf *sb = &so->so_rcv;
 	struct protosw *pr = so->so_proto;
-	struct sockbuf asb;
+	struct socket aso;
 
 	VNET_SO_ASSERT(so);
 
@@ -2379,8 +2394,9 @@ sorflush(struct socket *so)
 	 * and mutex data unchanged.
 	 */
 	SOCKBUF_LOCK(sb);
-	bzero(&asb, offsetof(struct sockbuf, sb_startzero));
-	bcopy(&sb->sb_startzero, &asb.sb_startzero,
+	bzero(&aso, sizeof(aso));
+	aso.so_pcb = so->so_pcb;
+	bcopy(&sb->sb_startzero, &aso.so_rcv.sb_startzero,
 	    sizeof(*sb) - offsetof(struct sockbuf, sb_startzero));
 	bzero(&sb->sb_startzero,
 	    sizeof(*sb) - offsetof(struct sockbuf, sb_startzero));
@@ -2388,12 +2404,12 @@ sorflush(struct socket *so)
 	sbunlock(sb);
 
 	/*
-	 * Dispose of special rights and flush the socket buffer.  Don't call
-	 * any unsafe routines (that rely on locks being initialized) on asb.
+	 * Dispose of special rights and flush the copied socket.  Don't call
+	 * any unsafe routines (that rely on locks being initialized) on aso.
 	 */
 	if (pr->pr_flags & PR_RIGHTS && pr->pr_domain->dom_dispose != NULL)
-		(*pr->pr_domain->dom_dispose)(asb.sb_mb);
-	sbrelease_internal(&asb, so);
+		(*pr->pr_domain->dom_dispose)(&aso);
+	sbrelease_internal(&aso.so_rcv, so);
 }
 
 /*
@@ -2406,10 +2422,13 @@ hhook_run_socket(struct socket *so, void *hctx, int32_t h_id)
 	struct socket_hhook_data hhook_data = {
 		.so = so,
 		.hctx = hctx,
-		.m = NULL
+		.m = NULL,
+		.status = 0
 	};
 
-	hhook_run_hooks(V_socket_hhh[h_id], &hhook_data, &so->osd);
+	CURVNET_SET(so->so_vnet);
+	HHOOKS_RUN_IF(V_socket_hhh[h_id], &hhook_data, &so->osd);
+	CURVNET_RESTORE();
 
 	/* Ugly but needed, since hhooks return void for now */
 	return (hhook_data.status);
@@ -2692,7 +2711,7 @@ sooptcopyout(struct sockopt *sopt, const void *buf, size_t len)
 	 * that we always tell the user precisely how much we copied, rather
 	 * than something useful like the total amount we had available for
 	 * her.  Note that this interface is not idempotent; the entire
-	 * answer must generated ahead of time.
+	 * answer must be generated ahead of time.
 	 */
 	valsize = min(len, sopt->sopt_valsize);
 	sopt->sopt_valsize = valsize;
@@ -3084,6 +3103,13 @@ pru_accept_notsupp(struct socket *so, struct sockaddr **nam)
 }
 
 int
+pru_aio_queue_notsupp(struct socket *so, struct kaiocb *job)
+{
+
+	return EOPNOTSUPP;
+}
+
+int
 pru_attach_notsupp(struct socket *so, int proto, struct thread *td)
 {
 
@@ -3178,6 +3204,13 @@ pru_send_notsupp(struct socket *so, int flags, struct mbuf *m,
 	return EOPNOTSUPP;
 }
 
+int
+pru_ready_notsupp(struct socket *so, struct mbuf *m, int count)
+{
+
+	return (EOPNOTSUPP);
+}
+
 /*
  * This isn't really a ``null'' operation, but it's the default one and
  * doesn't do anything destructive.
@@ -3249,7 +3282,7 @@ filt_soread(struct knote *kn, long hint)
 	so = kn->kn_fp->f_data;
 	SOCKBUF_LOCK_ASSERT(&so->so_rcv);
 
-	kn->kn_data = so->so_rcv.sb_cc - so->so_rcv.sb_ctl;
+	kn->kn_data = sbavail(&so->so_rcv) - so->so_rcv.sb_ctl;
 	if (so->so_rcv.sb_state & SBS_CANTRCVMORE) {
 		kn->kn_flags |= EV_EOF;
 		kn->kn_fflags = so->so_error;
@@ -3261,15 +3294,12 @@ filt_soread(struct knote *kn, long hint)
 		if (kn->kn_data >= kn->kn_sdata)
 			return 1;
 	} else {
-		if (so->so_rcv.sb_cc >= so->so_rcv.sb_lowat)
+		if (sbavail(&so->so_rcv) >= so->so_rcv.sb_lowat)
 			return 1;
 	}
 
-	if (V_socket_hhh[HHOOK_FILT_SOREAD]->hhh_nhooks > 0)
-		/* This hook returning non-zero indicates an event, not error */
-		return (hhook_run_socket(so, NULL, HHOOK_FILT_SOREAD));
-	
-	return (0);
+	/* This hook returning non-zero indicates an event, not error */
+	return (hhook_run_socket(so, NULL, HHOOK_FILT_SOREAD));
 }
 
 static void
@@ -3294,8 +3324,7 @@ filt_sowrite(struct knote *kn, long hint)
 	SOCKBUF_LOCK_ASSERT(&so->so_snd);
 	kn->kn_data = sbspace(&so->so_snd);
 
-	if (V_socket_hhh[HHOOK_FILT_SOWRITE]->hhh_nhooks > 0)
-		hhook_run_socket(so, kn, HHOOK_FILT_SOWRITE);
+	hhook_run_socket(so, kn, HHOOK_FILT_SOWRITE);
 
 	if (so->so_snd.sb_state & SBS_CANTSENDMORE) {
 		kn->kn_flags |= EV_EOF;
@@ -3433,11 +3462,9 @@ soisdisconnecting(struct socket *so)
 	SOCKBUF_LOCK(&so->so_rcv);
 	so->so_state &= ~SS_ISCONNECTING;
 	so->so_state |= SS_ISDISCONNECTING;
-	so->so_rcv.sb_state |= SBS_CANTRCVMORE;
-	sorwakeup_locked(so);
+	socantrcvmore_locked(so);
 	SOCKBUF_LOCK(&so->so_snd);
-	so->so_snd.sb_state |= SBS_CANTSENDMORE;
-	sowwakeup_locked(so);
+	socantsendmore_locked(so);
 	wakeup(&so->so_timeo);
 }
 
@@ -3452,12 +3479,10 @@ soisdisconnected(struct socket *so)
 	SOCKBUF_LOCK(&so->so_rcv);
 	so->so_state &= ~(SS_ISCONNECTING|SS_ISCONNECTED|SS_ISDISCONNECTING);
 	so->so_state |= SS_ISDISCONNECTED;
-	so->so_rcv.sb_state |= SBS_CANTRCVMORE;
-	sorwakeup_locked(so);
+	socantrcvmore_locked(so);
 	SOCKBUF_LOCK(&so->so_snd);
-	so->so_snd.sb_state |= SBS_CANTSENDMORE;
-	sbdrop_locked(&so->so_snd, so->so_snd.sb_cc);
-	sowwakeup_locked(so);
+	sbdrop_locked(&so->so_snd, sbused(&so->so_snd));
+	socantsendmore_locked(so);
 	wakeup(&so->so_timeo);
 }
 

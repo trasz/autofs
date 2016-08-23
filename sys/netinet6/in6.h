@@ -376,11 +376,23 @@ extern const struct in6_addr in6addr_linklocal_allv2routers;
 struct route_in6 {
 	struct	rtentry *ro_rt;
 	struct	llentry *ro_lle;
-	struct	in6_addr *ro_ia6;
-	int		ro_flags;
+	/*
+	 * ro_prepend and ro_plen are only used for bpf to pass in a
+	 * preformed header.  They are not cacheable.
+	 */
+	char		*ro_prepend;
+	uint16_t	ro_plen;
+	uint16_t	ro_flags;
+	uint16_t	ro_mtu;	/* saved ro_rt mtu */
+	uint16_t	spare;
 	struct	sockaddr_in6 ro_dst;
 };
 #endif
+
+#ifdef _KERNEL
+#define MTAG_ABI_IPV6		1444287380	/* IPv6 ABI */
+#define IPV6_TAG_DIRECT		0		/* direct-dispatch IPv6 */
+#endif /* _KERNEL */
 
 /*
  * Options for use with [gs]etsockopt at the IPV6 level.
@@ -424,8 +436,7 @@ struct route_in6 {
 #define IPV6_IPSEC_POLICY	28 /* struct; get/set security policy */
 #endif /* IPSEC */
 
-#define IPV6_FAITH		29 /* bool; accept FAITH'ed connections */
-
+				   /* 29; unused; was IPV6_FAITH */
 #if 1 /* IPV6FIREWALL */
 #define IPV6_FW_ADD		30 /* add a firewall rule to chain */
 #define IPV6_FW_DEL		31 /* delete a firewall rule from chain */
@@ -486,6 +497,8 @@ struct route_in6 {
 #define	IPV6_FLOWID		67 /* int; flowid of given socket */
 #define	IPV6_FLOWTYPE		68 /* int; flowtype of given socket */
 #define	IPV6_RSSBUCKETID	69 /* int; RSS bucket ID of given socket */
+#define	IPV6_RECVFLOWID		70 /* bool; receive IP6 flowid/flowtype w/ datagram */
+#define	IPV6_RECVRSSBUCKETID	71 /* bool; receive IP6 RSS bucket id w/ datagram */
 
 /*
  * The following option is private; do not use it from user applications.
@@ -580,7 +593,7 @@ struct ip6_mtuinfo {
 #define IPV6CTL_SOURCECHECK	10	/* verify source route and intf */
 #define IPV6CTL_SOURCECHECK_LOGINT 11	/* minimume logging interval */
 #define IPV6CTL_ACCEPT_RTADV	12
-#define IPV6CTL_KEEPFAITH	13
+					/* 13; unused; was: IPV6CTL_KEEPFAITH */
 #define IPV6CTL_LOG_INTERVAL	14
 #define IPV6CTL_HDRNESTLIMIT	15
 #define IPV6CTL_DAD_COUNT	16
@@ -594,9 +607,9 @@ struct ip6_mtuinfo {
 #define IPV6CTL_MAPPED_ADDR	23
 #endif
 #define IPV6CTL_V6ONLY		24
-#define IPV6CTL_RTEXPIRE	25	/* cloned route expiration time */
-#define IPV6CTL_RTMINEXPIRE	26	/* min value for expiration time */
-#define IPV6CTL_RTMAXCACHE	27	/* trigger level for dynamic expire */
+/*	IPV6CTL_RTEXPIRE	25	deprecated */
+/*	IPV6CTL_RTMINEXPIRE	26	deprecated */
+/*	IPV6CTL_RTMAXCACHE	27	deprecated */
 
 #define IPV6CTL_USETEMPADDR	32	/* use temporary addresses (RFC3041) */
 #define IPV6CTL_TEMPPLTIME	33	/* preferred lifetime for tmpaddrs */
@@ -624,7 +637,10 @@ struct ip6_mtuinfo {
 					 * receiving IF. */
 #define	IPV6CTL_RFC6204W3	50	/* Accept defroute even when forwarding
 					   enabled */
-#define	IPV6CTL_MAXID		51
+#define	IPV6CTL_INTRQMAXLEN	51	/* max length of IPv6 netisr queue */
+#define	IPV6CTL_INTRDQMAXLEN	52	/* max length of direct IPv6 netisr
+					 * queue */
+#define	IPV6CTL_MAXID		53
 #endif /* __BSD_VISIBLE */
 
 /*
@@ -647,9 +663,13 @@ struct ip6_hdr;
 
 int	in6_cksum_pseudo(struct ip6_hdr *, uint32_t, uint8_t, uint16_t);
 int	in6_cksum(struct mbuf *, u_int8_t, u_int32_t, u_int32_t);
+int	in6_cksum_partial(struct mbuf *, u_int8_t, u_int32_t, u_int32_t,
+			  u_int32_t);
 int	in6_localaddr(struct in6_addr *);
 int	in6_localip(struct in6_addr *);
-int	in6_addrscope(struct in6_addr *);
+int	in6_ifhasaddr(struct ifnet *, struct in6_addr *);
+int	in6_addrscope(const struct in6_addr *);
+char	*ip6_sprintf(char *, const struct in6_addr *);
 struct	in6_ifaddr *in6_ifawithifp(struct ifnet *, struct in6_addr *);
 extern void in6_if_up(struct ifnet *);
 struct sockaddr;
@@ -667,7 +687,6 @@ extern void addrsel_policy_init(void);
 #define	sin6tosa(sin6)	((struct sockaddr *)(sin6))
 #define	ifatoia6(ifa)	((struct in6_ifaddr *)(ifa))
 
-extern int	(*faithprefix_p)(struct in6_addr *);
 #endif /* _KERNEL */
 
 #ifndef _SIZE_T_DECLARED

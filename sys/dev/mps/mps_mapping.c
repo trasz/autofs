@@ -1,5 +1,6 @@
 /*-
- * Copyright (c) 2011, 2012 LSI Corp.
+ * Copyright (c) 2011-2015 LSI Corp.
+ * Copyright (c) 2013-2015 Avago Technologies
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -23,7 +24,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * LSI MPT-Fusion Host Adapter FreeBSD
+ * Avago Technologies (LSI) MPT-Fusion Host Adapter FreeBSD
  */
 
 #include <sys/cdefs.h>
@@ -42,6 +43,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/bus.h>
 #include <sys/endian.h>
 #include <sys/sysctl.h>
+#include <sys/sbuf.h>
 #include <sys/eventhandler.h>
 #include <sys/uio.h>
 #include <machine/bus.h>
@@ -896,7 +898,7 @@ _mapping_get_dev_info(struct mps_softc *sc,
 	struct enc_mapping_table *et_entry;
 	struct dev_mapping_table *mt_entry;
 	u8 add_code = MPI2_EVENT_SAS_TOPO_RC_TARG_ADDED;
-	int rc;
+	int rc = 1;
 
 	for (entry = 0; entry < topo_change->num_entries; entry++) {
 		phy_change = &topo_change->phy_details[entry];
@@ -910,42 +912,34 @@ _mapping_get_dev_info(struct mps_softc *sc,
 			continue;
 		}
 
+		/*
+		 * Always get SATA Identify information because this is used
+		 * to determine if Start/Stop Unit should be sent to the drive
+		 * when the system is shutdown.
+		 */
 		device_info = le32toh(sas_device_pg0.DeviceInfo);
-		if ((ioc_pg8_flags & MPI2_IOCPAGE8_FLAGS_MASK_MAPPING_MODE) ==
-		    MPI2_IOCPAGE8_FLAGS_DEVICE_PERSISTENCE_MAPPING) {
-			if ((device_info & MPI2_SAS_DEVICE_INFO_END_DEVICE) &&
-			    (device_info & MPI2_SAS_DEVICE_INFO_SATA_DEVICE)) {
-				rc = mpssas_get_sas_address_for_sata_disk(sc,
-				    &sas_address, phy_change->dev_handle,
-				    device_info);
-				if (rc) {
-					printf("%s: failed to compute the "
-					    "hashed SAS Address for SATA "
-					    "device with handle 0x%04x\n",
-					    __func__, phy_change->dev_handle);
-					sas_address =
-					    sas_device_pg0.SASAddress.High;
-					sas_address = (sas_address << 32) |
-					    sas_device_pg0.SASAddress.Low;
-				}
-				mps_dprint(sc, MPS_MAPPING,
-				    "SAS Address for SATA device = %jx\n",
-				    sas_address);
+		sas_address = sas_device_pg0.SASAddress.High;
+		sas_address = (sas_address << 32) |
+		    sas_device_pg0.SASAddress.Low;
+		if ((device_info & MPI2_SAS_DEVICE_INFO_END_DEVICE) &&
+		    (device_info & MPI2_SAS_DEVICE_INFO_SATA_DEVICE)) {
+			rc = mpssas_get_sas_address_for_sata_disk(sc,
+			    &sas_address, phy_change->dev_handle, device_info,
+			    &phy_change->is_SATA_SSD);
+			if (rc) {
+				mps_dprint(sc, MPS_ERROR, "%s: failed to get "
+				    "disk type (SSD or HDD) and SAS Address "
+				    "for SATA device with handle 0x%04x\n",
+				    __func__, phy_change->dev_handle);
 			} else {
-				sas_address =
-					sas_device_pg0.SASAddress.High;
-				sas_address = (sas_address << 32) |
-					sas_device_pg0.SASAddress.Low;
+				mps_dprint(sc, MPS_INFO, "SAS Address for SATA "
+				    "device = %jx\n", sas_address);
 			}
-		} else {
-			sas_address = sas_device_pg0.SASAddress.High;
-			sas_address = (sas_address << 32) |
-			   sas_device_pg0.SASAddress.Low;
 		}
+
 		phy_change->physical_id = sas_address;
 		phy_change->slot = le16toh(sas_device_pg0.Slot);
-		phy_change->device_info =
-		    le32toh(sas_device_pg0.DeviceInfo);
+		phy_change->device_info = le32toh(sas_device_pg0.DeviceInfo);
 
 		if ((ioc_pg8_flags & MPI2_IOCPAGE8_FLAGS_MASK_MAPPING_MODE) ==
 		    MPI2_IOCPAGE8_FLAGS_ENCLOSURE_SLOT_MAPPING) {
@@ -953,10 +947,10 @@ _mapping_get_dev_info(struct mps_softc *sc,
 			    topo_change->enc_handle);
 			if (enc_idx == MPS_ENCTABLE_BAD_IDX) {
 				phy_change->is_processed = 1;
-				printf("%s: failed to add the device with "
-				    "handle 0x%04x because the enclosure is "
-				    "not in the mapping table\n", __func__,
-				    phy_change->dev_handle);
+				mps_dprint(sc, MPS_MAPPING, "%s: failed to add "
+				    "the device with handle 0x%04x because the "
+				    "enclosure is not in the mapping table\n",
+				    __func__, phy_change->dev_handle);
 				continue;
 			}
 			if (!((phy_change->device_info &
@@ -2269,4 +2263,62 @@ out:
 	free(wwid_table, M_MPT2);
 	if (sc->pending_map_events)
 		sc->pending_map_events--;
+}
+
+int
+mps_mapping_dump(SYSCTL_HANDLER_ARGS)
+{
+	struct mps_softc *sc;
+	struct dev_mapping_table *mt_entry;
+	struct sbuf sbuf;
+	int i, error;
+
+	sc = (struct mps_softc *)arg1;
+
+	error = sysctl_wire_old_buffer(req, 0);
+	if (error != 0)
+		return (error);
+	sbuf_new_for_sysctl(&sbuf, NULL, 128, req);
+
+	sbuf_printf(&sbuf, "\nindex physical_id       handle id\n");
+	for (i = 0; i < sc->max_devices; i++) {
+		mt_entry = &sc->mapping_table[i];
+		if (mt_entry->physical_id == 0)
+			continue;
+		sbuf_printf(&sbuf, "%4d  %jx  %04x   %hd\n",
+		    i, mt_entry->physical_id, mt_entry->dev_handle,
+		    mt_entry->id);
+	}
+	error = sbuf_finish(&sbuf);
+	sbuf_delete(&sbuf);
+	return (error);
+}
+
+int
+mps_mapping_encl_dump(SYSCTL_HANDLER_ARGS)
+{
+	struct mps_softc *sc;
+	struct enc_mapping_table *enc_entry;
+	struct sbuf sbuf;
+	int i, error;
+
+	sc = (struct mps_softc *)arg1;
+
+	error = sysctl_wire_old_buffer(req, 0);
+	if (error != 0)
+		return (error);
+	sbuf_new_for_sysctl(&sbuf, NULL, 128, req);
+
+	sbuf_printf(&sbuf, "\nindex enclosure_id      handle map_index\n");
+	for (i = 0; i < sc->max_enclosures; i++) {
+		enc_entry = &sc->enclosure_table[i];
+		if (enc_entry->enclosure_id == 0)
+			continue;
+		sbuf_printf(&sbuf, "%4d  %jx  %04x   %d\n",
+		    i, enc_entry->enclosure_id, enc_entry->enc_handle,
+		    enc_entry->start_index);
+	}
+	error = sbuf_finish(&sbuf);
+	sbuf_delete(&sbuf);
+	return (error);
 }

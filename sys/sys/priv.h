@@ -45,8 +45,9 @@
  * loadable kernel module ABI, and should not be changed across minor
  * releases.
  *
- * When adding a new privilege, remember to determine if it's appropriate for
- * use in jail, and update the privilege switch in kern_jail.c as necessary.
+ * When adding a new privilege, remember to determine if it's appropriate
+ * for use in jail, and update the privilege switch in prison_priv_check()
+ * in kern_jail.c as necessary.
  */
 
 /*
@@ -111,6 +112,7 @@
 #define	PRIV_DEBUG_DIFFCRED	80	/* Exempt debugging other users. */
 #define	PRIV_DEBUG_SUGID	81	/* Exempt debugging setuid proc. */
 #define	PRIV_DEBUG_UNPRIV	82	/* Exempt unprivileged debug limit. */
+#define	PRIV_DEBUG_DENIED	83	/* Exempt P2_NOTRACE. */
 
 /*
  * Dtrace privileges.
@@ -132,7 +134,7 @@
 #define	PRIV_JAIL_REMOVE	112	/* Remove a jail. */
 
 /*
- * Kernel environment priveleges.
+ * Kernel environment privileges.
  */
 #define	PRIV_KENV_SET		120	/* Set kernel env. variables. */
 #define	PRIV_KENV_UNSET		121	/* Unset kernel env. variables. */
@@ -339,6 +341,8 @@
 #define	PRIV_NET_SETIFVNET	417	/* Move interface to vnet. */
 #define	PRIV_NET_SETIFDESCR	418	/* Set interface description. */
 #define	PRIV_NET_SETIFFIB	419	/* Set interface fib. */
+#define	PRIV_NET_VXLAN		420	/* Administer vxlan. */
+#define	PRIV_NET_SETVLANPCP	421	/* Set VLAN priority. */
 
 /*
  * 802.11-related privileges.

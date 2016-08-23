@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2009-2012 Microsoft Corp.
+ * Copyright (c) 2009-2012,2016 Microsoft Corp.
  * Copyright (c) 2010-2012 Citrix Inc.
  * Copyright (c) 2012 NetApp Inc.
  * All rights reserved.
@@ -24,11 +24,16 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ * $FreeBSD$
  */
 
 #ifndef __HV_RNDIS_FILTER_H__
 #define __HV_RNDIS_FILTER_H__
 
+#include <sys/param.h>
+#include <net/ethernet.h>
+#include <dev/hyperv/netvsc/if_hnvar.h>
 
 /*
  * Defines
@@ -61,23 +66,37 @@ typedef struct rndis_request_ {
 	struct sema			wait_sema;	
 
 	/*
-	 * Fixme:  We assumed a fixed size response here.  If we do ever
-	 * need to handle a bigger response, we can either define a max
-	 * response message or add a response buffer variable above this field
+	 * The max response size is sizeof(rndis_msg) + PAGE_SIZE.
+	 *
+	 * XXX
+	 * This is ugly and should be cleaned up once we busdma-fy
+	 * RNDIS request bits.
 	 */
 	rndis_msg			response_msg;
+	uint8_t				buf_resp[PAGE_SIZE];
 
 	/* Simplify allocation by having a netvsc packet inline */
-	netvsc_packet			pkt;
-	hv_vmbus_page_buffer		buffer;
-	/* Fixme:  We assumed a fixed size request here. */
+	struct hn_send_ctx		send_ctx;
+
+	/*
+	 * The max request size is sizeof(rndis_msg) + PAGE_SIZE.
+	 *
+	 * NOTE:
+	 * This is required for the large request like RSS settings.
+	 *
+	 * XXX
+	 * This is ugly and should be cleaned up once we busdma-fy
+	 * RNDIS request bits.
+	 */
 	rndis_msg			request_msg;
+	uint8_t				buf_req[PAGE_SIZE];
+
 	/* Fixme:  Poor man's semaphore. */
 	uint32_t			halt_complete_flag;
 } rndis_request;
 
 typedef struct rndis_device_ {
-	netvsc_dev			*net_dev;
+	struct hn_softc			*sc;
 
 	rndis_device_state		state;
 	uint32_t			link_status;
@@ -87,30 +106,22 @@ typedef struct rndis_device_ {
 
 	STAILQ_HEAD(RQ, rndis_request_)	myrequest_list;
 
-	uint8_t				hw_mac_addr[HW_MACADDR_LEN];
+	uint8_t				hw_mac_addr[ETHER_ADDR_LEN];
 } rndis_device;
-
-typedef struct rndis_filter_packet_ {
-	void				*completion_context;
-	/* No longer used */
-	pfn_on_send_rx_completion	on_completion;
-
-	rndis_msg			message;
-} rndis_filter_packet;
-
 
 /*
  * Externs
  */
+struct hn_rx_ring;
 
-extern int  hv_rf_on_receive(struct hv_device *device, netvsc_packet *pkt);
-extern int  hv_rf_on_device_add(struct hv_device *device, void *additl_info);
-extern int  hv_rf_on_device_remove(struct hv_device *device,
-				   boolean_t destroy_channel);
-extern int  hv_rf_on_open(struct hv_device *device);
-extern int  hv_rf_on_close(struct hv_device *device);
-extern int  hv_rf_on_send(struct hv_device *device, netvsc_packet *pkt);
-
+int hv_rf_on_receive(struct hn_softc *sc, struct hn_rx_ring *rxr,
+    const void *data, int dlen);
+void hv_rf_channel_rollup(struct hn_rx_ring *rxr, struct hn_tx_ring *txr);
+int hv_rf_on_device_add(struct hn_softc *sc, void *additl_info, int *nchan,
+    struct hn_rx_ring *rxr);
+int hv_rf_on_device_remove(struct hn_softc *sc, boolean_t destroy_channel);
+int hv_rf_on_open(struct hn_softc *sc);
+int hv_rf_on_close(struct hn_softc *sc);
 
 #endif  /* __HV_RNDIS_FILTER_H__ */
 

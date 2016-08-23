@@ -256,7 +256,8 @@ ffs_snapshot(mp, snapfile)
 	 * Create the snapshot file.
 	 */
 restart:
-	NDINIT(&nd, CREATE, LOCKPARENT | LOCKLEAF, UIO_SYSSPACE, snapfile, td);
+	NDINIT(&nd, CREATE, LOCKPARENT | LOCKLEAF | NOCACHE, UIO_SYSSPACE,
+	    snapfile, td);
 	if ((error = namei(&nd)) != 0)
 		return (error);
 	if (nd.ni_vp != NULL) {
@@ -557,7 +558,7 @@ loop:
 		}
 		VI_UNLOCK(xvp);
 		if (snapdebug)
-			vprint("ffs_snapshot: busy vnode", xvp);
+			vn_printf(xvp, "ffs_snapshot: busy vnode ");
 		if (VOP_GETATTR(xvp, &vat, td->td_ucred) == 0 &&
 		    vat.va_nlink > 0) {
 			VOP_UNLOCK(xvp, 0);
@@ -1895,7 +1896,7 @@ retry:
 		 * dopersistence sysctl-setable flag to decide on the
 		 * persistence needed for file content data.
 		 */
-		if (savedcbp != 0) {
+		if (savedcbp != NULL) {
 			bcopy(savedcbp->b_data, cbp->b_data, fs->fs_bsize);
 			bawrite(cbp);
 			if ((vtype == VDIR || dopersistence) &&
@@ -2387,7 +2388,7 @@ ffs_copyonwrite(devvp, bp)
 		 * dopersistence sysctl-setable flag to decide on the
 		 * persistence needed for file content data.
 		 */
-		if (savedcbp != 0) {
+		if (savedcbp != NULL) {
 			bcopy(savedcbp->b_data, cbp->b_data, fs->fs_bsize);
 			bawrite(cbp);
 			if ((devvp == bp->b_vp || bp->b_vp->v_type == VDIR ||

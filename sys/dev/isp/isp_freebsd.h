@@ -32,12 +32,14 @@
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/endian.h>
+#include <sys/jail.h>
 #include <sys/lock.h>
 #include <sys/kernel.h>
 #include <sys/queue.h>
 #include <sys/malloc.h>
 #include <sys/mutex.h>
 #include <sys/condvar.h>
+#include <sys/rman.h>
 #include <sys/sysctl.h>
 
 #include <sys/proc.h>
@@ -95,7 +97,7 @@ void		isp_put_ecmd(struct ispsoftc *, isp_ecmd_t *);
 
 #define	ISP_TARGET_FUNCTIONS	1
 #define	ATPDPSIZE	4096
-#define	ATPDPHASHSIZE	16
+#define	ATPDPHASHSIZE	32
 #define	ATPDPHASH(x)	((((x) >> 24) ^ ((x) >> 16) ^ ((x) >> 8) ^ (x)) &  \
 			    ((ATPDPHASHSIZE) - 1))
 
@@ -158,20 +160,20 @@ typedef struct isp_timed_notify_ack {
 	void *isp;
 	void *not;
 	uint8_t data[64];	 /* sb QENTRY_LEN, but order of definitions is wrong */
+	struct callout timer;
 } isp_tna_t;
 
 TAILQ_HEAD(isp_ccbq, ccb_hdr);
 typedef struct tstate {
 	SLIST_ENTRY(tstate) next;
+	lun_id_t ts_lun;
 	struct cam_path *owner;
 	struct isp_ccbq waitq;		/* waiting CCBs */
 	struct ccb_hdr_slist atios;
 	struct ccb_hdr_slist inots;
-	uint32_t hold;
-	uint32_t
-		enabled		: 1,
-		atio_count	: 15,
-		inot_count	: 15;
+	uint32_t		hold;
+	uint16_t		atio_count;
+	uint16_t		inot_count;
 	inot_private_data_t *	restart_queue;
 	inot_private_data_t *	ntfree;
 	inot_private_data_t	ntpool[ATPDPSIZE];
@@ -205,12 +207,10 @@ struct isp_pcmd {
  * Per nexus info.
  */
 struct isp_nexus {
-	struct isp_nexus *	next;
-	uint32_t
-		crnseed	:	8;	/* next command reference number */
-	uint32_t
-		tgt	:	16,	/* TGT for target */
-		lun	:	16;	/* LUN for target */
+	uint64_t lun;			/* LUN for target */
+	uint32_t tgt;			/* TGT for target */
+	uint8_t crnseed;		/* next command reference number */
+	struct isp_nexus *next;
 };
 #define	NEXUS_HASH_WIDTH	32
 #define	INITIAL_NEXUS_COUNT	MAX_FC_TARG
@@ -226,71 +226,47 @@ struct isp_fc {
 	struct cam_path *path;
 	struct ispsoftc *isp;
 	struct proc *kproc;
-	bus_dma_tag_t tdmat;
-	bus_dmamap_t tdmap;
+	bus_dmamap_t scmap;
 	uint64_t def_wwpn;
 	uint64_t def_wwnn;
-	uint32_t loop_down_time;
-	uint32_t loop_down_limit;
-	uint32_t gone_device_time;
+	time_t loop_down_time;
+	int loop_down_limit;
+	int gone_device_time;
 	/*
 	 * Per target/lun info- just to keep a per-ITL nexus crn count
 	 */
 	struct isp_nexus *nexus_hash[NEXUS_HASH_WIDTH];
 	struct isp_nexus *nexus_free_list;
 	uint32_t
-#ifdef	ISP_TARGET_MODE
-#ifdef	ISP_INTERNAL_TARGET
-		proc_active	: 1,
-#endif
-		tm_luns_enabled	: 1,
-		tm_enable_defer	: 1,
-		tm_enabled	: 1,
-#endif
 		simqfrozen	: 3,
 		default_id	: 8,
-		hysteresis	: 8,
 		def_role	: 2,	/* default role */
 		gdt_running	: 1,
 		loop_dead	: 1,
+		loop_seen_once	: 1,
 		fcbsy		: 1,
 		ready		: 1;
-	struct callout ldt;	/* loop down timer */
 	struct callout gdt;	/* gone device timer */
-	struct task ltask;
 	struct task gtask;
 #ifdef	ISP_TARGET_MODE
 	struct tslist lun_hash[LUN_HASH_SIZE];
-#ifdef	ISP_INTERNAL_TARGET
-	struct proc *		target_proc;
-#endif
 #if defined(DEBUG)
 	unsigned int inject_lost_data_frame;
 #endif
 #endif
+	int			num_threads;
 };
 
 struct isp_spi {
 	struct cam_sim *sim;
 	struct cam_path *path;
 	uint32_t
-#ifdef	ISP_TARGET_MODE
-#ifdef	ISP_INTERNAL_TARGET
-		proc_active	: 1,
-#endif
-		tm_luns_enabled	: 1,
-		tm_enable_defer	: 1,
-		tm_enabled	: 1,
-#endif
 		simqfrozen	: 3,
-		def_role	: 2,
 		iid		: 4;
 #ifdef	ISP_TARGET_MODE
 	struct tslist lun_hash[LUN_HASH_SIZE];
-#ifdef	ISP_INTERNAL_TARGET
-	struct proc *		target_proc;
 #endif
-#endif
+	int			num_threads;
 };
 
 struct isposinfo {
@@ -309,13 +285,20 @@ struct isposinfo {
 	const struct firmware *	fw;
 
 	/*
-	 * DMA related sdtuff
+	 * DMA related stuff
 	 */
-	bus_space_tag_t		bus_tag;
+	struct resource *	regs;
+	struct resource *	regs2;
 	bus_dma_tag_t		dmat;
-	bus_space_handle_t	bus_handle;
-	bus_dma_tag_t		cdmat;
-	bus_dmamap_t		cdmap;
+	bus_dma_tag_t		reqdmat;
+	bus_dma_tag_t		respdmat;
+	bus_dma_tag_t		atiodmat;
+	bus_dma_tag_t		iocbdmat;
+	bus_dma_tag_t		scdmat;
+	bus_dmamap_t		reqmap;
+	bus_dmamap_t		respmap;
+	bus_dmamap_t		atiomap;
+	bus_dmamap_t		iocbmap;
 
 	/*
 	 * Command and transaction related related stuff
@@ -334,7 +317,6 @@ struct isposinfo {
 		timer_active	: 1,
 		autoconf	: 1,
 		ehook_active	: 1,
-		disabled	: 1,
 		mbox_sleeping	: 1,
 		mbox_sleep_ok	: 1,
 		mboxcmd_done	: 1,
@@ -349,10 +331,6 @@ struct isposinfo {
 	int			exec_throttle;
 	int			cont_max;
 
-#ifdef	ISP_TARGET_MODE
-	cam_status *		rptr;
-#endif
-
 	bus_addr_t		ecmd_dma;
 	isp_ecmd_t *		ecmd_base;
 	isp_ecmd_t *		ecmd_free;
@@ -365,6 +343,8 @@ struct isposinfo {
 		struct isp_spi *spi;
 		void *ptr;
 	} pc;
+
+	int			is_exiting;
 };
 #define	ISP_FC_PC(isp, chan)	(&(isp)->isp_osinfo.pc.fc[(chan)])
 #define	ISP_SPI_PC(isp, chan)	(&(isp)->isp_osinfo.pc.spi[(chan)])
@@ -389,14 +369,15 @@ struct isposinfo {
 
 #define	FCP_NEXT_CRN	isp_fcp_next_crn
 #define	isp_lock	isp_osinfo.lock
-#define	isp_bus_tag	isp_osinfo.bus_tag
-#define	isp_bus_handle	isp_osinfo.bus_handle
+#define	isp_regs	isp_osinfo.regs
+#define	isp_regs2	isp_osinfo.regs2
 
 /*
  * Locking macros...
  */
-#define	ISP_LOCK(isp)	mtx_lock(&isp->isp_osinfo.lock)
-#define	ISP_UNLOCK(isp)	mtx_unlock(&isp->isp_osinfo.lock)
+#define	ISP_LOCK(isp)	mtx_lock(&(isp)->isp_osinfo.lock)
+#define	ISP_UNLOCK(isp)	mtx_unlock(&(isp)->isp_osinfo.lock)
+#define	ISP_ASSERT_LOCKED(isp)	mtx_assert(&(isp)->isp_osinfo.lock, MA_OWNED)
 
 /*
  * Required Macros/Defines
@@ -406,8 +387,14 @@ struct isposinfo {
 #define	ISP_MEMZERO(a, b)	memset(a, 0, b)
 #define	ISP_MEMCPY		memcpy
 #define	ISP_SNPRINTF		snprintf
-#define	ISP_DELAY		DELAY
-#define	ISP_SLEEP(isp, x)	DELAY(x)
+#define	ISP_DELAY(x)		DELAY(x)
+#if __FreeBSD_version < 1000029
+#define	ISP_SLEEP(isp, x)	msleep(&(isp)->isp_osinfo.is_exiting, \
+    &(isp)->isp_osinfo.lock, 0, "isp_sleep", ((x) + tick - 1) / tick)
+#else
+#define	ISP_SLEEP(isp, x)	msleep_sbt(&(isp)->isp_osinfo.is_exiting, \
+    &(isp)->isp_osinfo.lock, 0, "isp_sleep", (x) * SBT_1US, 0, 0)
+#endif
 
 #define	ISP_MIN			imin
 
@@ -426,34 +413,43 @@ struct isposinfo {
 
 #define	MEMORYBARRIER(isp, type, offset, size, chan)		\
 switch (type) {							\
+case SYNC_REQUEST:						\
+	bus_dmamap_sync(isp->isp_osinfo.reqdmat,		\
+	   isp->isp_osinfo.reqmap, BUS_DMASYNC_PREWRITE);	\
+	break;							\
+case SYNC_RESULT:						\
+	bus_dmamap_sync(isp->isp_osinfo.respdmat, 		\
+	   isp->isp_osinfo.respmap, BUS_DMASYNC_POSTREAD);	\
+	break;							\
 case SYNC_SFORDEV:						\
 {								\
 	struct isp_fc *fc = ISP_FC_PC(isp, chan);		\
-	bus_dmamap_sync(fc->tdmat, fc->tdmap,			\
+	bus_dmamap_sync(isp->isp_osinfo.scdmat, fc->scmap,	\
 	   BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);		\
 	break;							\
 }								\
-case SYNC_REQUEST:						\
-	bus_dmamap_sync(isp->isp_osinfo.cdmat,			\
-	   isp->isp_osinfo.cdmap, 				\
-	   BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);		\
-	break;							\
 case SYNC_SFORCPU:						\
 {								\
 	struct isp_fc *fc = ISP_FC_PC(isp, chan);		\
-	bus_dmamap_sync(fc->tdmat, fc->tdmap,			\
+	bus_dmamap_sync(isp->isp_osinfo.scdmat, fc->scmap,	\
 	   BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);	\
 	break;							\
 }								\
-case SYNC_RESULT:						\
-	bus_dmamap_sync(isp->isp_osinfo.cdmat, 			\
-	   isp->isp_osinfo.cdmap,				\
-	   BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);	\
-	break;							\
 case SYNC_REG:							\
-	bus_space_barrier(isp->isp_osinfo.bus_tag,		\
-	    isp->isp_osinfo.bus_handle, offset, size,		\
+	bus_barrier(isp->isp_osinfo.regs, offset, size,		\
 	    BUS_SPACE_BARRIER_READ | BUS_SPACE_BARRIER_WRITE);	\
+	break;							\
+case SYNC_ATIOQ:						\
+	bus_dmamap_sync(isp->isp_osinfo.atiodmat, 		\
+	   isp->isp_osinfo.atiomap, BUS_DMASYNC_POSTREAD);	\
+	break;							\
+case SYNC_IFORDEV:						\
+	bus_dmamap_sync(isp->isp_osinfo.iocbdmat, isp->isp_osinfo.iocbmap, \
+	   BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);		\
+	break;							\
+case SYNC_IFORCPU:						\
+	bus_dmamap_sync(isp->isp_osinfo.iocbdmat, isp->isp_osinfo.iocbmap, \
+	   BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);	\
 	break;							\
 default:							\
 	break;							\
@@ -461,32 +457,35 @@ default:							\
 
 #define	MEMORYBARRIERW(isp, type, offset, size, chan)		\
 switch (type) {							\
+case SYNC_REQUEST:						\
+	bus_dmamap_sync(isp->isp_osinfo.reqdmat,		\
+	   isp->isp_osinfo.reqmap, BUS_DMASYNC_PREWRITE);	\
+	break;							\
 case SYNC_SFORDEV:						\
 {								\
 	struct isp_fc *fc = ISP_FC_PC(isp, chan);		\
-	bus_dmamap_sync(fc->tdmat, fc->tdmap,			\
+	bus_dmamap_sync(isp->isp_osinfo.scdmat, fc->scmap,	\
 	   BUS_DMASYNC_PREWRITE);				\
 	break;							\
 }								\
-case SYNC_REQUEST:						\
-	bus_dmamap_sync(isp->isp_osinfo.cdmat,			\
-	   isp->isp_osinfo.cdmap, BUS_DMASYNC_PREWRITE);	\
-	break;							\
 case SYNC_SFORCPU:						\
 {								\
 	struct isp_fc *fc = ISP_FC_PC(isp, chan);		\
-	bus_dmamap_sync(fc->tdmat, fc->tdmap,			\
+	bus_dmamap_sync(isp->isp_osinfo.scdmat, fc->scmap,	\
 	   BUS_DMASYNC_POSTWRITE);				\
 	break;							\
 }								\
-case SYNC_RESULT:						\
-	bus_dmamap_sync(isp->isp_osinfo.cdmat, 			\
-	   isp->isp_osinfo.cdmap, BUS_DMASYNC_POSTWRITE);	\
-	break;							\
 case SYNC_REG:							\
-	bus_space_barrier(isp->isp_osinfo.bus_tag,		\
-	    isp->isp_osinfo.bus_handle, offset, size,		\
+	bus_barrier(isp->isp_osinfo.regs, offset, size,		\
 	    BUS_SPACE_BARRIER_WRITE);				\
+	break;							\
+case SYNC_IFORDEV:						\
+	bus_dmamap_sync(isp->isp_osinfo.iocbdmat, isp->isp_osinfo.iocbmap, \
+	   BUS_DMASYNC_PREWRITE);				\
+	break;							\
+case SYNC_IFORCPU:						\
+	bus_dmamap_sync(isp->isp_osinfo.iocbdmat, isp->isp_osinfo.iocbmap, \
+	   BUS_DMASYNC_POSTWRITE);				\
 	break;							\
 default:							\
 	break;							\
@@ -537,7 +536,7 @@ default:							\
 #define	XS_ISP(ccb)		cam_sim_softc(xpt_path_sim((ccb)->ccb_h.path))
 #define	XS_CHANNEL(ccb)		cam_sim_bus(xpt_path_sim((ccb)->ccb_h.path))
 #define	XS_TGT(ccb)		(ccb)->ccb_h.target_id
-#define	XS_LUN(ccb)		(uint32_t)((ccb)->ccb_h.target_lun)
+#define	XS_LUN(ccb)		(ccb)->ccb_h.target_lun
 
 #define	XS_CDBP(ccb)	\
 	(((ccb)->ccb_h.flags & CAM_CDB_POINTER)? \
@@ -618,14 +617,8 @@ default:							\
 #define	DEFAULT_FRAMESIZE(isp)		isp->isp_osinfo.framesize
 #define	DEFAULT_EXEC_THROTTLE(isp)	isp->isp_osinfo.exec_throttle
 
-#define	GET_DEFAULT_ROLE(isp, chan)	\
-	(IS_FC(isp)? ISP_FC_PC(isp, chan)->def_role : ISP_SPI_PC(isp, chan)->def_role)
-#define	SET_DEFAULT_ROLE(isp, chan, val)		\
-	if (IS_FC(isp)) { 				\
-		ISP_FC_PC(isp, chan)->def_role = val;	\
-	} else {					\
-		ISP_SPI_PC(isp, chan)->def_role = val;	\
-	}
+#define	DEFAULT_ROLE(isp, chan)	\
+	(IS_FC(isp)? ISP_FC_PC(isp, chan)->def_role : ISP_ROLE_INITIATOR)
 
 #define	DEFAULT_IID(isp, chan)		isp->isp_osinfo.pc.spi[chan].iid
 
@@ -723,11 +716,9 @@ extern uint64_t isp_default_wwn(ispsoftc_t *, int, int, int);
  * driver global data
  */
 extern int isp_announced;
-extern int isp_fabric_hysteresis;
 extern int isp_loop_down_limit;
 extern int isp_gone_device_time;
 extern int isp_quickboot_time;
-extern int isp_autoconfig;
 
 /*
  * Platform private flags
@@ -747,6 +738,7 @@ int isp_fc_scratch_acquire(ispsoftc_t *, int);
 int isp_mstohz(int);
 void isp_platform_intr(void *);
 void isp_common_dmateardown(ispsoftc_t *, struct ccb_scsiio *, uint32_t);
+void isp_fcp_reset_crn(ispsoftc_t *, int, uint32_t, int);
 int isp_fcp_next_crn(ispsoftc_t *, uint8_t *, XS_T *);
 
 /*

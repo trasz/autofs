@@ -33,6 +33,7 @@ __FBSDID("$FreeBSD$");
 
 #include "opt_auto_eoi.h"
 #include "opt_isa.h"
+#include "opt_mca.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -57,6 +58,9 @@ __FBSDID("$FreeBSD$");
 #include <isa/isareg.h>
 #endif
 #include <isa/isavar.h>
+#ifdef DEV_MCA
+#include <i386/bios/mca_machdep.h>
+#endif
 
 #ifdef __amd64__
 #define	SDT_ATPIC	SDT_SYSIGT
@@ -151,7 +155,7 @@ static struct atpic_intsrc atintrs[] = {
 	INTSRC(15),
 };
 
-CTASSERT(sizeof(atintrs) / sizeof(atintrs[0]) == NUM_ISA_IRQS);
+CTASSERT(nitems(atintrs) == NUM_ISA_IRQS);
 
 static __inline void
 _atpic_eoi_master(struct intsrc *isrc)

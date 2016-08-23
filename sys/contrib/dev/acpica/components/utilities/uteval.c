@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2013, Intel Corp.
+ * Copyright (C) 2000 - 2016, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -41,8 +41,6 @@
  * POSSIBILITY OF SUCH DAMAGES.
  */
 
-#define __UTEVAL_C__
-
 #include <contrib/dev/acpica/include/acpi.h>
 #include <contrib/dev/acpica/include/accommon.h>
 #include <contrib/dev/acpica/include/acnamesp.h>
@@ -74,7 +72,7 @@
 ACPI_STATUS
 AcpiUtEvaluateObject (
     ACPI_NAMESPACE_NODE     *PrefixNode,
-    char                    *Path,
+    const char              *Path,
     UINT32                  ExpectedReturnBtypes,
     ACPI_OPERAND_OBJECT     **ReturnDesc)
 {
@@ -221,7 +219,7 @@ Cleanup:
 
 ACPI_STATUS
 AcpiUtEvaluateNumericObject (
-    char                    *ObjectName,
+    const char              *ObjectName,
     ACPI_NAMESPACE_NODE     *DeviceNode,
     UINT64                  *Value)
 {
@@ -233,7 +231,7 @@ AcpiUtEvaluateNumericObject (
 
 
     Status = AcpiUtEvaluateObject (DeviceNode, ObjectName,
-                ACPI_BTYPE_INTEGER, &ObjDesc);
+        ACPI_BTYPE_INTEGER, &ObjDesc);
     if (ACPI_FAILURE (Status))
     {
         return_ACPI_STATUS (Status);
@@ -280,7 +278,7 @@ AcpiUtExecute_STA (
 
 
     Status = AcpiUtEvaluateObject (DeviceNode, METHOD_NAME__STA,
-                ACPI_BTYPE_INTEGER, &ObjDesc);
+        ACPI_BTYPE_INTEGER, &ObjDesc);
     if (ACPI_FAILURE (Status))
     {
         if (AE_NOT_FOUND == Status)
@@ -353,8 +351,8 @@ AcpiUtExecutePowerMethods (
          * return type is an Integer.
          */
         Status = AcpiUtEvaluateObject (DeviceNode,
-                    ACPI_CAST_PTR (char, MethodNames[i]),
-                    ACPI_BTYPE_INTEGER, &ObjDesc);
+            ACPI_CAST_PTR (char, MethodNames[i]),
+            ACPI_BTYPE_INTEGER, &ObjDesc);
         if (ACPI_SUCCESS (Status))
         {
             OutValues[i] = (UINT8) ObjDesc->Integer.Value;

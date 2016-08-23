@@ -40,14 +40,7 @@
 #define	INITHUNKMAX 125		/* initial dynamic allocation size */
 #define	INITLINELEN 4096
 #define	BUFFERSIZE 4096
-
-#define	SCCSPREFIX "s."
-#define	GET "get -e %s"
-#define	SCCSDIFF "get -p %s | diff - %s >/dev/null"
-
-#define	RCSSUFFIX ",v"
-#define	CHECKOUT "co -l %s"
-#define	RCSDIFF "rcsdiff %s > /dev/null"
+#define	LINENUM_MAX LONG_MAX
 
 #define	ORIGEXT ".orig"
 #define	REJEXT ".rej"

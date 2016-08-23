@@ -3,11 +3,10 @@
 .include <src.opts.mk>
 
 PROG=	units
-FILES=	units.lib
+FILES=	definitions.units
 FILESDIR=	${SHAREDIR}/misc
 
-LDADD+=-ledit -ltermcapw
-DPADD+=${LIBEDIT} ${LIBTERMCAPW}
+LIBADD=	edit
 
 .if ${MK_TESTS} != "no"
 SUBDIR+= tests

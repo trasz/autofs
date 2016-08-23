@@ -70,6 +70,7 @@ struct redirtab {
 	struct redirtab *next;
 	int renamed[10];
 	int fd0_redirected;
+	unsigned int empty_redirs;
 };
 
 
@@ -81,6 +82,9 @@ static struct redirtab *redirlist;
  * if it hasn't already been redirected.
 */
 static int fd0_redirected = 0;
+
+/* Number of redirtabs that have not been allocated. */
+static unsigned int empty_redirs = 0;
 
 static void openredirect(union node *, char[10 ]);
 static int openhere(union node *);
@@ -115,12 +119,17 @@ redirect(union node *redir, int flags)
 		memory[i] = 0;
 	memory[1] = flags & REDIR_BACKQ;
 	if (flags & REDIR_PUSH) {
-		sv = ckmalloc(sizeof (struct redirtab));
-		for (i = 0 ; i < 10 ; i++)
-			sv->renamed[i] = EMPTY;
-		sv->fd0_redirected = fd0_redirected;
-		sv->next = redirlist;
-		redirlist = sv;
+		empty_redirs++;
+		if (redir != NULL) {
+			sv = ckmalloc(sizeof (struct redirtab));
+			for (i = 0 ; i < 10 ; i++)
+				sv->renamed[i] = EMPTY;
+			sv->fd0_redirected = fd0_redirected;
+			sv->empty_redirs = empty_redirs - 1;
+			sv->next = redirlist;
+			redirlist = sv;
+			empty_redirs = 0;
+		}
 	}
 	for (n = redir ; n ; n = n->nfile.next) {
 		fd = n->nfile.fd;
@@ -173,21 +182,12 @@ openredirect(union node *redir, char memory[10])
 		fname = redir->nfile.expfname;
 		if ((f = open(fname, O_RDONLY)) < 0)
 			error("cannot open %s: %s", fname, strerror(errno));
-movefd:
-		if (f != fd) {
-			if (dup2(f, fd) == -1) {
-				e = errno;
-				close(f);
-				error("%d: %s", fd, strerror(e));
-			}
-			close(f);
-		}
 		break;
 	case NFROMTO:
 		fname = redir->nfile.expfname;
 		if ((f = open(fname, O_RDWR|O_CREAT, 0666)) < 0)
 			error("cannot create %s: %s", fname, strerror(errno));
-		goto movefd;
+		break;
 	case NTO:
 		if (Cflag) {
 			fname = redir->nfile.expfname;
@@ -205,19 +205,19 @@ movefd:
 			} else
 				error("cannot create %s: %s", fname,
 				    strerror(EEXIST));
-			goto movefd;
+			break;
 		}
 		/* FALLTHROUGH */
 	case NCLOBBER:
 		fname = redir->nfile.expfname;
 		if ((f = open(fname, O_WRONLY|O_CREAT|O_TRUNC, 0666)) < 0)
 			error("cannot create %s: %s", fname, strerror(errno));
-		goto movefd;
+		break;
 	case NAPPEND:
 		fname = redir->nfile.expfname;
 		if ((f = open(fname, O_WRONLY|O_CREAT|O_APPEND, 0666)) < 0)
 			error("cannot create %s: %s", fname, strerror(errno));
-		goto movefd;
+		break;
 	case NTOFD:
 	case NFROMFD:
 		if (redir->ndup.dupfd >= 0) {	/* if not ">&-" */
@@ -231,13 +231,21 @@ movefd:
 		} else {
 			close(fd);
 		}
-		break;
+		return;
 	case NHERE:
 	case NXHERE:
 		f = openhere(redir);
-		goto movefd;
+		break;
 	default:
 		abort();
+	}
+	if (f != fd) {
+		if (dup2(f, fd) == -1) {
+			e = errno;
+			close(f);
+			error("%d: %s", fd, strerror(e));
+		}
+		close(f);
 	}
 }
 
@@ -304,6 +312,12 @@ popredir(void)
 	struct redirtab *rp = redirlist;
 	int i;
 
+	INTOFF;
+	if (empty_redirs > 0) {
+		empty_redirs--;
+		INTON;
+		return;
+	}
 	for (i = 0 ; i < 10 ; i++) {
 		if (rp->renamed[i] != EMPTY) {
 			if (rp->renamed[i] >= 0) {
@@ -314,8 +328,8 @@ popredir(void)
 			}
 		}
 	}
-	INTOFF;
 	fd0_redirected = rp->fd0_redirected;
+	empty_redirs = rp->empty_redirs;
 	redirlist = rp->next;
 	ckfree(rp);
 	INTON;

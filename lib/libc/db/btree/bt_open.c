@@ -57,6 +57,7 @@ __FBSDID("$FreeBSD$");
 #include <string.h>
 #include <unistd.h>
 #include "un-namespace.h"
+#include "libc_private.h"
 
 #include <db.h>
 #include "btree.h"
@@ -276,7 +277,7 @@ __bt_open(const char *fname, int flags, int mode, const BTREEINFO *openinfo, int
 		b.cachesize = b.psize * MINCACHE;
 
 	/* Calculate number of pages to cache. */
-	ncache = (b.cachesize + t->bt_psize - 1) / t->bt_psize;
+	ncache = howmany(b.cachesize, t->bt_psize);
 
 	/*
 	 * The btree data structure requires that at least two keys can fit on
@@ -401,10 +402,10 @@ tmp(void)
 	}
 
 	(void)sigfillset(&set);
-	(void)_sigprocmask(SIG_BLOCK, &set, &oset);
+	(void)__libc_sigprocmask(SIG_BLOCK, &set, &oset);
 	if ((fd = mkostemp(path, O_CLOEXEC)) != -1)
 		(void)unlink(path);
-	(void)_sigprocmask(SIG_SETMASK, &oset, NULL);
+	(void)__libc_sigprocmask(SIG_SETMASK, &oset, NULL);
 	return(fd);
 }
 

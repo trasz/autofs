@@ -296,7 +296,7 @@ static void packetlogon(opt)
 			printf("set log flag: nomatch\n");
 		change = 1;
 	}
-	if (strstr(opt, "block") || index(opt, 'd')) {
+	if (strstr(opt, "block") || strchr(opt, 'd')) {
 		flag |= FF_LOGBLOCK;
 		if (opts & OPT_VERBOSE)
 			printf("set log flag: block\n");
@@ -409,23 +409,6 @@ static void flushfilter(arg, filter)
 		closedevice();
 		return;
 	}
-
-#ifdef	SIOCIPFFA
-	if (!strcmp(arg, "u")) {
-		closedevice();
-		/*
-		 * Flush auth rules and packets
-		 */
-		if (opendevice(IPL_AUTH, 1) == -1)
-			perror("open(IPL_AUTH)");
-		else {
-			if (ioctl(fd, SIOCIPFFA, &fl) == -1)
-				ipferror(fd, "ioctl(SIOCIPFFA)");
-		}
-		closedevice();
-		return;
-	}
-#endif
 
 	if (strchr(arg, 'i') || strchr(arg, 'I'))
 		fl = FR_INQUE;

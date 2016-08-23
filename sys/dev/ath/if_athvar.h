@@ -82,6 +82,25 @@
 #define	ATH_BEACON_CWMAX_DEFAULT 0	/* default cwmax for ap beacon q */
 
 /*
+ * The following bits can be set during the PCI (and perhaps non-PCI
+ * later) device probe path.
+ *
+ * It controls some of the driver and HAL behaviour.
+ */
+
+#define	ATH_PCI_CUS198		0x0001
+#define	ATH_PCI_CUS230		0x0002
+#define	ATH_PCI_CUS217		0x0004
+#define	ATH_PCI_CUS252		0x0008
+#define	ATH_PCI_WOW		0x0010
+#define	ATH_PCI_BT_ANT_DIV	0x0020
+#define	ATH_PCI_D3_L1_WAR	0x0040
+#define	ATH_PCI_AR9565_1ANT	0x0080
+#define	ATH_PCI_AR9565_2ANT	0x0100
+#define	ATH_PCI_NO_PLL_PWRSAVE	0x0200
+#define	ATH_PCI_KILLER		0x0400
+
+/*
  * The key cache is used for h/w cipher state and also for
  * tracking station state such as the current tx antenna.
  * We also setup a mapping table between key cache slot indices
@@ -107,7 +126,7 @@ struct ath_tid {
 	TAILQ_HEAD(,ath_buf)	tid_q;		/* pending buffers */
 	struct ath_node		*an;		/* pointer to parent */
 	int			tid;		/* tid */
-	int			ac;		/* which AC gets this trafic */
+	int			ac;		/* which AC gets this traffic */
 	int			hwq_depth;	/* how many buffers are on HW */
 	u_int			axq_depth;	/* SW queue depth */
 
@@ -295,8 +314,9 @@ typedef TAILQ_HEAD(ath_bufhead_s, ath_buf) ath_bufhead;
 #define	ATH_BUF_BUSY	0x00000002	/* (tx) desc owned by h/w */
 #define	ATH_BUF_FIFOEND	0x00000004
 #define	ATH_BUF_FIFOPTR	0x00000008
+#define	ATH_BUF_TOA_PROBE	0x00000010	/* ToD/ToA exchange probe */
 
-#define	ATH_BUF_FLAGS_CLONE	(ATH_BUF_MGMT)
+#define	ATH_BUF_FLAGS_CLONE	(ATH_BUF_MGMT | ATH_BUF_TOA_PROBE)
 
 /*
  * DMA state for tx/rx descriptors.
@@ -351,9 +371,9 @@ struct ath_txq {
 	 */
 	struct {
 		TAILQ_HEAD(axq_q_f_s, ath_buf)	axq_q;
-		u_int				axq_depth;
+		u_int				axq_depth;	/* how many frames (1 per legacy, 1 per A-MPDU list) are in the FIFO queue */
 	} fifo;
-	u_int			axq_fifo_depth;	/* depth of FIFO frames */
+	u_int			axq_fifo_depth;	/* how many FIFO slots are active */
 
 	/*
 	 * XXX the holdingbf field is protected by the TXBUF lock
@@ -458,11 +478,11 @@ struct ath_vap {
 	struct ieee80211vap av_vap;	/* base class */
 	int		av_bslot;	/* beacon slot index */
 	struct ath_buf	*av_bcbuf;	/* beacon buffer */
-	struct ieee80211_beacon_offsets av_boff;/* dynamic update state */
 	struct ath_txq	av_mcastq;	/* buffered mcast s/w queue */
 
 	void		(*av_recv_mgmt)(struct ieee80211_node *,
-				struct mbuf *, int, int, int);
+				struct mbuf *, int,
+				const struct ieee80211_rx_stats *, int, int);
 	int		(*av_newstate)(struct ieee80211vap *,
 				enum ieee80211_state, int);
 	void		(*av_bmiss)(struct ieee80211vap *);
@@ -535,8 +555,8 @@ struct ath_tx_methods {
 };
 
 struct ath_softc {
-	struct ifnet		*sc_ifp;	/* interface common */
-	struct ath_stats	sc_stats;	/* interface statistics */
+	struct ieee80211com	sc_ic;
+	struct ath_stats	sc_stats;	/* device statistics */
 	struct ath_tx_aggr_stats	sc_aggr_stats;
 	struct ath_intr_stats	sc_intr_stats;
 	uint64_t		sc_debug;
@@ -566,6 +586,8 @@ struct ath_softc {
 	int			sc_tx_statuslen;
 	int			sc_tx_nmaps;	/* Number of TX maps */
 	int			sc_edma_bufsize;
+	int			sc_rx_stopped;	/* XXX only for EDMA */
+	int			sc_rx_resetted;	/* XXX only for EDMA */
 
 	void 			(*sc_node_cleanup)(struct ieee80211_node *);
 	void 			(*sc_node_free)(struct ieee80211_node *);
@@ -628,12 +650,15 @@ struct ath_softc {
 	/*
 	 * Second set of flags.
 	 */
-	u_int32_t		sc_use_ent  : 1,
+	u_int32_t		sc_running  : 1,	/* initialized */
+				sc_use_ent  : 1,
 				sc_rx_stbc  : 1,
 				sc_tx_stbc  : 1,
+				sc_has_ldpc : 1,
 				sc_hasenforcetxop : 1, /* support enforce TxOP */
 				sc_hasdivcomb : 1,     /* RX diversity combining */
-				sc_rx_lnamixer : 1;    /* RX using LNA mixing */
+				sc_rx_lnamixer : 1,    /* RX using LNA mixing */
+				sc_btcoex_mci : 1;     /* MCI bluetooth coex */
 
 	int			sc_cabq_enable;	/* Enable cabq transmission */
 
@@ -882,6 +907,22 @@ struct ath_softc {
 	HAL_POWER_MODE		sc_cur_powerstate;
 
 	int			sc_powersave_refcnt;
+
+	/* ATH_PCI_* flags */
+	uint32_t		sc_pci_devinfo;
+
+	/* BT coex */
+	struct {
+		struct ath_descdma buf;
+
+		/* gpm/sched buffer, saved pointers */
+		char *sched_buf;
+		bus_addr_t sched_paddr;
+		char *gpm_buf;
+		bus_addr_t gpm_paddr;
+
+		uint32_t wlan_channels[4];
+	} sc_btcoex;
 };
 
 #define	ATH_LOCK_INIT(_sc) \
@@ -914,26 +955,6 @@ struct ath_softc {
 		MA_NOTOWNED)
 #define	ATH_TX_TRYLOCK(_sc)	(mtx_owned(&(_sc)->sc_tx_mtx) != 0 &&	\
 					mtx_trylock(&(_sc)->sc_tx_mtx))
-
-/*
- * The IC TX lock is non-reentrant and serialises packet queuing from
- * the upper layers.
- */
-#define	ATH_TX_IC_LOCK_INIT(_sc) do {\
-	snprintf((_sc)->sc_tx_ic_mtx_name,				\
-	    sizeof((_sc)->sc_tx_ic_mtx_name),				\
-	    "%s IC TX lock",						\
-	    device_get_nameunit((_sc)->sc_dev));			\
-	mtx_init(&(_sc)->sc_tx_ic_mtx, (_sc)->sc_tx_ic_mtx_name,	\
-		 NULL, MTX_DEF);					\
-	} while (0)
-#define	ATH_TX_IC_LOCK_DESTROY(_sc)	mtx_destroy(&(_sc)->sc_tx_ic_mtx)
-#define	ATH_TX_IC_LOCK(_sc)		mtx_lock(&(_sc)->sc_tx_ic_mtx)
-#define	ATH_TX_IC_UNLOCK(_sc)		mtx_unlock(&(_sc)->sc_tx_ic_mtx)
-#define	ATH_TX_IC_LOCK_ASSERT(_sc)	mtx_assert(&(_sc)->sc_tx_ic_mtx,	\
-		MA_OWNED)
-#define	ATH_TX_IC_UNLOCK_ASSERT(_sc)	mtx_assert(&(_sc)->sc_tx_ic_mtx,	\
-		MA_NOTOWNED)
 
 /*
  * The PCU lock is non-recursive and should be treated as a spinlock.
@@ -1030,8 +1051,9 @@ void	ath_intr(void *);
  */
 #define	ath_hal_detach(_ah) \
 	((*(_ah)->ah_detach)((_ah)))
-#define	ath_hal_reset(_ah, _opmode, _chan, _outdoor, _pstatus) \
-	((*(_ah)->ah_reset)((_ah), (_opmode), (_chan), (_outdoor), (_pstatus)))
+#define	ath_hal_reset(_ah, _opmode, _chan, _fullreset, _resettype, _pstatus) \
+	((*(_ah)->ah_reset)((_ah), (_opmode), (_chan), (_fullreset), \
+	    (_resettype), (_pstatus)))
 #define	ath_hal_macversion(_ah) \
 	(((_ah)->ah_macVersion << 4) | ((_ah)->ah_macRev))
 #define	ath_hal_getratetable(_ah, _mode) \
@@ -1301,6 +1323,10 @@ void	ath_intr(void *);
 
 #define	ath_hal_hasdivantcomb(_ah) \
 	(ath_hal_getcapability(_ah, HAL_CAP_ANT_DIV_COMB, 0, NULL) == HAL_OK)
+#define	ath_hal_hasldpc(_ah) \
+	(ath_hal_getcapability(_ah, HAL_CAP_LDPC, 0, NULL) == HAL_OK)
+#define	ath_hal_hasldpcwar(_ah) \
+	(ath_hal_getcapability(_ah, HAL_CAP_LDPCWAR, 0, NULL) == HAL_OK)
 
 /* EDMA definitions */
 #define	ath_hal_hasedma(_ah) \
@@ -1345,9 +1371,12 @@ void	ath_intr(void *);
 	0, NULL) == HAL_OK)
 #define	ath_hal_gtxto_supported(_ah) \
 	(ath_hal_getcapability(_ah, HAL_CAP_GTXTO, 0, NULL) == HAL_OK)
-#define	ath_hal_has_long_rxdesc_tsf(_ah) \
-	(ath_hal_getcapability(_ah, HAL_CAP_LONG_RXDESC_TSF, \
-	0, NULL) == HAL_OK)
+#define	ath_hal_get_rx_tsf_prec(_ah, _pr) \
+	(ath_hal_getcapability((_ah), HAL_CAP_RXTSTAMP_PREC, 0, (_pr)) \
+	    == HAL_OK)
+#define	ath_hal_get_tx_tsf_prec(_ah, _pr) \
+	(ath_hal_getcapability((_ah), HAL_CAP_TXTSTAMP_PREC, 0, (_pr)) \
+	    == HAL_OK)
 #define	ath_hal_setuprxdesc(_ah, _ds, _size, _intreq) \
 	((*(_ah)->ah_setupRxDesc)((_ah), (_ds), (_size), (_intreq)))
 #define	ath_hal_rxprocdesc(_ah, _ds, _dspa, _dsnext, _rs) \
@@ -1477,8 +1506,6 @@ void	ath_intr(void *);
 	((*(_ah)->ah_btCoexSetQcuThresh)((_ah), (_qcuid)))
 #define	ath_hal_btcoex_set_weights(_ah, _weight) \
 	((*(_ah)->ah_btCoexSetWeights)((_ah), (_weight)))
-#define	ath_hal_btcoex_set_weights(_ah, _weight) \
-	((*(_ah)->ah_btCoexSetWeights)((_ah), (_weight)))
 #define	ath_hal_btcoex_set_bmiss_thresh(_ah, _thr) \
 	((*(_ah)->ah_btCoexSetBmissThresh)((_ah), (_thr)))
 #define	ath_hal_btcoex_set_parameter(_ah, _attrib, _val) \
@@ -1487,6 +1514,17 @@ void	ath_intr(void *);
 	((*(_ah)->ah_btCoexEnable)((_ah)))
 #define	ath_hal_btcoex_disable(_ah) \
 	((*(_ah)->ah_btCoexDisable)((_ah)))
+
+#define	ath_hal_btcoex_mci_setup(_ah, _gp, _gb, _gl, _sp) \
+	((*(_ah)->ah_btMciSetup)((_ah), (_gp), (_gb), (_gl), (_sp)))
+#define	ath_hal_btcoex_mci_send_message(_ah, _h, _f, _p, _l, _wd, _cbt) \
+	((*(_ah)->ah_btMciSendMessage)((_ah), (_h), (_f), (_p), (_l), (_wd), (_cbt)))
+#define	ath_hal_btcoex_mci_get_interrupt(_ah, _mi, _mm) \
+	((*(_ah)->ah_btMciGetInterrupt)((_ah), (_mi), (_mm)))
+#define	ath_hal_btcoex_mci_state(_ah, _st, _pd) \
+	((*(_ah)->ah_btMciState)((_ah), (_st), (_pd)))
+#define	ath_hal_btcoex_mci_detach(_ah) \
+	((*(_ah)->ah_btMciDetach)((_ah)))
 
 #define	ath_hal_div_comb_conf_get(_ah, _conf) \
 	((*(_ah)->ah_divLnaConfGet)((_ah), (_conf)))

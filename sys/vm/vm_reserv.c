@@ -217,6 +217,11 @@ static long vm_reserv_freed;
 SYSCTL_LONG(_vm_reserv, OID_AUTO, freed, CTLFLAG_RD,
     &vm_reserv_freed, 0, "Cumulative number of freed reservations");
 
+static int sysctl_vm_reserv_fullpop(SYSCTL_HANDLER_ARGS);
+
+SYSCTL_PROC(_vm_reserv, OID_AUTO, fullpop, CTLTYPE_INT | CTLFLAG_RD, NULL, 0,
+    sysctl_vm_reserv_fullpop, "I", "Current number of full reservations");
+
 static int sysctl_vm_reserv_partpopq(SYSCTL_HANDLER_ARGS);
 
 SYSCTL_OID(_vm_reserv, OID_AUTO, partpopq, CTLTYPE_STRING | CTLFLAG_RD, NULL, 0,
@@ -233,6 +238,33 @@ static boolean_t	vm_reserv_has_pindex(vm_reserv_t rv,
 			    vm_pindex_t pindex);
 static void		vm_reserv_populate(vm_reserv_t rv, int index);
 static void		vm_reserv_reclaim(vm_reserv_t rv);
+
+/*
+ * Returns the current number of full reservations.
+ *
+ * Since the number of full reservations is computed without acquiring the
+ * free page queue lock, the returned value may be inexact.
+ */
+static int
+sysctl_vm_reserv_fullpop(SYSCTL_HANDLER_ARGS)
+{
+	vm_paddr_t paddr;
+	struct vm_phys_seg *seg;
+	vm_reserv_t rv;
+	int fullpop, segind;
+
+	fullpop = 0;
+	for (segind = 0; segind < vm_phys_nsegs; segind++) {
+		seg = &vm_phys_segs[segind];
+		paddr = roundup2(seg->start, VM_LEVEL_0_SIZE);
+		while (paddr + VM_LEVEL_0_SIZE <= seg->end) {
+			rv = &vm_reserv_array[paddr >> VM_LEVEL_0_SHIFT];
+			fullpop += rv->popcnt == VM_LEVEL_0_NPAGES;
+			paddr += VM_LEVEL_0_SIZE;
+		}
+	}
+	return (sysctl_handle_int(oidp, &fullpop, 0, req));
+}
 
 /*
  * Describes the current state of the partially-populated reservation queue.
@@ -364,7 +396,7 @@ vm_reserv_populate(vm_reserv_t rv, int index)
 
 /*
  * Allocates a contiguous set of physical pages of the given size "npages"
- * from an existing or newly-created reservation.  All of the physical pages
+ * from existing or newly created reservations.  All of the physical pages
  * must be at or above the given physical address "low" and below the given
  * physical address "high".  The given value "alignment" determines the
  * alignment of the first physical page in the set.  If the given value
@@ -428,7 +460,7 @@ vm_reserv_alloc_contig(vm_object_t object, vm_pindex_t pindex, u_long npages,
 		msucc = TAILQ_FIRST(&object->memq);
 	if (msucc != NULL) {
 		KASSERT(msucc->pindex > pindex,
-		    ("vm_reserv_alloc_page: pindex already allocated"));
+		    ("vm_reserv_alloc_contig: pindex already allocated"));
 		rv = vm_reserv_from_page(msucc);
 		if (rv->object == object && vm_reserv_has_pindex(rv, pindex))
 			goto found;
@@ -436,8 +468,8 @@ vm_reserv_alloc_contig(vm_object_t object, vm_pindex_t pindex, u_long npages,
 
 	/*
 	 * Could at least one reservation fit between the first index to the
-	 * left that can be used and the first index to the right that cannot
-	 * be used?
+	 * left that can be used ("leftcap") and the first index to the right
+	 * that cannot be used ("rightcap")?
 	 */
 	first = pindex - VM_RESERV_INDEX(object, pindex);
 	if (mpred != NULL) {
@@ -459,6 +491,13 @@ vm_reserv_alloc_contig(vm_object_t object, vm_pindex_t pindex, u_long npages,
 		if (first + maxpages > rightcap) {
 			if (maxpages == VM_LEVEL_0_NPAGES)
 				return (NULL);
+
+			/*
+			 * At least one reservation will fit between "leftcap"
+			 * and "rightcap".  However, a reservation for the
+			 * last of the requested pages will not fit.  Reduce
+			 * the size of the upcoming allocation accordingly.
+			 */
 			allocpages = minpages;
 		}
 	}
@@ -482,16 +521,23 @@ vm_reserv_alloc_contig(vm_object_t object, vm_pindex_t pindex, u_long npages,
 	}
 
 	/*
-	 * Allocate and populate the new reservations.  The alignment and
-	 * boundary specified for this allocation may be different from the
-	 * alignment and boundary specified for the requested pages.  For
-	 * instance, the specified index may not be the first page within the
-	 * first new reservation.
+	 * Allocate the physical pages.  The alignment and boundary specified
+	 * for this allocation may be different from the alignment and
+	 * boundary specified for the requested pages.  For instance, the
+	 * specified index may not be the first page within the first new
+	 * reservation.
 	 */
 	m = vm_phys_alloc_contig(allocpages, low, high, ulmax(alignment,
 	    VM_LEVEL_0_SIZE), boundary > VM_LEVEL_0_SIZE ? boundary : 0);
 	if (m == NULL)
 		return (NULL);
+
+	/*
+	 * The allocated physical pages always begin at a reservation
+	 * boundary, but they do not always end at a reservation boundary.
+	 * Initialize every reservation that is completely covered by the
+	 * allocated physical pages.
+	 */
 	m_ret = NULL;
 	index = VM_RESERV_INDEX(object, pindex);
 	do {
@@ -525,7 +571,7 @@ vm_reserv_alloc_contig(vm_object_t object, vm_pindex_t pindex, u_long npages,
 		m += VM_LEVEL_0_NPAGES;
 		first += VM_LEVEL_0_NPAGES;
 		allocpages -= VM_LEVEL_0_NPAGES;
-	} while (allocpages > 0);
+	} while (allocpages >= VM_LEVEL_0_NPAGES);
 	return (m_ret);
 
 	/*
@@ -787,9 +833,6 @@ vm_reserv_free_page(vm_page_t m)
 	rv = vm_reserv_from_page(m);
 	if (rv->object == NULL)
 		return (FALSE);
-	if ((m->flags & PG_CACHED) != 0 && m->pool != VM_FREEPOOL_CACHE)
-		vm_phys_set_pool(VM_FREEPOOL_CACHE, rv->pages,
-		    VM_LEVEL_0_ORDER);
 	vm_reserv_depopulate(rv, m - rv->pages);
 	return (TRUE);
 }
@@ -804,20 +847,51 @@ void
 vm_reserv_init(void)
 {
 	vm_paddr_t paddr;
-	int i;
+	struct vm_phys_seg *seg;
+	int segind;
 
 	/*
 	 * Initialize the reservation array.  Specifically, initialize the
 	 * "pages" field for every element that has an underlying superpage.
 	 */
-	for (i = 0; phys_avail[i + 1] != 0; i += 2) {
-		paddr = roundup2(phys_avail[i], VM_LEVEL_0_SIZE);
-		while (paddr + VM_LEVEL_0_SIZE <= phys_avail[i + 1]) {
+	for (segind = 0; segind < vm_phys_nsegs; segind++) {
+		seg = &vm_phys_segs[segind];
+		paddr = roundup2(seg->start, VM_LEVEL_0_SIZE);
+		while (paddr + VM_LEVEL_0_SIZE <= seg->end) {
 			vm_reserv_array[paddr >> VM_LEVEL_0_SHIFT].pages =
 			    PHYS_TO_VM_PAGE(paddr);
 			paddr += VM_LEVEL_0_SIZE;
 		}
 	}
+}
+
+/*
+ * Returns true if the given page belongs to a reservation and that page is
+ * free.  Otherwise, returns false.
+ */
+bool
+vm_reserv_is_page_free(vm_page_t m)
+{
+	vm_reserv_t rv;
+
+	mtx_assert(&vm_page_queue_free_mtx, MA_OWNED);
+	rv = vm_reserv_from_page(m);
+	if (rv->object == NULL)
+		return (false);
+	return (popmap_is_clear(rv->popmap, m - rv->pages));
+}
+
+/*
+ * If the given page belongs to a reservation, returns the level of that
+ * reservation.  Otherwise, returns -1.
+ */
+int
+vm_reserv_level(vm_page_t m)
+{
+	vm_reserv_t rv;
+
+	rv = vm_reserv_from_page(m);
+	return (rv->object != NULL ? 0 : -1);
 }
 
 /*
@@ -926,7 +1000,7 @@ vm_reserv_reclaim_contig(u_long npages, vm_paddr_t low, vm_paddr_t high,
 {
 	vm_paddr_t pa, size;
 	vm_reserv_t rv;
-	int hi, i, lo, next_free;
+	int hi, i, lo, low_index, next_free;
 
 	mtx_assert(&vm_page_queue_free_mtx, MA_OWNED);
 	if (npages > VM_LEVEL_0_NPAGES - 1)
@@ -945,8 +1019,9 @@ vm_reserv_reclaim_contig(u_long npages, vm_paddr_t low, vm_paddr_t high,
 		}
 		if (pa < low) {
 			/* Start the search for free pages at "low". */
-			i = (low - pa) / NBPOPMAP;
-			hi = (low - pa) % NBPOPMAP;
+			low_index = (low + PAGE_MASK - pa) >> PAGE_SHIFT;
+			i = low_index / NBPOPMAP;
+			hi = low_index % NBPOPMAP;
 		} else
 			i = hi = 0;
 		do {
@@ -967,8 +1042,18 @@ vm_reserv_reclaim_contig(u_long npages, vm_paddr_t low, vm_paddr_t high,
 				break;
 			} else if ((pa & (alignment - 1)) != 0 ||
 			    ((pa ^ (pa + size - 1)) & ~(boundary - 1)) != 0) {
-				/* Continue with this reservation. */
-				hi = lo;
+				/*
+				 * The current page doesn't meet the alignment
+				 * and/or boundary requirements.  Continue
+				 * searching this reservation until the rest
+				 * of its free pages are either excluded or
+				 * exhausted.
+				 */
+				hi = lo + 1;
+				if (hi >= NBPOPMAP) {
+					hi = 0;
+					i++;
+				}
 				continue;
 			}
 			/* Find the next used page. */
@@ -1016,6 +1101,23 @@ vm_reserv_rename(vm_page_t m, vm_object_t new_object, vm_object_t old_object,
 			rv->pindex -= old_object_offset;
 		}
 		mtx_unlock(&vm_page_queue_free_mtx);
+	}
+}
+
+/*
+ * Returns the size (in bytes) of a reservation of the specified level.
+ */
+int
+vm_reserv_size(int level)
+{
+
+	switch (level) {
+	case 0:
+		return (VM_LEVEL_0_SIZE);
+	case -1:
+		return (PAGE_SIZE);
+	default:
+		return (0);
 	}
 }
 

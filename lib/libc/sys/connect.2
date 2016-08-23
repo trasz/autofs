@@ -28,7 +28,7 @@
 .\"     @(#)connect.2	8.1 (Berkeley) 6/4/93
 .\" $FreeBSD$
 .\"
-.Dd June 26, 2014
+.Dd August 18, 2016
 .Dt CONNECT 2
 .Os
 .Sh NAME
@@ -37,7 +37,6 @@
 .Sh LIBRARY
 .Lb libc
 .Sh SYNOPSIS
-.In sys/types.h
 .In sys/socket.h
 .Ft int
 .Fn connect "int s" "const struct sockaddr *name" "socklen_t namelen"
@@ -58,6 +57,14 @@ another socket.
 The other socket is specified by
 .Fa name ,
 which is an address in the communications space of the socket.
+.Fa namelen
+indicates the amount of space pointed to by
+.Fa name ,
+in bytes; the
+.Fa sa_len
+member of
+.Fa name
+is ignored.
 Each communications space interprets the
 .Fa name
 argument in its own way.
@@ -160,6 +167,8 @@ Search permission is denied for a component of the path prefix.
 Write access to the named socket is denied.
 .It Bq Er ELOOP
 Too many symbolic links were encountered in translating the pathname.
+.It Bq Er EPERM
+Write access to the named socket is denied.
 .El
 .Sh SEE ALSO
 .Xr accept 2 ,

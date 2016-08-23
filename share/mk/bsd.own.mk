@@ -1,6 +1,6 @@
 # $FreeBSD$
 #
-# The include file <src.opts.mk> set common variables for owner,
+# The include file <bsd.own.mk> set common variables for owner,
 # group, mode, and directories. Defaults are in brackets.
 #
 #
@@ -28,8 +28,6 @@
 #
 # LIBCOMPATDIR	Base path for compat libraries. [/usr/lib/compat]
 #
-# LIBPRIVATEDIR	Base path for private libraries. [/usr/lib/private]
-#
 # LIBDATADIR	Base path for misc. utility data files. [/usr/libdata]
 #
 # LIBEXECDIR	Base path for system daemons and utilities. [/usr/libexec]
@@ -51,7 +49,7 @@
 #
 #
 # KMODDIR	Base path for loadable kernel modules
-#		(see kld(4)). [/boot/kernel]
+#		(see kld(4)). [/boot/module]
 #
 # KMODOWN	Kernel and KLD owner. [${BINOWN}]
 #
@@ -135,13 +133,24 @@ CTFCONVERT_CMD=	@:
 .endif 
 
 .if ${MK_INSTALL_AS_USER} != "no"
+.if !defined(_uid)
 _uid!=	id -u
+.export _uid
+.endif
 .if ${_uid} != 0
 .if !defined(USER)
-USER!=	id -un
+# Avoid exporting USER
+.if !defined(_USER)
+_USER!=	id -un
+.export _USER
 .endif
-_gid!=	id -gn
-.for x in BIN CONF DOC INFO KMOD LIB MAN NLS SHARE
+USER=	${_USER}
+.endif
+.if !defined(_gid)
+_gid!=	id -g
+.export _gid
+.endif
+.for x in BIN CONF DOC DTB INFO KMOD LIB MAN NLS SHARE
 $xOWN=	${USER}
 $xGRP=	${_gid}
 .endfor
@@ -156,18 +165,17 @@ BINGRP?=	wheel
 BINMODE?=	555
 NOBINMODE?=	444
 
-.if defined(MODULES_WITH_WORLD)
 KMODDIR?=	/boot/modules
-.else
-KMODDIR?=	/boot/kernel
-.endif
 KMODOWN?=	${BINOWN}
 KMODGRP?=	${BINGRP}
 KMODMODE?=	${BINMODE}
+DTBDIR?=	/boot/dtb
+DTBOWN?=	root
+DTBGRP?=	wheel
+DTBMODE?=	444
 
 LIBDIR?=	/usr/lib
 LIBCOMPATDIR?=	/usr/lib/compat
-LIBPRIVATEDIR?=	/usr/lib/private
 LIBDATADIR?=	/usr/libdata
 LIBEXECDIR?=	/usr/libexec
 LINTLIBDIR?=	/usr/libdata/lint
@@ -218,9 +226,11 @@ INCLUDEDIR?=	/usr/include
 #
 HRDLINK?=	-l h
 SYMLINK?=	-l s
+RSYMLINK?=	-l rs
 
 INSTALL_LINK?=		${INSTALL} ${HRDLINK}
 INSTALL_SYMLINK?=	${INSTALL} ${SYMLINK}
+INSTALL_RSYMLINK?=	${INSTALL} ${RSYMLINK}
 
 # Common variables
 .if !defined(DEBUG_FLAGS)
@@ -230,11 +240,25 @@ STRIP?=		-s
 COMPRESS_CMD?=	gzip -cn
 COMPRESS_EXT?=	.gz
 
+# Set XZ_THREADS to 1 to disable multi-threading.
+XZ_THREADS?=	0
+
+.if !empty(XZ_THREADS)
+XZ_CMD?=	xz -T ${XZ_THREADS}
+.else
+XZ_CMD?=	xz
+.endif
+
 # Pointer to the top directory into which tests are installed.  Should not be
 # overriden by Makefiles, but the user may choose to set this in src.conf(5).
 TESTSBASE?= /usr/tests
 
-# Compat for the moment
+DEPENDFILE?=	.depend
+
+# Compat for the moment -- old bsd.own.mk only included this when _WITHOUT_SRCCONF
+# wasn't defined. bsd.ports.mk and friends depend on this behavior. Remove in 12.
+.if !defined(_WITHOUT_SRCCONF)
 .include <bsd.compiler.mk>
+.endif # !_WITHOUT_SRCCONF
 
 .endif	# !target(__<bsd.own.mk>__)

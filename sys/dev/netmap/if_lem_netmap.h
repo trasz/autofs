@@ -302,8 +302,6 @@ lem_netmap_txsync(struct netmap_kring *kring, int flags)
 		kring->nr_hwtail = nm_prev(netmap_idx_n2k(kring, nic_i), lim);
 	}
 
-	nm_txsync_finalize(kring);
-
 	return 0;
 }
 
@@ -321,7 +319,7 @@ lem_netmap_rxsync(struct netmap_kring *kring, int flags)
 	u_int nic_i;	/* index into the NIC ring */
 	u_int n;
 	u_int const lim = kring->nkr_num_slots - 1;
-	u_int const head = nm_rxsync_prologue(kring);
+	u_int const head = kring->rhead;
 	int force_update = (flags & NAF_FORCE_READ) || kring->nr_kflags & NKR_PENDINTR;
 
 	/* device-specific */
@@ -410,7 +408,7 @@ lem_netmap_rxsync(struct netmap_kring *kring, int flags)
 				netmap_idx_n2k(kring, adapter->next_rx_desc_to_check),
 				kring->nr_hwtail);
 			adapter->next_rx_desc_to_check = nic_i;
-			// ifp->if_ipackets += n;
+			// if_inc_counter(ifp, IFCOUNTER_IPACKETS, n);
 			kring->nr_hwtail = nm_i;
 		}
 		kring->nr_kflags &= ~NKR_PENDINTR;
@@ -465,9 +463,6 @@ lem_netmap_rxsync(struct netmap_kring *kring, int flags)
 #endif /* NIC_PARAVIRT */
 		E1000_WRITE_REG(&adapter->hw, E1000_RDT(0), nic_i);
 	}
-
-	/* tell userspace that there might be new packets */
-	nm_rxsync_finalize(kring);
 
 	return 0;
 

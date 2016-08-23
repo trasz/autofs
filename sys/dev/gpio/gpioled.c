@@ -31,11 +31,9 @@ __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/bio.h>
 #include <sys/bus.h>
-#include <sys/conf.h>
+#include <sys/gpio.h>
 #include <sys/kernel.h>
-#include <sys/kthread.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/module.h>
@@ -43,12 +41,12 @@ __FBSDID("$FreeBSD$");
 
 #ifdef FDT
 #include <dev/fdt/fdt_common.h>
-#include <dev/gpio/gpiobusvar.h>
 #include <dev/ofw/ofw_bus.h>
 #endif
 
+#include <dev/gpio/gpiobusvar.h>
 #include <dev/led/led.h>
-#include <sys/gpio.h>
+
 #include "gpiobus_if.h"
 
 /*
@@ -56,12 +54,11 @@ __FBSDID("$FreeBSD$");
  */
 #define	GPIOLED_PIN	0
 
-#define GPIOLED_LOCK(_sc)		mtx_lock(&(_sc)->sc_mtx)
+#define	GPIOLED_LOCK(_sc)		mtx_lock(&(_sc)->sc_mtx)
 #define	GPIOLED_UNLOCK(_sc)		mtx_unlock(&(_sc)->sc_mtx)
-#define GPIOLED_LOCK_INIT(_sc) \
-	mtx_init(&_sc->sc_mtx, device_get_nameunit(_sc->sc_dev), \
-	    "gpioled", MTX_DEF)
-#define GPIOLED_LOCK_DESTROY(_sc)	mtx_destroy(&_sc->sc_mtx);
+#define	GPIOLED_LOCK_INIT(_sc)		mtx_init(&(_sc)->sc_mtx,	\
+    device_get_nameunit((_sc)->sc_dev), "gpioled", MTX_DEF)
+#define	GPIOLED_LOCK_DESTROY(_sc)	mtx_destroy(&(_sc)->sc_mtx)
 
 struct gpioled_softc 
 {
@@ -69,6 +66,7 @@ struct gpioled_softc
 	device_t	sc_busdev;
 	struct mtx	sc_mtx;
 	struct cdev	*sc_leddev;
+	int		sc_invert;
 };
 
 static void gpioled_control(void *, int);
@@ -79,16 +77,17 @@ static int gpioled_detach(device_t);
 static void 
 gpioled_control(void *priv, int onoff)
 {
-	struct gpioled_softc *sc = priv;
+	struct gpioled_softc *sc;
+
+	sc = (struct gpioled_softc *)priv;
 	GPIOLED_LOCK(sc);
-	GPIOBUS_LOCK_BUS(sc->sc_busdev);
-	GPIOBUS_ACQUIRE_BUS(sc->sc_busdev, sc->sc_dev);
-	GPIOBUS_PIN_SETFLAGS(sc->sc_busdev, sc->sc_dev, GPIOLED_PIN,
-	    GPIO_PIN_OUTPUT);
-	GPIOBUS_PIN_SET(sc->sc_busdev, sc->sc_dev, GPIOLED_PIN, 
-	    onoff ? GPIO_PIN_HIGH : GPIO_PIN_LOW);
-	GPIOBUS_RELEASE_BUS(sc->sc_busdev, sc->sc_dev);
-	GPIOBUS_UNLOCK_BUS(sc->sc_busdev);
+	if (GPIOBUS_PIN_SETFLAGS(sc->sc_busdev, sc->sc_dev, GPIOLED_PIN,
+	    GPIO_PIN_OUTPUT) == 0) {
+		if (sc->sc_invert)
+			onoff = !onoff;
+		GPIOBUS_PIN_SET(sc->sc_busdev, sc->sc_dev, GPIOLED_PIN,
+		    onoff ? GPIO_PIN_HIGH : GPIO_PIN_LOW);
+	}
 	GPIOLED_UNLOCK(sc);
 }
 
@@ -101,14 +100,17 @@ gpioled_identify(driver_t *driver, device_t bus)
 	root = OF_finddevice("/");
 	if (root == 0)
 		return;
-	leds = fdt_find_compatible(root, "gpio-leds", 1);
-	if (leds == 0)
-		return;
-
-	/* Traverse the 'gpio-leds' node and add its children. */
-	for (child = OF_child(leds); child != 0; child = OF_peer(child))
-		if (ofw_gpiobus_add_fdt_child(bus, child) == NULL)
+	for (leds = OF_child(root); leds != 0; leds = OF_peer(leds)) {
+		if (!fdt_is_compatible_strict(leds, "gpio-leds"))
 			continue;
+		/* Traverse the 'gpio-leds' node and add its children. */
+		for (child = OF_child(leds); child != 0; child = OF_peer(child)) {
+			if (!OF_hasprop(child, "gpios"))
+				continue;
+			if (ofw_gpiobus_add_fdt_child(bus, driver->name, child) == NULL)
+				continue;
+		}
+	}
 }
 #endif
 
@@ -143,7 +145,7 @@ gpioled_probe(device_t dev)
 		if (strcasecmp(compat, "gpio-leds") == 0)
 			match = 1;
 
-		free(compat, M_OFWPROP);
+		OF_prop_free(compat);
 	}
 
 	if (match == 0)
@@ -151,15 +153,17 @@ gpioled_probe(device_t dev)
 #endif
 	device_set_desc(dev, "GPIO led");
 
-	return (0);
+	return (BUS_PROBE_DEFAULT);
 }
 
 static int
 gpioled_attach(device_t dev)
 {
 	struct gpioled_softc *sc;
+	int state;
 #ifdef FDT
 	phandle_t node;
+	char *default_state;
 	char *name;
 #else
 	const char *name;
@@ -169,23 +173,44 @@ gpioled_attach(device_t dev)
 	sc->sc_dev = dev;
 	sc->sc_busdev = device_get_parent(dev);
 	GPIOLED_LOCK_INIT(sc);
+
+	state = 0;
+
 #ifdef FDT
-	name = NULL;
 	if ((node = ofw_bus_get_node(dev)) == -1)
 		return (ENXIO);
+
+	if (OF_getprop_alloc(node, "default-state",
+	    sizeof(char), (void **)&default_state) != -1) {
+		if (strcasecmp(default_state, "on") == 0)
+			state = 1;
+		else if (strcasecmp(default_state, "off") == 0)
+			state = 0;
+		else if (strcasecmp(default_state, "keep") == 0)
+			state = -1;
+		else {
+			device_printf(dev,
+			    "unknown value for default-state in FDT\n");
+		}
+		OF_prop_free(default_state);
+	}
+
+	name = NULL;
 	if (OF_getprop_alloc(node, "label", 1, (void **)&name) == -1)
 		OF_getprop_alloc(node, "name", 1, (void **)&name);
 #else
 	if (resource_string_value(device_get_name(dev), 
 	    device_get_unit(dev), "name", &name))
 		name = NULL;
+	resource_int_value(device_get_name(dev),
+	    device_get_unit(dev), "invert", &sc->sc_invert);
 #endif
 
-	sc->sc_leddev = led_create(gpioled_control, sc, name ? name :
-	    device_get_nameunit(dev));
+	sc->sc_leddev = led_create_state(gpioled_control, sc, name ? name :
+	    device_get_nameunit(dev), state);
 #ifdef FDT
 	if (name != NULL)
-		free(name, M_OFWPROP);
+		OF_prop_free(name);
 #endif
 
 	return (0);
@@ -216,7 +241,7 @@ static device_method_t gpioled_methods[] = {
 	DEVMETHOD(device_attach,	gpioled_attach),
 	DEVMETHOD(device_detach,	gpioled_detach),
 
-	{ 0, 0 }
+	DEVMETHOD_END
 };
 
 static driver_t gpioled_driver = {
@@ -226,3 +251,4 @@ static driver_t gpioled_driver = {
 };
 
 DRIVER_MODULE(gpioled, gpiobus, gpioled_driver, gpioled_devclass, 0, 0);
+MODULE_DEPEND(gpioled, gpiobus, 1, 1, 1);

@@ -98,7 +98,7 @@
 static int at91dcidebug = 0;
 
 static SYSCTL_NODE(_hw_usb, OID_AUTO, at91dci, CTLFLAG_RW, 0, "USB at91dci");
-SYSCTL_INT(_hw_usb_at91dci, OID_AUTO, debug, CTLFLAG_RW,
+SYSCTL_INT(_hw_usb_at91dci, OID_AUTO, debug, CTLFLAG_RWTUN,
     &at91dcidebug, 0, "at91dci debug level");
 #endif
 
@@ -1330,7 +1330,7 @@ at91dci_clear_stall_sub(struct at91dci_softc *sc, uint8_t ep_no,
 
 	/*
 	 * NOTE: One would assume that a FIFO reset would release the
-	 * FIFO banks aswell, but it doesn't! We have to do this
+	 * FIFO banks as well, but it doesn't! We have to do this
 	 * manually!
 	 */
 

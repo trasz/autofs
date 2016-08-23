@@ -1,6 +1,7 @@
 /*-
  * Copyright (c) 2009 Yahoo! Inc.
- * Copyright (c) 2012-2014 LSI Corp.
+ * Copyright (c) 2011-2015 LSI Corp.
+ * Copyright (c) 2013-2016 Avago Technologies
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -24,12 +25,14 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
+ * Avago Technologies (LSI) MPT-Fusion Host Adapter FreeBSD
+ *
  */
 
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
-/* Communications core for LSI MPT2 */
+/* Communications core for Avago Technologies (LSI) MPT3 */
 
 /* TODO Move headers to mprvar */
 #include <sys/types.h>
@@ -72,7 +75,6 @@ __FBSDID("$FreeBSD$");
 #include <dev/mpr/mpr_ioctl.h>
 #include <dev/mpr/mprvar.h>
 #include <dev/mpr/mpr_table.h>
-#include <dev/mpr/mpr_sas.h>
 
 static int mpr_diag_reset(struct mpr_softc *sc, int sleep_flag);
 static int mpr_init_queues(struct mpr_softc *sc);
@@ -90,14 +92,11 @@ static __inline void mpr_complete_command(struct mpr_softc *sc,
     struct mpr_command *cm);
 static void mpr_dispatch_event(struct mpr_softc *sc, uintptr_t data,
     MPI2_EVENT_NOTIFICATION_REPLY *reply);
-static void mpr_config_complete(struct mpr_softc *sc,
-    struct mpr_command *cm);
+static void mpr_config_complete(struct mpr_softc *sc, struct mpr_command *cm);
 static void mpr_periodic(void *);
 static int mpr_reregister_events(struct mpr_softc *sc);
-static void mpr_enqueue_request(struct mpr_softc *sc,
-    struct mpr_command *cm);
-static int mpr_get_iocfacts(struct mpr_softc *sc,
-    MPI2_IOC_FACTS_REPLY *facts);
+static void mpr_enqueue_request(struct mpr_softc *sc, struct mpr_command *cm);
+static int mpr_get_iocfacts(struct mpr_softc *sc, MPI2_IOC_FACTS_REPLY *facts);
 static int mpr_wait_db_ack(struct mpr_softc *sc, int timeout, int sleep_flag);
 SYSCTL_NODE(_hw, OID_AUTO, mpr, CTLFLAG_RD, 0, "MPR Driver Parameters");
 
@@ -352,11 +351,9 @@ mpr_transition_operational(struct mpr_softc *sc)
 static int
 mpr_iocfacts_allocate(struct mpr_softc *sc, uint8_t attaching)
 {
-	int error, i;
+	int error;
 	Mpi2IOCFactsReply_t saved_facts;
 	uint8_t saved_mode, reallocating;
-	struct mprsas_lun *lun, *lun_tmp;
-	struct mprsas_target *targ;
 
 	mpr_dprint(sc, MPR_TRACE, "%s\n", __func__);
 
@@ -444,6 +441,8 @@ mpr_iocfacts_allocate(struct mpr_softc *sc, uint8_t attaching)
 	    (saved_facts.IOCCapabilities != sc->facts->IOCCapabilities) ||
 	    (saved_facts.IOCRequestFrameSize !=
 	    sc->facts->IOCRequestFrameSize) ||
+	    (saved_facts.IOCMaxChainSegmentSize !=
+	    sc->facts->IOCMaxChainSegmentSize) ||
 	    (saved_facts.MaxTargets != sc->facts->MaxTargets) ||
 	    (saved_facts.MaxSasExpanders != sc->facts->MaxSasExpanders) ||
 	    (saved_facts.MaxEnclosures != sc->facts->MaxEnclosures) ||
@@ -513,27 +512,7 @@ mpr_iocfacts_allocate(struct mpr_softc *sc, uint8_t attaching)
 	 */
 	if (reallocating) {
 		mpr_iocfacts_free(sc);
-
-		/*
-		 * The number of targets is based on IOC Facts, so free all of
-		 * the allocated LUNs for each target and then the target buffer
-		 * itself.
-		 */
-		for (i=0; i< saved_facts.MaxTargets; i++) {
-			targ = &sc->sassc->targets[i];
-			SLIST_FOREACH_SAFE(lun, &targ->luns, lun_link,
-			    lun_tmp) {
-				free(lun, M_MPR);
-			}
-		}
-		free(sc->sassc->targets, M_MPR);
-
-		sc->sassc->targets = malloc(sizeof(struct mprsas_target) *
-		    sc->facts->MaxTargets, M_MPR, M_WAITOK|M_ZERO);
-		if (!sc->sassc->targets) {
-			panic("%s failed to alloc targets with error %d\n",
-			    __func__, ENOMEM);
-		}
+		mprsas_realloc_targets(sc, saved_facts.MaxTargets);
 	}
 
 	/*
@@ -570,8 +549,8 @@ mpr_iocfacts_allocate(struct mpr_softc *sc, uint8_t attaching)
 	error = mpr_transition_operational(sc);
 	if (error != 0) {
 		if (attaching) {
-			mpr_printf(sc, "%s failed to transition to "
-			    "operational with error %d\n", __func__, error);
+			mpr_printf(sc, "%s failed to transition to operational "
+			    "with error %d\n", __func__, error);
 			mpr_free(sc);
 			return (error);
 		} else {
@@ -705,7 +684,7 @@ mpr_reinit(struct mpr_softc *sc)
 
 	if (sc->mpr_flags & MPR_FLAGS_DIAGRESET) {
 		mpr_dprint(sc, MPR_INIT, "%s reset already in progress\n",
-			   __func__);
+		    __func__);
 		return 0;
 	}
 
@@ -775,7 +754,7 @@ mpr_reinit(struct mpr_softc *sc)
 	/* the end of discovery will release the simq, so we're done. */
 	mpr_dprint(sc, MPR_INFO, "%s finished sc %p post %u free %u\n", 
 	    __func__, sc, sc->replypostindex, sc->replyfreeindex);
-	mprsas_release_simq_reinit(sassc);	
+	mprsas_release_simq_reinit(sassc);
 
 	return 0;
 }
@@ -816,7 +795,8 @@ mpr_wait_db_ack(struct mpr_softc *sc, int timeout, int sleep_flag)
  		 * 0.5 milisecond
 		 */
 		if (mtx_owned(&sc->mpr_mtx) && sleep_flag == CAN_SLEEP)
-			msleep(&sc->msleep_fake_chan, &sc->mpr_mtx, 0, "mprdba",			    hz/1000);
+			msleep(&sc->msleep_fake_chan, &sc->mpr_mtx, 0, "mprdba",
+			    hz/1000);
 		else if (sleep_flag == CAN_SLEEP)
 			pause("mprdba", hz/1000);
 		else
@@ -982,7 +962,7 @@ mpr_enqueue_request(struct mpr_softc *sc, struct mpr_command *cm)
 	reply_descriptor rd;
 
 	MPR_FUNCTRACE(sc);
-	mpr_dprint(sc, MPR_TRACE, "%s SMID %u cm %p ccb %p\n", __func__,
+	mpr_dprint(sc, MPR_TRACE, "SMID %u cm %p ccb %p\n",
 	    cm->cm_desc.Default.SMID, cm, cm->cm_ccb);
 
 	if (sc->mpr_flags & MPR_FLAGS_ATTACH_DONE && !(sc->mpr_flags &
@@ -1103,8 +1083,8 @@ mpr_alloc_queues(struct mpr_softc *sc)
 	 *
 	 * These two queues are allocated together for simplicity.
 	 */
-	sc->fqdepth = roundup2((sc->num_replies + 1), 16);
-	sc->pqdepth = roundup2((sc->num_replies + 1), 16);
+	sc->fqdepth = roundup2(sc->num_replies + 1, 16);
+	sc->pqdepth = roundup2(sc->num_replies + 1, 16);
 	fqsize= sc->fqdepth * 4;
 	pqsize = sc->pqdepth * 8;
 	qsize = fqsize + pqsize;
@@ -1210,7 +1190,28 @@ mpr_alloc_requests(struct mpr_softc *sc)
         bus_dmamap_load(sc->req_dmat, sc->req_map, sc->req_frames, rsize,
 	    mpr_memaddr_cb, &sc->req_busaddr, 0);
 
-	rsize = sc->facts->IOCRequestFrameSize * sc->max_chains * 4;
+	/*
+	 * Gen3 and beyond uses the IOCMaxChainSegmentSize from IOC Facts to
+	 * get the size of a Chain Frame.  Previous versions use the size as a
+	 * Request Frame for the Chain Frame size.  If IOCMaxChainSegmentSize
+	 * is 0, use the default value.  The IOCMaxChainSegmentSize is the
+	 * number of 16-byte elelements that can fit in a Chain Frame, which is
+	 * the size of an IEEE Simple SGE.
+	 */
+	if (sc->facts->MsgVersion >= MPI2_VERSION_02_05) {
+		sc->chain_seg_size =
+		    htole16(sc->facts->IOCMaxChainSegmentSize);
+		if (sc->chain_seg_size == 0) {
+			sc->chain_frame_size = MPR_DEFAULT_CHAIN_SEG_SIZE *
+			    MPR_MAX_CHAIN_ELEMENT_SIZE;
+		} else {
+			sc->chain_frame_size = sc->chain_seg_size *
+			    MPR_MAX_CHAIN_ELEMENT_SIZE;
+		}
+	} else {
+		sc->chain_frame_size = sc->facts->IOCRequestFrameSize * 4;
+	}
+	rsize = sc->chain_frame_size * sc->max_chains;
         if (bus_dma_tag_create( sc->mpr_parent_dmat,    /* parent */
 				16, 0,			/* algnmnt, boundary */
 				BUS_SPACE_MAXADDR,	/* lowaddr */
@@ -1268,9 +1269,9 @@ mpr_alloc_requests(struct mpr_softc *sc)
 	for (i = 0; i < sc->max_chains; i++) {
 		chain = &sc->chains[i];
 		chain->chain = (MPI2_SGE_IO_UNION *)(sc->chain_frames +
-		    i * sc->facts->IOCRequestFrameSize * 4);
+		    i * sc->chain_frame_size);
 		chain->chain_busaddr = sc->chain_busaddr +
-		    i * sc->facts->IOCRequestFrameSize * 4;
+		    i * sc->chain_frame_size;
 		mpr_free_chain(sc, chain);
 		sc->chain_free_lowwater++;
 	}
@@ -1372,6 +1373,9 @@ mpr_get_tunables(struct mpr_softc *sc)
 	sc->disable_msix = 0;
 	sc->disable_msi = 0;
 	sc->max_chains = MPR_CHAIN_FRAMES;
+	sc->max_io_pages = MPR_MAXIO_PAGES;
+	sc->enable_ssu = MPR_SSU_ENABLE_SSD_DISABLE_HDD;
+	sc->spinup_wait_time = DEFAULT_SPINUP_WAIT;
 
 	/*
 	 * Grab the global variables.
@@ -1380,6 +1384,9 @@ mpr_get_tunables(struct mpr_softc *sc)
 	TUNABLE_INT_FETCH("hw.mpr.disable_msix", &sc->disable_msix);
 	TUNABLE_INT_FETCH("hw.mpr.disable_msi", &sc->disable_msi);
 	TUNABLE_INT_FETCH("hw.mpr.max_chains", &sc->max_chains);
+	TUNABLE_INT_FETCH("hw.mpr.max_io_pages", &sc->max_io_pages);
+	TUNABLE_INT_FETCH("hw.mpr.enable_ssu", &sc->enable_ssu);
+	TUNABLE_INT_FETCH("hw.mpr.spinup_wait_time", &sc->spinup_wait_time);
 
 	/* Grab the unit-instance variables */
 	snprintf(tmpstr, sizeof(tmpstr), "dev.mpr.%d.debug_level",
@@ -1398,10 +1405,22 @@ mpr_get_tunables(struct mpr_softc *sc)
 	    device_get_unit(sc->mpr_dev));
 	TUNABLE_INT_FETCH(tmpstr, &sc->max_chains);
 
+	snprintf(tmpstr, sizeof(tmpstr), "dev.mpr.%d.max_io_pages",
+	    device_get_unit(sc->mpr_dev));
+	TUNABLE_INT_FETCH(tmpstr, &sc->max_io_pages);
+
 	bzero(sc->exclude_ids, sizeof(sc->exclude_ids));
 	snprintf(tmpstr, sizeof(tmpstr), "dev.mpr.%d.exclude_ids",
 	    device_get_unit(sc->mpr_dev));
 	TUNABLE_STR_FETCH(tmpstr, sc->exclude_ids, sizeof(sc->exclude_ids));
+
+	snprintf(tmpstr, sizeof(tmpstr), "dev.mpr.%d.enable_ssu",
+	    device_get_unit(sc->mpr_dev));
+	TUNABLE_INT_FETCH(tmpstr, &sc->enable_ssu);
+
+	snprintf(tmpstr, sizeof(tmpstr), "dev.mpr.%d.spinup_wait_time",
+	    device_get_unit(sc->mpr_dev));
+	TUNABLE_INT_FETCH(tmpstr, &sc->spinup_wait_time);
 }
 
 static void
@@ -1447,7 +1466,7 @@ mpr_setup_sysctl(struct mpr_softc *sc)
 	    "Disable the use of MSI interrupts");
 
 	SYSCTL_ADD_STRING(sysctl_ctx, SYSCTL_CHILDREN(sysctl_tree),
-	    OID_AUTO, "firmware_version", CTLFLAG_RW, &sc->fw_version,
+	    OID_AUTO, "firmware_version", CTLFLAG_RW, sc->fw_version,
 	    strlen(sc->fw_version), "firmware version");
 
 	SYSCTL_ADD_STRING(sysctl_ctx, SYSCTL_CHILDREN(sysctl_tree),
@@ -1474,11 +1493,23 @@ mpr_setup_sysctl(struct mpr_softc *sc)
 	    OID_AUTO, "max_chains", CTLFLAG_RD,
 	    &sc->max_chains, 0,"maximum chain frames that will be allocated");
 
-#if __FreeBSD_version >= 900030
+	SYSCTL_ADD_INT(sysctl_ctx, SYSCTL_CHILDREN(sysctl_tree),
+	    OID_AUTO, "max_io_pages", CTLFLAG_RD,
+	    &sc->max_io_pages, 0,"maximum pages to allow per I/O (if <1 use "
+	    "IOCFacts)");
+
+	SYSCTL_ADD_INT(sysctl_ctx, SYSCTL_CHILDREN(sysctl_tree),
+	    OID_AUTO, "enable_ssu", CTLFLAG_RW, &sc->enable_ssu, 0,
+	    "enable SSU to SATA SSD/HDD at shutdown");
+
 	SYSCTL_ADD_UQUAD(sysctl_ctx, SYSCTL_CHILDREN(sysctl_tree),
 	    OID_AUTO, "chain_alloc_fail", CTLFLAG_RD,
 	    &sc->chain_alloc_fail, "chain allocation failures");
-#endif //FreeBSD_version >= 900030
+
+	SYSCTL_ADD_INT(sysctl_ctx, SYSCTL_CHILDREN(sysctl_tree),
+	    OID_AUTO, "spinup_wait_time", CTLFLAG_RD,
+	    &sc->spinup_wait_time, DEFAULT_SPINUP_WAIT, "seconds to wait for "
+	    "spinup after SATA ID error");
 }
 
 int
@@ -1712,9 +1743,9 @@ mpr_complete_command(struct mpr_softc *sc, struct mpr_command *cm)
 
 	if (cm->cm_complete != NULL) {
 		mpr_dprint(sc, MPR_TRACE,
-			   "%s cm %p calling cm_complete %p data %p reply %p\n",
-			   __func__, cm, cm->cm_complete, cm->cm_complete_data,
-			   cm->cm_reply);
+		    "%s cm %p calling cm_complete %p data %p reply %p\n",
+		    __func__, cm, cm->cm_complete, cm->cm_complete_data,
+		    cm->cm_reply);
 		cm->cm_complete(sc, cm);
 	}
 
@@ -1771,10 +1802,9 @@ mpr_sas_log_info(struct mpr_softc *sc , u32 log_info)
 		break;
 	}
  
-	mpr_dprint(sc, MPR_INFO, "log_info(0x%08x): originator(%s), "
-	    "code(0x%02x), sub_code(0x%04x)\n", log_info,
-	    originator_str, sas_loginfo.dw.code,
-	    sas_loginfo.dw.subcode);
+	mpr_dprint(sc, MPR_LOG, "log_info(0x%08x): originator(%s), "
+	    "code(0x%02x), sub_code(0x%04x)\n", log_info, originator_str,
+	    sas_loginfo.dw.code, sas_loginfo.dw.subcode);
 }
 
 static void
@@ -1923,9 +1953,10 @@ mpr_intr_locked(void *data)
 					 */
 					rel_rep =
 					    (MPI2_DIAG_RELEASE_REPLY *)reply;
-					if (le16toh(rel_rep->IOCStatus) ==
+					if ((le16toh(rel_rep->IOCStatus) &
+					    MPI2_IOCSTATUS_MASK) ==
 					    MPI2_IOCSTATUS_DIAGNOSTIC_RELEASED)
-					    {
+					{
 						pBuffer =
 						    &sc->fw_diag_buffer_list[
 						    rel_rep->BufferType];
@@ -2096,7 +2127,7 @@ mpr_update_events(struct mpr_softc *sc, struct mpr_event_handle *handle,
 	    (reply->IOCStatus & MPI2_IOCSTATUS_MASK) != MPI2_IOCSTATUS_SUCCESS)
 		error = ENXIO;
 	
-	if(reply)
+	if (reply)
 		mpr_print_event(sc, reply);
 
 	mpr_dprint(sc, MPR_TRACE, "%s finished error %d\n", __func__, error);
@@ -2163,8 +2194,8 @@ mpr_deregister_events(struct mpr_softc *sc, struct mpr_event_handle *handle)
  * Add a chain element as the next SGE for the specified command.
  * Reset cm_sge and cm_sgesize to indicate all the available space. Chains are
  * only required for IEEE commands.  Therefore there is no code for commands
- * that have the MPR_CM_FLAGS_SGE_SIMPLE flag set (and those commands shouldn't
- * be requesting chains).
+ * that have the MPR_CM_FLAGS_SGE_SIMPLE flag set (and those commands
+ * shouldn't be requesting chains).
  */
 static int
 mpr_add_chain(struct mpr_command *cm, int segsleft)
@@ -2173,7 +2204,7 @@ mpr_add_chain(struct mpr_command *cm, int segsleft)
 	MPI2_REQUEST_HEADER *req;
 	MPI25_IEEE_SGE_CHAIN64 *ieee_sgc;
 	struct mpr_chain *chain;
-	int space, sgc_size, current_segs, rem_segs, segs_per_frame;
+	int sgc_size, current_segs, rem_segs, segs_per_frame;
 	uint8_t next_chain_offset = 0;
 
 	/*
@@ -2194,8 +2225,6 @@ mpr_add_chain(struct mpr_command *cm, int segsleft)
 	chain = mpr_alloc_chain(cm->cm_sc);
 	if (chain == NULL)
 		return (ENOBUFS);
-
-	space = (int)cm->cm_sc->facts->IOCRequestFrameSize * 4;
 
 	/*
 	 * Note: a double-linked list is used to make it easier to walk for
@@ -2222,13 +2251,14 @@ mpr_add_chain(struct mpr_command *cm, int segsleft)
 		 */
 		current_segs = (cm->cm_sglsize / sgc_size) - 1;
 		rem_segs = segsleft - current_segs;
-		segs_per_frame = space / sgc_size;
+		segs_per_frame = sc->chain_frame_size / sgc_size;
 		if (rem_segs > segs_per_frame) {
 			next_chain_offset = segs_per_frame - 1;
 		}
 	}
 	ieee_sgc = &((MPI25_SGE_IO_UNION *)cm->cm_sge)->IeeeChain;
-	ieee_sgc->Length = next_chain_offset ? htole32((uint32_t)space) :
+	ieee_sgc->Length = next_chain_offset ?
+	    htole32((uint32_t)sc->chain_frame_size) :
 	    htole32((uint32_t)rem_segs * (uint32_t)sgc_size);
 	ieee_sgc->NextChainOffset = next_chain_offset;
 	ieee_sgc->Flags = (MPI2_IEEE_SGE_FLAGS_CHAIN_ELEMENT |
@@ -2237,18 +2267,17 @@ mpr_add_chain(struct mpr_command *cm, int segsleft)
 	ieee_sgc->Address.High = htole32(chain->chain_busaddr >> 32);
 	cm->cm_sge = &((MPI25_SGE_IO_UNION *)chain->chain)->IeeeSimple;
 	req = (MPI2_REQUEST_HEADER *)cm->cm_req;
-	req->ChainOffset = ((sc->facts->IOCRequestFrameSize * 4) -
-	    sgc_size) >> 4;
+	req->ChainOffset = (sc->chain_frame_size - sgc_size) >> 4;
 
-	cm->cm_sglsize = space;
+	cm->cm_sglsize = sc->chain_frame_size;
 	return (0);
 }
 
 /*
  * Add one scatter-gather element to the scatter-gather list for a command.
- * Maintain cm_sglsize and cm_sge as the remaining size and pointer to the next
- * SGE to fill in, respectively.  In Gen3, the MPI SGL does not have a chain,
- * so don't consider any chain additions.
+ * Maintain cm_sglsize and cm_sge as the remaining size and pointer to the
+ * next SGE to fill in, respectively.  In Gen3, the MPI SGL does not have a
+ * chain, so don't consider any chain additions.
  */
 int
 mpr_push_sge(struct mpr_command *cm, MPI2_SGE_SIMPLE64 *sge, size_t len,
@@ -2463,10 +2492,9 @@ mpr_data_cb(void *arg, bus_dma_segment_t *segs, int nsegs, int error)
 	 * user they did the wrong thing.
 	 */
 	if ((cm->cm_max_segs != 0) && (nsegs > cm->cm_max_segs)) {
-		mpr_dprint(sc, MPR_ERROR,
-			   "%s: warning: busdma returned %d segments, "
-			   "more than the %d allowed\n", __func__, nsegs,
-			   cm->cm_max_segs);
+		mpr_dprint(sc, MPR_ERROR, "%s: warning: busdma returned %d "
+		    "segments, more than the %d allowed\n", __func__, nsegs,
+		    cm->cm_max_segs);
 	}
 
 	/*
@@ -2660,18 +2688,18 @@ mpr_request_polled(struct mpr_softc *sc, struct mpr_command *cm)
 		}
 	}
 
-	if(error) {
+	if (error) {
 		mpr_dprint(sc, MPR_FAULT, "Calling Reinit from %s\n", __func__);
 		rc = mpr_reinit(sc);
-		mpr_dprint(sc, MPR_FAULT, "Reinit %s\n", (rc == 0) ?
-		    "success" : "failed");
+		mpr_dprint(sc, MPR_FAULT, "Reinit %s\n", (rc == 0) ? "success" :
+		    "failed");
 	}
 	return (error);
 }
 
 /*
  * The MPT driver had a verbose interface for config pages.  In this driver,
- * reduce it to much simplier terms, similar to the Linux driver.
+ * reduce it to much simpler terms, similar to the Linux driver.
  */
 int
 mpr_read_config_page(struct mpr_softc *sc, struct mpr_config_params *params)
@@ -2717,9 +2745,12 @@ mpr_read_config_page(struct mpr_softc *sc, struct mpr_config_params *params)
 
 	cm->cm_data = params->buffer;
 	cm->cm_length = params->length;
-	cm->cm_sge = &req->PageBufferSGE;
-	cm->cm_sglsize = sizeof(MPI2_SGE_IO_UNION);
-	cm->cm_flags = MPR_CM_FLAGS_SGE_SIMPLE | MPR_CM_FLAGS_DATAIN;
+	if (cm->cm_data != NULL) {
+		cm->cm_sge = &req->PageBufferSGE;
+		cm->cm_sglsize = sizeof(MPI2_SGE_IO_UNION);
+		cm->cm_flags = MPR_CM_FLAGS_SGE_SIMPLE | MPR_CM_FLAGS_DATAIN;
+	} else
+		cm->cm_sge = NULL;
 	cm->cm_desc.Default.RequestFlags = MPI2_REQ_DESCRIPT_FLAGS_DEFAULT_TYPE;
 
 	cm->cm_complete_data = params;
@@ -2776,9 +2807,12 @@ mpr_config_complete(struct mpr_softc *sc, struct mpr_command *cm)
 		goto done;
 	}
 	params->status = reply->IOCStatus;
-	if (params->hdr.Ext.ExtPageType != 0) {
+	if (params->hdr.Struct.PageType == MPI2_CONFIG_PAGETYPE_EXTENDED) {
 		params->hdr.Ext.ExtPageType = reply->ExtPageType;
 		params->hdr.Ext.ExtPageLength = reply->ExtPageLength;
+		params->hdr.Ext.PageType = reply->Header.PageType;
+		params->hdr.Ext.PageNumber = reply->Header.PageNumber;
+		params->hdr.Ext.PageVersion = reply->Header.PageVersion;
 	} else {
 		params->hdr.Struct.PageType = reply->Header.PageType;
 		params->hdr.Struct.PageNumber = reply->Header.PageNumber;

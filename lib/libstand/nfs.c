@@ -511,7 +511,7 @@ nfs_open(const char *upath, struct open_file *f)
 
 #ifndef NFS_NOSYMLINK
 	bcopy(&nfs_root_node, currfd, sizeof(*currfd));
-	newfd = 0;
+	newfd = NULL;
 
 	cp = path = strdup(upath);
 	if (path == NULL) {
@@ -593,14 +593,14 @@ nfs_open(const char *upath, struct open_file *f)
 				bcopy(&nfs_root_node, currfd, sizeof(*currfd));
 
 			free(newfd);
-			newfd = 0;
+			newfd = NULL;
 
 			continue;
 		}
 
 		free(currfd);
 		currfd = newfd;
-		newfd = 0;
+		newfd = NULL;
 	}
 
 	error = 0;
@@ -662,7 +662,7 @@ nfs_read(struct open_file *f, void *buf, size_t size, size_t *resid)
 		       (int)fp->off);
 #endif
 	while ((int)size > 0) {
-		twiddle();
+		twiddle(16);
 		cc = nfs_readdata(fp, fp->off, (void *)addr, size);
 		/* XXX maybe should retry on certain errors */
 		if (cc == -1) {
@@ -1155,7 +1155,7 @@ nfs_open(const char *upath, struct open_file *f)
 	}
 #ifndef NFS_NOSYMLINK
 	bcopy(&nfs_root_node, currfd, sizeof(*currfd));
-	newfd = 0;
+	newfd = NULL;
 
 	cp = path = strdup(upath);
 	if (path == NULL) {
@@ -1241,14 +1241,14 @@ nfs_open(const char *upath, struct open_file *f)
 				bcopy(&nfs_root_node, currfd, sizeof(*currfd));
 
 			free(newfd);
-			newfd = 0;
+			newfd = NULL;
 
 			continue;
 		}
 
 		free(currfd);
 		currfd = newfd;
-		newfd = 0;
+		newfd = NULL;
 	}
 
 	error = 0;
@@ -1311,7 +1311,7 @@ nfs_read(struct open_file *f, void *buf, size_t size, size_t *resid)
 		       (int)fp->off);
 #endif
 	while ((int)size > 0) {
-		twiddle();
+		twiddle(16);
 		cc = nfs_readdata(fp, fp->off, (void *)addr, size);
 		/* XXX maybe should retry on certain errors */
 		if (cc == -1) {

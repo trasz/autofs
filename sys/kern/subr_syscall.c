@@ -61,16 +61,16 @@ syscallenter(struct thread *td, struct syscall_args *sa)
 	p = td->td_proc;
 
 	td->td_pticks = 0;
-	if (td->td_ucred != p->p_ucred)
-		cred_update_thread(td);
-	if (p->p_flag & P_TRACED) {
-		traced = 1;
+	if (td->td_cowgen != p->p_cowgen)
+		thread_cow_update(td);
+	traced = (p->p_flag & P_TRACED) != 0;
+	if (traced || td->td_dbgflags & TDB_USERWR) {
 		PROC_LOCK(p);
 		td->td_dbgflags &= ~TDB_USERWR;
-		td->td_dbgflags |= TDB_SCE;
+		if (traced)
+			td->td_dbgflags |= TDB_SCE;
 		PROC_UNLOCK(p);
-	} else
-		traced = 0;
+	}
 	error = (p->p_sysent->sv_fetch_syscall_args)(td, sa);
 #ifdef KTRACE
 	if (KTRPOINT(td, KTR_SYSCALL))
@@ -83,9 +83,12 @@ syscallenter(struct thread *td, struct syscall_args *sa)
 	if (error == 0) {
 
 		STOPEVENT(p, S_SCE, sa->narg);
-		if (p->p_flag & P_TRACED && p->p_stops & S_PT_SCE) {
+		if (p->p_flag & P_TRACED) {
 			PROC_LOCK(p);
-			ptracestop((td), SIGTRAP);
+			td->td_dbg_sc_code = sa->code;
+			td->td_dbg_sc_narg = sa->narg;
+			if (p->p_ptevents & PTRACE_SCE)
+				ptracestop((td), SIGTRAP);
 			PROC_UNLOCK(p);
 		}
 		if (td->td_dbgflags & TDB_USERWR) {
@@ -94,6 +97,10 @@ syscallenter(struct thread *td, struct syscall_args *sa)
 			 * debugger modified registers or memory.
 			 */
 			error = (p->p_sysent->sv_fetch_syscall_args)(td, sa);
+			PROC_LOCK(p);
+			td->td_dbg_sc_code = sa->code;
+			td->td_dbg_sc_narg = sa->narg;
+			PROC_UNLOCK(p);
 #ifdef KTRACE
 			if (KTRPOINT(td, KTR_SYSCALL))
 				ktrsyscall(sa->code, sa->narg, sa->args);
@@ -119,14 +126,9 @@ syscallenter(struct thread *td, struct syscall_args *sa)
 			goto retval;
 
 #ifdef KDTRACE_HOOKS
-		/*
-		 * If the systrace module has registered it's probe
-		 * callback and if there is a probe active for the
-		 * syscall 'entry', process the probe.
-		 */
+		/* Give the syscall:::entry DTrace probe a chance to fire. */
 		if (systrace_probe_func != NULL && sa->callp->sy_entry != 0)
-			(*systrace_probe_func)(sa->callp->sy_entry, sa->code,
-			    sa->callp, sa->args, 0);
+			(*systrace_probe_func)(sa, SYSTRACE_ENTRY, 0);
 #endif
 
 		AUDIT_SYSCALL_ENTER(sa->code, td);
@@ -138,14 +140,10 @@ syscallenter(struct thread *td, struct syscall_args *sa)
 			td->td_errno = error;
 
 #ifdef KDTRACE_HOOKS
-		/*
-		 * If the systrace module has registered it's probe
-		 * callback and if there is a probe active for the
-		 * syscall 'return', process the probe.
-		 */
+		/* Give the syscall:::return DTrace probe a chance to fire. */
 		if (systrace_probe_func != NULL && sa->callp->sy_return != 0)
-			(*systrace_probe_func)(sa->callp->sy_return, sa->code,
-			    sa->callp, NULL, (error) ? -1 : td->td_retval[0]);
+			(*systrace_probe_func)(sa, SYSTRACE_RETURN,
+			    error ? -1 : td->td_retval[0]);
 #endif
 		syscall_thread_exit(td, sa->callp);
 	}
@@ -164,10 +162,13 @@ syscallenter(struct thread *td, struct syscall_args *sa)
 }
 
 static inline void
-syscallret(struct thread *td, int error, struct syscall_args *sa __unused)
+syscallret(struct thread *td, int error, struct syscall_args *sa)
 {
 	struct proc *p, *p2;
 	int traced;
+
+	KASSERT((td->td_pflags & TDP_FORKING) == 0,
+	    ("fork() did not clear TDP_FORKING upon completion"));
 
 	p = td->td_proc;
 
@@ -207,7 +208,7 @@ syscallret(struct thread *td, int error, struct syscall_args *sa __unused)
 		 */
 		if (traced &&
 		    ((td->td_dbgflags & (TDB_FORK | TDB_EXEC)) != 0 ||
-		    (p->p_stops & S_PT_SCX) != 0))
+		    (p->p_ptevents & PTRACE_SCX) != 0))
 			ptracestop(td, SIGTRAP);
 		td->td_dbgflags &= ~(TDB_SCX | TDB_EXEC | TDB_FORK);
 		PROC_UNLOCK(p);
@@ -226,9 +227,28 @@ syscallret(struct thread *td, int error, struct syscall_args *sa __unused)
 		 */
 		td->td_pflags &= ~TDP_RFPPWAIT;
 		p2 = td->td_rfppwait_p;
+again:
 		PROC_LOCK(p2);
-		while (p2->p_flag & P_PPWAIT)
-			cv_wait(&p2->p_pwait, &p2->p_mtx);
+		while (p2->p_flag & P_PPWAIT) {
+			PROC_LOCK(p);
+			if (thread_suspend_check_needed()) {
+				PROC_UNLOCK(p2);
+				thread_suspend_check(0);
+				PROC_UNLOCK(p);
+				goto again;
+			} else {
+				PROC_UNLOCK(p);
+			}
+			cv_timedwait(&p2->p_pwait, &p2->p_mtx, hz);
+		}
 		PROC_UNLOCK(p2);
+
+		if (td->td_dbgflags & TDB_VFORK) {
+			PROC_LOCK(p);
+			if (p->p_ptevents & PTRACE_VFORK)
+				ptracestop(td, SIGTRAP);
+			td->td_dbgflags &= ~TDB_VFORK;
+			PROC_UNLOCK(p);
+		}
 	}
 }

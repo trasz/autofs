@@ -351,12 +351,12 @@ writefile(time_t runtimer, char queue)
 	char *eqp;
 
 	eqp = strchr(*atenv, '=');
-	if (ap == NULL)
+	if (eqp == NULL)
 	    eqp = *atenv;
 	else
 	{
 	    size_t i;
-	    for (i=0; i<sizeof(no_export)/sizeof(no_export[0]); i++)
+	    for (i = 0; i < nitems(no_export); i++)
 	    {
 		export = export
 		    && (strncmp(*atenv, no_export[i], 
@@ -367,6 +367,7 @@ writefile(time_t runtimer, char queue)
 
 	if (export)
 	{
+	    (void)fputs("export ", fp);
 	    fwrite(*atenv, sizeof(char), eqp-*atenv, fp);
 	    for(ap = eqp;*ap != '\0'; ap++)
 	    {
@@ -389,8 +390,6 @@ writefile(time_t runtimer, char queue)
 		    fputc(*ap, fp);
 		}
 	    }
-	    fputs("; export ", fp);
-	    fwrite(*atenv, sizeof(char), eqp-*atenv -1, fp);
 	    fputc('\n', fp);
 	    
 	}
