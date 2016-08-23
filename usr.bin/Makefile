@@ -1,5 +1,5 @@
 #	From: @(#)Makefile	8.3 (Berkeley) 1/7/94
-# $FreeBSD$
+# $FreeBSD: head/usr.bin/Makefile 303094 2016-07-20 15:59:37Z ache $
 
 .include <src.opts.mk>
 
@@ -59,6 +59,8 @@ SUBDIR=	alias \
 	gzip \
 	head \
 	hexdump \
+	hsmarchive \
+	hsmstat \
 	id \
 	ident \
 	ipcrm \

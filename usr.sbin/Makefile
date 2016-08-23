@@ -1,5 +1,5 @@
 #	From: @(#)Makefile	5.20 (Berkeley) 6/12/93
-# $FreeBSD$
+# $FreeBSD: head/usr.sbin/Makefile 303785 2016-08-05 19:24:52Z bapt $
 
 .include <src.opts.mk>
 
@@ -34,6 +34,7 @@ SUBDIR=	adduser \
 	getfmac \
 	getpmac \
 	gstat \
+	hsmd \
 	i2c \
 	ifmcstat \
 	iostat \
