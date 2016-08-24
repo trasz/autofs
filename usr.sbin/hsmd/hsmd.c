@@ -552,6 +552,7 @@ hsmfs_mark_managed(char *path)
 
 		switch (entry->fts_info) {
 		case FTS_F:
+		case FTS_NSOK:
 			/*
 			 * Mark files online, directories offline.
 			 */
