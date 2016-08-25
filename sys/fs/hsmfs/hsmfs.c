@@ -130,6 +130,11 @@ int hsmfs_debug = 10;
 TUNABLE_INT("vfs.hsmfs.debug", &hsmfs_debug);
 SYSCTL_INT(_vfs_hsmfs, OID_AUTO, debug, CTLFLAG_RWTUN,
     &hsmfs_debug, 1, "Enable debug messages");
+int hsmfs_stage_on_enoent = 1;
+TUNABLE_INT("vfs.hsmfs.stage_on_enoent", &hsmfs_stage_on_enoent);
+SYSCTL_INT(_vfs_hsmfs, OID_AUTO, stage_on_enoent, CTLFLAG_RWTUN,
+    &hsmfs_stage_on_enoent, 1,
+    "Restage the directory on attempt to access file that does not exist");
 int hsmfs_timeout = 30;
 TUNABLE_INT("vfs.hsmfs.timeout", &hsmfs_timeout);
 SYSCTL_INT(_vfs_hsmfs, OID_AUTO, timeout, CTLFLAG_RWTUN,
@@ -182,10 +187,6 @@ hsmfs_uninit(struct vfsconf *vfsp)
 
 	sx_xlock(&hsmfs_softc->sc_lock);
 
-	if (hsmfs_softc->sc_dev_opened) {
-		sx_xunlock(&hsmfs_softc->sc_lock);
-		return (EBUSY);
-	}
 	if (hsmfs_softc->sc_cdev != NULL)
 		destroy_dev(hsmfs_softc->sc_cdev);
 
@@ -214,11 +215,8 @@ hsmfs_ignore_thread(void)
 
 	p = curproc;
 
-	if (hsmfs_softc->sc_dev_opened == false)
-		return (false);
-
 	PROC_LOCK(p);
-	if (p->p_session->s_sid == hsmfs_softc->sc_dev_sid) {
+	if (p->p_session->s_sid == hsmfs_softc->sc_hsmd_sid) {
 		PROC_UNLOCK(p);
 		return (true);
 	}
@@ -356,16 +354,16 @@ hsmfs_trigger_one(struct vnode *vp, int type)
 	last = refcount_release(&hr->hr_refcount);
 	if (last) {
 		TAILQ_REMOVE(&hsmfs_softc->sc_requests, hr, hr_next);
+#if 0
 		/*
 		 * Unlock the sc_lock, so that hsmfs_task() can complete.
 		 */
 		sx_xunlock(&hsmfs_softc->sc_lock);
-#if 0
 		taskqueue_cancel_timeout(taskqueue_thread, &hr->hr_task, NULL);
 		taskqueue_drain_timeout(taskqueue_thread, &hr->hr_task);
+		sx_xlock(&hsmfs_softc->sc_lock);
 #endif
 		uma_zfree(hsmfs_request_zone, hr);
-		sx_xlock(&hsmfs_softc->sc_lock);
 	}
 
 	if (error != 0)
@@ -418,9 +416,19 @@ int
 hsmfs_trigger_vn(struct vnode *vp, int type)
 {
 	struct hsmfs_node *hnp;
-	int error;
+	int error, locked;
 
 	hnp = VTONULL(vp);
+
+	locked = sx_xlocked(&hsmfs_softc->sc_lock);
+	if (locked) {
+		/*
+		 * Looks like we've come back to square one, probably from
+		 * hsmfs_ioctl_queue(), called by hsmq(8).  We don't want
+		 * to sleep waiting for hsmd(8), so let's not trigger it.
+		 */
+		return (0);
+	}
 
 	/*
 	 * Release the vnode lock, so that other operations can proceed.
@@ -572,9 +580,9 @@ hsmfs_ioctl_request(struct hsmfs_daemon_request *hdr)
 	hr->hr_in_progress = true;
 	sx_xunlock(&hsmfs_softc->sc_lock);
 
-	PROC_LOCK(curproc);
-	hsmfs_softc->sc_dev_sid = curproc->p_session->s_sid;
-	PROC_UNLOCK(curproc);
+	KASSERT(hsmfs_softc->sc_hsmd_sid == curproc->p_session->s_sid,
+	    ("sid %d != hsmd_sid %d",
+	     curproc->p_session->s_sid, hsmfs_softc->sc_hsmd_sid));
 
 	error = vn_fullpath(curthread, hr->hr_vp, &retbuf, &freebuf);
 	if (error != 0) {
@@ -616,6 +624,53 @@ hsmfs_ioctl_done(struct hsmfs_daemon_done *hdd)
 	return (0);
 }
 
+static int
+hsmfs_ioctl_queue(struct hsmfs_queue *hq)
+{
+	struct hsmfs_request *hr;
+	char *retbuf, *freebuf;
+	int error;
+
+	/*
+	 * Needs to be exclusive because of sx_xlocked() elsewhere.
+	 */
+	sx_xlock(&hsmfs_softc->sc_lock);
+
+	TAILQ_FOREACH(hr, &hsmfs_softc->sc_requests, hr_next) {
+		if (hr->hr_id < hq->hq_next_id)
+			continue;
+		break;
+	}
+
+	/*
+	 * No more requests.
+	 */
+	if (hr == NULL) {
+		sx_xunlock(&hsmfs_softc->sc_lock);
+		hq->hq_next_id = 0;
+		return (0);
+	}
+
+	hq->hq_id = hr->hr_id;
+	hq->hq_next_id = hr->hr_id + 1;
+	hq->hq_done = hr->hr_done;
+	hq->hq_in_progress = hr->hr_in_progress;
+	hq->hq_type = hr->hr_type;
+
+	error = vn_fullpath(curthread, hr->hr_vp, &retbuf, &freebuf);
+	if (error != 0) {
+		sx_xunlock(&hsmfs_softc->sc_lock);
+		HSMFS_WARN("vn_fullpath() failed with error %d", error);
+		return (error);
+	}
+	strlcpy(hq->hq_path, retbuf, sizeof(hq->hq_path));
+	free(freebuf, M_TEMP);
+
+	sx_xunlock(&hsmfs_softc->sc_lock);
+
+	return (0);
+}
+
 /*
  * Handler for ioctls issued on /dev/hsmfs.
  */
@@ -624,13 +679,19 @@ hsmfs_ioctl(struct cdev *dev, u_long cmd, caddr_t arg, int mode,
     struct thread *td)
 {
 
-	KASSERT(hsmfs_softc->sc_dev_opened, ("not opened?"));
-
 	switch (cmd) {
 	case HSMFSREQUEST:
+		if (!hsmfs_ignore_thread())
+			return (EBUSY);
+
 		return (hsmfs_ioctl_request((struct hsmfs_daemon_request *)arg));
 	case HSMFSDONE:
+		if (!hsmfs_ignore_thread())
+			return (EBUSY);
+
 		return (hsmfs_ioctl_done((struct hsmfs_daemon_done *)arg));
+	case HSMFSQUEUE:
+		return (hsmfs_ioctl_queue((struct hsmfs_queue *)arg));
 	default:
 		HSMFS_DEBUG("invalid cmd %lx", cmd);
 		return (EINVAL);
@@ -641,6 +702,7 @@ static int
 hsmfs_open(struct cdev *dev, int flags, int fmt, struct thread *td)
 {
 	sx_xlock(&hsmfs_softc->sc_lock);
+
 	/*
 	 * We must never block hsmd(8) and its descendants, and we use
 	 * session ID to determine that: we store session id of the process
@@ -649,12 +711,11 @@ hsmfs_open(struct cdev *dev, int flags, int fmt, struct thread *td)
 	 * instance would break the previous one.  The check below prevents
 	 * it from happening.
 	 */
-	if (hsmfs_softc->sc_dev_opened) {
-		sx_xunlock(&hsmfs_softc->sc_lock);
-		return (EBUSY);
+	if (hsmfs_softc->sc_hsmd_sid == 0) {
+		PROC_LOCK(curproc);
+		hsmfs_softc->sc_hsmd_sid = curproc->p_session->s_sid;
+		PROC_UNLOCK(curproc);
 	}
-
-	hsmfs_softc->sc_dev_opened = true;
 	sx_xunlock(&hsmfs_softc->sc_lock);
 
 	return (0);
@@ -664,8 +725,12 @@ static int
 hsmfs_close(struct cdev *dev, int flag, int fmt, struct thread *td)
 {
 	sx_xlock(&hsmfs_softc->sc_lock);
-	KASSERT(hsmfs_softc->sc_dev_opened, ("not opened?"));
-	hsmfs_softc->sc_dev_opened = false;
+
+	PROC_LOCK(curproc);
+	if (hsmfs_softc->sc_hsmd_sid == curproc->p_session->s_sid)
+		hsmfs_softc->sc_hsmd_sid = 0;
+	PROC_UNLOCK(curproc);
+
 	sx_xunlock(&hsmfs_softc->sc_lock);
 
 	return (0);

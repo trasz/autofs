@@ -432,6 +432,10 @@ null_lookup(struct vop_lookup_args *ap)
 	}
 	vdrop(ldvp);
 
+	if (error == ENOENT && hsmfs_stage_on_enoent) {
+		HSMFS_DEBUG("XXX: implement stage_on_enoent");
+	}
+
 	if (error == EJUSTRETURN && (flags & ISLASTCN) != 0 &&
 	    (mp->mnt_flag & MNT_RDONLY) != 0 &&
 	    (cnp->cn_nameiop == CREATE || cnp->cn_nameiop == RENAME))

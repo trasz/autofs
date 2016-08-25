@@ -41,7 +41,7 @@ extern uma_zone_t hsmfs_request_zone;
 extern uma_zone_t hsmfs_node_zone;
 
 extern int hsmfs_debug;
-
+extern int hsmfs_stage_on_enoent;
 
 #define	HSMFS_DEBUG(X, ...)						\
 	do {								\
@@ -137,8 +137,7 @@ struct hsmfs_softc {
 	struct cv			sc_cv;
 	struct sx			sc_lock;
 	TAILQ_HEAD(, hsmfs_request)	sc_requests;
-	bool				sc_dev_opened;
-	pid_t				sc_dev_sid;
+	pid_t				sc_hsmd_sid;
 	int				sc_last_request_id;
 };
 

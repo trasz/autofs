@@ -75,8 +75,29 @@ struct hsmfs_daemon_done {
 	int		hdd_spare[7];
 };
 
+struct hsmfs_queue {
+	/*
+	 * Request identifier.
+	 */
+	int		hq_id;
+	int		hq_next_id;
+	int		hq_done;
+	int		hq_in_progress;
+
+	/*
+	 * Request type.
+	 */
+	int		hq_type;
+
+	/*
+	 * Path to the file or directory being requested.
+	 */
+	char		hq_path[MAXPATHLEN];
+};
+
 #define	HSMFSREQUEST	_IOR('I', 0x01, struct hsmfs_daemon_request)
 #define	HSMFSDONE	_IOW('I', 0x02, struct hsmfs_daemon_done)
+#define	HSMFSQUEUE	_IOWR('I', 0x03, struct hsmfs_queue)
 
 /*
  * IOCTL interface for hsmarchive(8) et all, called on individual files.
