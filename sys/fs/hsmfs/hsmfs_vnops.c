@@ -1145,10 +1145,8 @@ null_ioctl(struct vop_ioctl_args *ap)
 	}
 
 	error = VOP_ACCESSX(ap->a_vp, VADMIN, ap->a_cred, ap->a_td);
-	if (error != 0) {
-		HSMFS_DEBUG("VOP_ACCESSX() failed with error %d", error);
+	if (error != 0)
 		goto out;
-	}
 
 	switch (ap->a_command) {
 	case HSMARCHIVE:
