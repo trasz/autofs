@@ -415,10 +415,10 @@ hsmfs_trigger(struct vnode *vp, int type)
 int
 hsmfs_trigger_vn(struct vnode *vp, int type)
 {
-	struct hsmfs_node *hnp;
+	struct hsmfs_metadata *hmp;
 	int error, locked;
 
-	hnp = VTONULL(vp);
+	hmp = VTOHM(vp);
 
 	locked = sx_xlocked(&hsmfs_softc->sc_lock);
 	if (locked) {
@@ -464,40 +464,37 @@ hsmfs_trigger_vn(struct vnode *vp, int type)
 		 * by usual file access, the file would have to be already
 		 * marked as managed.
 		 */
-		hnp->hn_hm.hm_managed = true;
-
-		if (hnp->hn_hm.hm_modified) {
-			microtime(&hnp->hn_hm.hm_archived_tv);
-			hnp->hn_hm.hm_modified = false;
+		hmp->hm_managed = true;
+		if (hmp->hm_modified) {
+			microtime(&hmp->hm_archived_tv);
+			hmp->hm_modified = false;
 		}
 		break;
 
 	case HSMFS_TYPE_RECYCLE:
-		hnp->hn_hm.hm_managed = true;
+		hmp->hm_managed = true;
 		break;
 
 	case HSMFS_TYPE_RELEASE:
-		hnp->hn_hm.hm_managed = true;
-
-		if (hnp->hn_hm.hm_online) {
-			microtime(&hnp->hn_hm.hm_released_tv);
-			hnp->hn_hm.hm_online = false;
+		hmp->hm_managed = true;
+		if (hmp->hm_online) {
+			microtime(&hmp->hm_released_tv);
+			hmp->hm_online = false;
 		}
 		break;
 
 	case HSMFS_TYPE_STAGE:
-		hnp->hn_hm.hm_managed = true;
-
-		if (!hnp->hn_hm.hm_online) {
-			microtime(&hnp->hn_hm.hm_staged_tv);
-			hnp->hn_hm.hm_online = true;
+		hmp->hm_managed = true;
+		if (!hmp->hm_online) {
+			microtime(&hmp->hm_staged_tv);
+			hmp->hm_online = true;
 		}
 		break;
 
 	case HSMFS_TYPE_UNMANAGE:
-		memset(hnp, 0, sizeof(*hnp));
-		hnp->hn_hm.hm_metadata_valid = true;
-		hnp->hn_hm.hm_managed = false;
+		memset(hmp, 0, sizeof(*hmp));
+		hmp->hm_metadata_valid = true;
+		hmp->hm_managed = false;
 		break;
 	}
 
@@ -531,9 +528,7 @@ hsmfs_trigger_stage(struct vnode *vp)
 {
 	int error;
 
-	//vn_rangelock_ignore(vp, 1);
 	error = hsmfs_trigger_vn(vp, HSMFS_TYPE_STAGE);
-	//vn_rangelock_ignore(vp, 0);
 
 	return (error);
 }
@@ -681,13 +676,19 @@ hsmfs_ioctl(struct cdev *dev, u_long cmd, caddr_t arg, int mode,
 
 	switch (cmd) {
 	case HSMFSREQUEST:
-		if (!hsmfs_ignore_thread())
+		if (!hsmfs_ignore_thread()) {
+			HSMFS_DEBUG("HSMFSREQUEST with wrong sid, got %d, should be %d",
+			    curproc->p_session->s_sid, hsmfs_softc->sc_hsmd_sid);
 			return (EBUSY);
+		}
 
 		return (hsmfs_ioctl_request((struct hsmfs_daemon_request *)arg));
 	case HSMFSDONE:
-		if (!hsmfs_ignore_thread())
+		if (!hsmfs_ignore_thread()) {
+			HSMFS_DEBUG("HSMFSDONE with wrong sid, got %d, should be %d",
+			    curproc->p_session->s_sid, hsmfs_softc->sc_hsmd_sid);
 			return (EBUSY);
+		}
 
 		return (hsmfs_ioctl_done((struct hsmfs_daemon_done *)arg));
 	case HSMFSQUEUE:
