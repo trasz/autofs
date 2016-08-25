@@ -16,6 +16,4 @@ LINKS+=	${BINDIR}/hsmarchive ${BINDIR}/hsmrecycle
 LINKS+=	${BINDIR}/hsmarchive ${BINDIR}/hsmstage
 LINKS+=	${BINDIR}/hsmarchive ${BINDIR}/hsmunmanage
 
-.PATH:	${MOUNT}
-
 .include <bsd.prog.mk>

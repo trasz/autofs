@@ -11,6 +11,4 @@ MAN=
 
 WARNS=	6
 
-.PATH:	${MOUNT}
-
 .include <bsd.prog.mk>
