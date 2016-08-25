@@ -911,6 +911,16 @@ main(int argc, char **argv)
 
 	register_signals();
 
+	if (dont_daemonize == false) {
+		if (daemon(0, 0) == -1) {
+			log_warn("cannot daemonize");
+			pidfile_remove(newconf->hc_pidfh);
+			exit(1);
+		}
+	} else {
+		lesser_daemon();
+	}
+
 	hsmfs_fd = open(HSMFS_PATH, O_RDWR | O_CLOEXEC);
 	if (hsmfs_fd < 0 && errno == ENOENT) {
 		saved_errno = errno;
@@ -922,16 +932,6 @@ main(int argc, char **argv)
 	}
 	if (hsmfs_fd < 0)
 		log_err(1, "failed to open %s", HSMFS_PATH);
-
-	if (dont_daemonize == false) {
-		if (daemon(0, 0) == -1) {
-			log_warn("cannot daemonize");
-			pidfile_remove(newconf->hc_pidfh);
-			exit(1);
-		}
-	} else {
-		lesser_daemon();
-	}
 
 	for (;;) {
 		main_loop(newconf, dont_daemonize);

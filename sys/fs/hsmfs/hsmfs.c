@@ -108,6 +108,7 @@ static struct cdevsw hsmfs_cdevsw = {
      .d_close   = hsmfs_close,
      .d_ioctl   = hsmfs_ioctl,
      .d_name    = "hsmfs",
+     .d_flags	= D_TRACKCLOSE,
 };
 
 /*
@@ -130,10 +131,10 @@ int hsmfs_debug = 10;
 TUNABLE_INT("vfs.hsmfs.debug", &hsmfs_debug);
 SYSCTL_INT(_vfs_hsmfs, OID_AUTO, debug, CTLFLAG_RWTUN,
     &hsmfs_debug, 1, "Enable debug messages");
-int hsmfs_stage_on_enoent = 1;
+int hsmfs_stage_on_enoent = 0;
 TUNABLE_INT("vfs.hsmfs.stage_on_enoent", &hsmfs_stage_on_enoent);
 SYSCTL_INT(_vfs_hsmfs, OID_AUTO, stage_on_enoent, CTLFLAG_RWTUN,
-    &hsmfs_stage_on_enoent, 1,
+    &hsmfs_stage_on_enoent, 0,
     "Restage the directory on attempt to access file that does not exist");
 int hsmfs_timeout = 30;
 TUNABLE_INT("vfs.hsmfs.timeout", &hsmfs_timeout);

@@ -364,13 +364,13 @@ null_add_writecount(struct vop_add_writecount_args *ap)
 static int
 null_lookup(struct vop_lookup_args *ap)
 {
-	//struct hsmfs_metadata *dhmp, *hmp;
 	struct hsmfs_metadata *dhmp;
 	struct componentname *cnp = ap->a_cnp;
 	struct vnode *dvp = ap->a_dvp;
 	int flags = cnp->cn_flags;
 	struct vnode *vp, *ldvp, *lvp;
 	struct mount *mp;
+	bool relookedup = false;
 	int error;
 
 	mp = dvp->v_mount;
@@ -398,6 +398,7 @@ null_lookup(struct vop_lookup_args *ap)
 			return (error);
 	}
 
+relookup:
 	/*
 	 * Hold ldvp.  The reference on it, owned by dvp, is lost in
 	 * case of dvp reclamation, and we need ldvp to move our lock
@@ -432,8 +433,20 @@ null_lookup(struct vop_lookup_args *ap)
 	}
 	vdrop(ldvp);
 
-	if (error == ENOENT && hsmfs_stage_on_enoent) {
-		HSMFS_DEBUG("XXX: implement stage_on_enoent");
+	while (error == ENOENT && hsmfs_stage_on_enoent &&
+	    /*
+	     * XXX: Jak skutecznie jabłko.
+	     */
+	    !relookedup && dhmp->hm_managed && !hsmfs_ignore_thread()) {
+		HSMFS_DEBUG("stage_on_enoent");
+
+		error = hsmfs_trigger_stage(dvp);
+		if (error != 0)
+			break;
+
+		HSMFS_DEBUG("stage_on_enoent - relookup");
+		relookedup = true;
+		goto relookup;
 	}
 
 	if (error == EJUSTRETURN && (flags & ISLASTCN) != 0 &&
@@ -448,21 +461,8 @@ null_lookup(struct vop_lookup_args *ap)
 			vrele(lvp);
 		} else {
 			error = null_nodeget(mp, lvp, &vp);
-			if (error == 0) {
+			if (error == 0)
 				*ap->a_vpp = vp;
-
-#if 0
-				hmp = VTOHM(vp);
-				error = hsmfs_metadata_read(vp);
-				if (error != 0)
-					return (error);
-				if (hmp->hm_managed && !hmp->hm_online && !hsmfs_ignore_thread()) {
-					error = hsmfs_trigger_stage(vp);
-					if (error != 0)
-						return (error);
-				}
-#endif
-			}
 		}
 	}
 	return (error);
