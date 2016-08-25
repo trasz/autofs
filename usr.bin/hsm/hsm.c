@@ -111,8 +111,9 @@ main(int argc, char **argv)
 	FTS *fts;
 	FTSENT *entry;
 	int Aflag = 0, Lflag = 0, Rflag = 0, Sflag = 0, Uflag = 0;
-	bool extra = false, recurse = false;
-	int cumulated_error, ch, error, fd;
+	bool extra = false;
+	char *default_argv[2];
+	int cumulated_error, ch, error, fd, max_level = 0;
 
 	if (argv[0] == NULL)
 		errx(1, "NULL command name");
@@ -135,7 +136,7 @@ main(int argc, char **argv)
 			Uflag = 1;
 			break;
 		case 'r':
-			recurse = true;
+			max_level = -1;
 			break;
 		case 'x':
 			extra = true;
@@ -155,6 +156,16 @@ main(int argc, char **argv)
 
 	argc -= optind;
 	argv += optind;
+
+	if (Lflag != 0 && argc == 0) {
+		default_argv[0] = strdup(".");
+		default_argv[1] = NULL;
+		argv = default_argv;
+		argc = 1;
+		if (max_level == 0)
+			max_level = 1;
+	}
+
 	if (argc < 1)
 		usage();
 
@@ -173,7 +184,7 @@ main(int argc, char **argv)
 
 		switch (entry->fts_info) {
 		case FTS_D:
-			if (!recurse) {
+			if (max_level >= 0 && entry->fts_level >= max_level) {
 				error = fts_set(fts, entry, FTS_SKIP);
 				if (error != 0)
 					err(1, "%s: fts_set", entry->fts_path);
