@@ -1,8 +1,8 @@
 # $FreeBSD$
 
 PACKAGE=hsm
-PROG=	hsmstat
-SRCS=	hsmstat.c
+PROG=	hsm
+SRCS=	hsm.c
 
 CFLAGS+=-I${.CURDIR}
 CFLAGS+=-I${.CURDIR}/../../sys/fs/hsmfs

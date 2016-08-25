@@ -8,9 +8,9 @@ sys/fs/hsmfs/		Kernel part
 
 usr.sbin/hsmd/		Daemon
 
-usr.bin/hsmarchive/	Command-line utilities
+usr.sbin/hsmq/		Display requests queue
 
-usr.bin/hsmstat/	Command-line utility
+usr.bin/hsm/		User utility
 
 Questions?  Mail me at <trasz@FreeBSD.org>.
 

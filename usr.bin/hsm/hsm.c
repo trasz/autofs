@@ -39,6 +39,7 @@ __FBSDID("$FreeBSD$");
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "hsmfs_ioctl.h"
@@ -47,8 +48,61 @@ static void
 usage(void)
 {
 
-	fprintf(stderr, "usage: %s [-r] file ...\n", getprogname());
+	fprintf(stderr, "usage: hsm [-L] [-r] [-x] [file ...]\n");
+	fprintf(stderr, "       hsm -A [-r] file ...\n");
+	fprintf(stderr, "       hsm -R [-r] file ...\n");
+	fprintf(stderr, "       hsm -S [-r] file ...\n");
+	fprintf(stderr, "       hsm -U [-r] file ...\n");
 	exit(1);
+}
+
+static void
+show(const char *path, const struct hsm_state *hs)
+{
+	if (!hs->hs_managed && !hs->hs_online && !hs->hs_modified) {
+		printf("unmanaged -       -          %s\n", path);
+		return;
+	}
+	printf("%s ", hs->hs_managed ? "managed  " : "unmanaged");
+	if (!hs->hs_online && !hs->hs_modified) {
+		printf("offline -          %s\n", path);
+		return;
+	}
+	printf("%s ", hs->hs_online ? "online " : "offline");
+	printf("%s ", hs->hs_modified ? "modified  " : "unmodified");
+	printf("%s\n", path);
+}
+
+static void
+show_time(const char *name, const struct timeval *tv)
+{
+	char buf[256];
+	struct tm *tm;
+
+	if (tv->tv_sec == 0) {
+		printf("%s: Never\n", name);
+		return;
+	}
+
+	tm = localtime(&tv->tv_sec);
+	strftime(buf, sizeof(buf), "%c", tm);
+	printf("%s: %s\n", name, buf);
+}
+
+static void
+show_extra(const char *path, const struct hsm_state *hs)
+{
+
+	printf("    File: \"%s\"\n", path);
+	printf(" Managed: %s, Online: %s, Modified: %s\n",
+	    hs->hs_managed ? "Yes" : "No",
+	    hs->hs_online ? "Yes" : "No",
+	    hs->hs_modified ? "Yes" : "No");
+
+	show_time("  Staged", &hs->hs_staged_tv);
+	show_time("Modified", &hs->hs_modified_tv);
+	show_time("Archived", &hs->hs_archived_tv);
+	show_time("Released", &hs->hs_released_tv);
 }
 
 int
@@ -56,47 +110,48 @@ main(int argc, char **argv)
 {
 	FTS *fts;
 	FTSENT *entry;
-	const char *cmd_name, *request_name;
-	unsigned long request;
-	bool recurse = false;
+	int Aflag = 0, Lflag = 0, Rflag = 0, Sflag = 0, Uflag = 0;
+	bool extra = false, recurse = false;
 	int cumulated_error, ch, error, fd;
 
 	if (argv[0] == NULL)
 		errx(1, "NULL command name");
 
-	cmd_name = getprogname();
-
-	if (strcmp(cmd_name, "hsmarchive") == 0) {
-		request = HSMARCHIVE;
-		request_name = "HSMARCHIVE";
-	} else if (strcmp(cmd_name, "hsmrecycle") == 0) {
-		request = HSMRECYCLE;
-		request_name = "HSMRECYCLE";
-	} else if (strcmp(cmd_name, "hsmrelease") == 0) {
-		request = HSMRELEASE;
-		request_name = "HSMRELEASE";
-	} else if (strcmp(cmd_name, "hsmstage") == 0) {
-		request = HSMSTAGE;
-		request_name = "HSMSTAGE";
-	} else if (strcmp(cmd_name, "hsmunmanage") == 0) {
-		request = HSMUNMANAGE;
-		request_name = "HSMUNMANAGE";
-	} else {
-		errx(1, "binary name should be either \"hsmarchive\", "
-		    "\"hsmrecycle\", \"hsmrelease\", \"hsmstage\", "
-		    "or \"hsmunmanage\"");
-	}
-
-	while ((ch = getopt(argc, argv, "r")) != -1) {
+	while ((ch = getopt(argc, argv, "ALRSUrx")) != -1) {
 		switch (ch) {
+		case 'A':
+			Aflag = 1;
+			break;
+		case 'L':
+			Lflag = 1;
+			break;
+		case 'R':
+			Rflag = 1;
+			break;
+		case 'S':
+			Sflag = 1;
+			break;
+		case 'U':
+			Uflag = 1;
+			break;
 		case 'r':
 			recurse = true;
+			break;
+		case 'x':
+			extra = true;
 			break;
 		case '?':
 		default:
 			usage();
 		}
 	}
+
+	if (Aflag + Rflag + Sflag + Uflag == 0)
+		Lflag = 1;
+	if (Aflag + Lflag + Rflag + Sflag + Uflag > 1)
+		errx(1, "at most one of -A, -L, -R, -S, or -U may be specified");
+	if (extra && Lflag == 0)
+		errx(1, "-x can only be used with -L");
 
 	argc -= optind;
 	argv += optind;
@@ -144,48 +199,58 @@ main(int argc, char **argv)
 			continue;
 		}
 
-		switch (request) {
-			case HSMARCHIVE: {
-				struct hsm_archive ha;
+		if (Aflag != 0) {
+			struct hsm_archive ha;
 
-				error = ioctl(fd, request, &ha);
-				break;
+			error = ioctl(fd, HSMARCHIVE, &ha);
+			if (error != 0) {
+				warn("%s: HSMARCHIVE", entry->fts_path);
+				cumulated_error++;
 			}
-			case HSMRECYCLE: {
-				struct hsm_recycle hr;
+		} else if (Lflag != 0) {
+			struct hsm_state hs;
 
-				error = ioctl(fd, request, &hr);
-				break;
+			error = ioctl(fd, HSMSTATE, &hs);
+			if (error != 0) {
+				warn("%s: HSMSTATE", entry->fts_path);
+				cumulated_error++;
+			} else {
+				if (extra)
+					show_extra(entry->fts_path, &hs);
+				else
+					show(entry->fts_path, &hs);
 			}
-			case HSMRELEASE: {
-				struct hsm_release hr;
+		} else if (Rflag != 0) {
+			struct hsm_release hr;
 
-				error = ioctl(fd, request, &hr);
-				break;
+			error = ioctl(fd, HSMRELEASE, &hr);
+			if (error != 0) {
+				warn("%s: HSMRELEASE", entry->fts_path);
+				cumulated_error++;
 			}
-			case HSMSTAGE: {
-				struct hsm_stage hs;
+		} else if (Sflag != 0) {
+			struct hsm_stage hs;
 
-				error = ioctl(fd, request, &hs);
-				break;
+			error = ioctl(fd, HSMSTAGE, &hs);
+			if (error != 0) {
+				warn("%s: HSMSTAGE", entry->fts_path);
+				cumulated_error++;
 			}
-			case HSMUNMANAGE: {
-				struct hsm_unmanage hu;
+		} else if (Uflag != 0) {
+			struct hsm_unmanage hu;
 
-				error = ioctl(fd, request, &hu);
-				break;
+			error = ioctl(fd, HSMUNMANAGE, &hu);
+			if (error != 0) {
+				warn("%s: HSMUNMANAGE", entry->fts_path);
+				cumulated_error++;
 			}
-		}
-		if (error != 0) {
-			warn("%s: %s", entry->fts_path, request_name);
-			cumulated_error++;
 		}
 
 		/*
 		 * Don't descent into directories that are offline, unless we're
 		 * actually trying to stage them.
 		 */
-		while (request != HSMSTAGE && entry->fts_info == FTS_D) {
+		while (Sflag == 0 && entry->fts_info == FTS_D) {
 			struct hsm_state hs;
 
 			memset(&hs, 0, sizeof(hs));

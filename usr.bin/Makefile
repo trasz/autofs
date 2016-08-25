@@ -59,8 +59,7 @@ SUBDIR=	alias \
 	gzip \
 	head \
 	hexdump \
-	hsmarchive \
-	hsmstat \
+	hsm \
 	id \
 	ident \
 	ipcrm \
