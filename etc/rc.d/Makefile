@@ -43,6 +43,7 @@ FILES=	DAEMON \
 	hostid \
 	hostid_save \
 	hostname \
+	hsmd \
 	iovctl \
 	ip6addrctl \
 	ipfilter \

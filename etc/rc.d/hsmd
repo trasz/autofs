@@ -1,0 +1,23 @@
+#!/bin/sh
+#
+# $FreeBSD$
+#
+
+# PROVIDE: hsmd
+# REQUIRE: FILESYSTEMS
+# BEFORE:  DAEMON
+# KEYWORD: nojail
+
+. /etc/rc.subr
+
+name="hsmd"
+desc="Hierarchical Storage Management daemon"
+rcvar="hsmd_enable"
+pidfile="/var/run/${name}.pid"
+command="/usr/sbin/${name}"
+required_files="/etc/hsm.conf"
+required_modules="hsm"
+extra_commands="reload"
+
+load_rc_config $name
+run_rc_command "$1"
