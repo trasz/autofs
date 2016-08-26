@@ -59,6 +59,9 @@ usage(void)
 static void
 show(const char *path, const struct hsm_state *hs)
 {
+	if (path[0] == '.' && path[1] == '/')
+		path += 2;
+
 	if (!hs->hs_managed && !hs->hs_online && !hs->hs_modified) {
 		printf("unmanaged -       -          %s\n", path);
 		return;
@@ -113,7 +116,7 @@ main(int argc, char **argv)
 	int Aflag = 0, Lflag = 0, Rflag = 0, Sflag = 0, Uflag = 0;
 	bool extra = false;
 	char *default_argv[2];
-	int cumulated_error, ch, error, fd, max_level = 0;
+	int cumulated_error, ch, error, fd, max_level = 1;
 
 	if (argv[0] == NULL)
 		errx(1, "NULL command name");
@@ -162,8 +165,6 @@ main(int argc, char **argv)
 		default_argv[1] = NULL;
 		argv = default_argv;
 		argc = 1;
-		if (max_level == 0)
-			max_level = 1;
 	}
 
 	if (argc < 1)
