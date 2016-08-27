@@ -116,7 +116,7 @@ main(int argc, char **argv)
 	int Aflag = 0, Lflag = 0, Rflag = 0, Sflag = 0, Uflag = 0;
 	bool extra = false;
 	char *default_argv[2];
-	int cumulated_error, ch, error, fd, max_level = 1;
+	int cumulated_error, ch, error, fd, max_level = 0;
 
 	if (argv[0] == NULL)
 		errx(1, "NULL command name");
@@ -150,6 +150,9 @@ main(int argc, char **argv)
 		}
 	}
 
+	argc -= optind;
+	argv += optind;
+
 	if (Aflag + Rflag + Sflag + Uflag == 0)
 		Lflag = 1;
 	if (Aflag + Lflag + Rflag + Sflag + Uflag > 1)
@@ -157,9 +160,16 @@ main(int argc, char **argv)
 	if (extra && Lflag == 0)
 		errx(1, "-x can only be used with -L");
 
-	argc -= optind;
-	argv += optind;
+	/*
+	 * Default to showing the directory contents, not the directory itself.
+	 */
+	if (Lflag != 0 & max_level == 0)
+		max_level = 1;
 
+	/*
+	 * When called without arguments, show the current directory.  Basically
+	 * make it behave as close to ls(1) as possible.
+	 */
 	if (Lflag != 0 && argc == 0) {
 		default_argv[0] = strdup(".");
 		default_argv[1] = NULL;
