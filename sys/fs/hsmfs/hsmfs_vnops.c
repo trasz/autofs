@@ -1144,7 +1144,7 @@ null_ioctl(struct vop_ioctl_args *ap)
 		break;
 	}
 
-	error = VOP_ACCESSX(ap->a_vp, VADMIN, ap->a_cred, ap->a_td);
+	error = VOP_ACCESSX(ap->a_vp, accmode, ap->a_cred, ap->a_td);
 	if (error != 0)
 		goto out;
 
