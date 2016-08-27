@@ -48,7 +48,7 @@ static void
 usage(void)
 {
 
-	fprintf(stderr, "usage: hsm [-L] [-r] [-x] [file ...]\n");
+	fprintf(stderr, "usage: hsm [-L] [-a ] [-r] [-x] [file ...]\n");
 	fprintf(stderr, "       hsm -A [-r] file ...\n");
 	fprintf(stderr, "       hsm -R [-r] file ...\n");
 	fprintf(stderr, "       hsm -S [-r] file ...\n");
@@ -114,14 +114,14 @@ main(int argc, char **argv)
 	FTS *fts;
 	FTSENT *entry;
 	int Aflag = 0, Lflag = 0, Rflag = 0, Sflag = 0, Uflag = 0;
-	bool extra = false;
+	bool extra = false, show_all = false;
 	char *default_argv[2];
 	int cumulated_error, ch, error, fd, max_level = 0;
 
 	if (argv[0] == NULL)
 		errx(1, "NULL command name");
 
-	while ((ch = getopt(argc, argv, "ALRSUrx")) != -1) {
+	while ((ch = getopt(argc, argv, "ALRSUarx")) != -1) {
 		switch (ch) {
 		case 'A':
 			Aflag = 1;
@@ -137,6 +137,9 @@ main(int argc, char **argv)
 			break;
 		case 'U':
 			Uflag = 1;
+			break;
+		case 'a':
+			show_all = true;
 			break;
 		case 'r':
 			max_level = -1;
@@ -159,6 +162,8 @@ main(int argc, char **argv)
 		errx(1, "at most one of -A, -L, -R, -S, or -U may be specified");
 	if (extra && Lflag == 0)
 		errx(1, "-x can only be used with -L");
+	if (show_all && Lflag == 0)
+		errx(1, "-a can only be used with -L");
 
 	/*
 	 * Default to showing the directory contents, not the directory itself.
@@ -232,15 +237,17 @@ main(int argc, char **argv)
 		} else if (Lflag != 0) {
 			struct hsm_state hs;
 
-			error = ioctl(fd, HSMSTATE, &hs);
-			if (error != 0) {
-				warn("%s: HSMSTATE", entry->fts_path);
-				cumulated_error++;
-			} else {
-				if (extra)
-					show_extra(entry->fts_path, &hs);
-				else
-					show(entry->fts_path, &hs);
+			if (show_all || entry->fts_name[0] != '.') {
+				error = ioctl(fd, HSMSTATE, &hs);
+				if (error != 0) {
+					warn("%s: HSMSTATE", entry->fts_path);
+					cumulated_error++;
+				} else {
+					if (extra)
+						show_extra(entry->fts_path, &hs);
+					else
+						show(entry->fts_path, &hs);
+				}
 			}
 		} else if (Rflag != 0) {
 			struct hsm_release hr;
