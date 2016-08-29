@@ -21,6 +21,7 @@
 cpu		HAMMER
 ident		GENERIC
 
+options		DEBUG_VFS_LOCKS
 makeoptions	DEBUG=-g		# Build kernel with gdb(1) debug symbols
 makeoptions	WITH_CTF=1		# Run ctfconvert(1) for DTrace support
 
