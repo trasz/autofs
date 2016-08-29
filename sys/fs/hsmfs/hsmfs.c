@@ -131,10 +131,10 @@ int hsmfs_debug = 10;
 TUNABLE_INT("vfs.hsmfs.debug", &hsmfs_debug);
 SYSCTL_INT(_vfs_hsmfs, OID_AUTO, debug, CTLFLAG_RWTUN,
     &hsmfs_debug, 1, "Enable debug messages");
-int hsmfs_stage_on_enoent = 0;
+int hsmfs_stage_on_enoent = 1;
 TUNABLE_INT("vfs.hsmfs.stage_on_enoent", &hsmfs_stage_on_enoent);
 SYSCTL_INT(_vfs_hsmfs, OID_AUTO, stage_on_enoent, CTLFLAG_RWTUN,
-    &hsmfs_stage_on_enoent, 0,
+    &hsmfs_stage_on_enoent, 1,
     "Restage the directory on attempt to access file that does not exist");
 int hsmfs_timeout = 30;
 TUNABLE_INT("vfs.hsmfs.timeout", &hsmfs_timeout);
@@ -292,7 +292,7 @@ hsmfs_restore_sigmask(sigset_t *set)
 }
 
 static int
-hsmfs_trigger_one(struct vnode *vp, int type)
+hsmfs_trigger_one(struct vnode *vp, int type, const char *appendage)
 {
 	sigset_t oldset;
 	struct hsmfs_request *hr;
@@ -318,6 +318,7 @@ hsmfs_trigger_one(struct vnode *vp, int type)
 		    atomic_fetchadd_int(&hsmfs_softc->sc_last_request_id, 1);
 		hr->hr_type = type;
 		hr->hr_vp = vp;
+		hr->hr_appendage = appendage;
 
 #if 0
 		TIMEOUT_TASK_INIT(taskqueue_thread, &hr->hr_task, 0,
@@ -373,7 +374,7 @@ hsmfs_trigger_one(struct vnode *vp, int type)
 }
 
 static int
-hsmfs_trigger(struct vnode *vp, int type)
+hsmfs_trigger(struct vnode *vp, int type, const char *appendage)
 {
 	struct hsmfs_node *hnp;
 	int error;
@@ -381,7 +382,7 @@ hsmfs_trigger(struct vnode *vp, int type)
 	hnp = VTONULL(vp);
 
 	for (;;) {
-		error = hsmfs_trigger_one(vp, type);
+		error = hsmfs_trigger_one(vp, type, appendage);
 		if (error == 0) {
 			hnp->hn_retries = 0;
 			return (0);
@@ -414,7 +415,7 @@ hsmfs_trigger(struct vnode *vp, int type)
  * notify them and wait until it's done.
  */
 int
-hsmfs_trigger_vn(struct vnode *vp, int type)
+hsmfs_trigger_vn(struct vnode *vp, int type, const char *appendage)
 {
 	struct hsmfs_metadata *hmp;
 	int error, locked;
@@ -440,7 +441,7 @@ hsmfs_trigger_vn(struct vnode *vp, int type)
 	VOP_UNLOCK(vp, 0);
 
 	sx_xlock(&hsmfs_softc->sc_lock);
-	error = hsmfs_trigger(vp, type);
+	error = hsmfs_trigger(vp, type, appendage);
 	sx_xunlock(&hsmfs_softc->sc_lock);
 
 	vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
@@ -509,7 +510,7 @@ hsmfs_trigger_archive(struct vnode *vp)
 {
 
 #ifdef notyet
-	return (hsmfs_trigger_vn(vp, HSMFS_TYPE_ARCHIVE));
+	return (hsmfs_trigger_vn(vp, HSMFS_TYPE_ARCHIVE, NULL));
 #else
 	HSMFS_DEBUG("dummy; workaround for vn_fullpath failures");
 
@@ -521,15 +522,15 @@ int
 hsmfs_trigger_recycle(struct vnode *vp)
 {
 
-	return (hsmfs_trigger_vn(vp, HSMFS_TYPE_RECYCLE));
+	return (hsmfs_trigger_vn(vp, HSMFS_TYPE_RECYCLE, NULL));
 }
 
 int
-hsmfs_trigger_stage(struct vnode *vp)
+hsmfs_trigger_stage(struct vnode *vp, const char *appendage)
 {
 	int error;
 
-	error = hsmfs_trigger_vn(vp, HSMFS_TYPE_STAGE);
+	error = hsmfs_trigger_vn(vp, HSMFS_TYPE_STAGE, appendage);
 
 	return (error);
 }
@@ -593,6 +594,10 @@ hsmfs_ioctl_request(struct hsmfs_daemon_request *hdr)
 	hdr->hdr_type = hr->hr_type;
 	strlcpy(hdr->hdr_path, retbuf, sizeof(hdr->hdr_path));
 	free(freebuf, M_TEMP);
+	if (hr->hr_appendage != NULL) {
+		strlcat(hdr->hdr_path, "/", sizeof(hdr->hdr_path));
+		strlcat(hdr->hdr_path, hr->hr_appendage, sizeof(hdr->hdr_path));
+	}
 
 	return (0);
 }

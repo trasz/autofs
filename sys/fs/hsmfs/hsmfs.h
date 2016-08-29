@@ -71,6 +71,7 @@ struct hsmfs_request {
 	int				hr_id;
 	int				hr_type;
 	struct vnode			*hr_vp;
+	const char			*hr_appendage;
 	bool				hr_done;
 	int				hr_error;
 	bool				hr_in_progress;
@@ -148,7 +149,7 @@ void	hsmfs_sync(void);
 
 int	hsmfs_trigger_archive(struct vnode *vp);
 int	hsmfs_trigger_recycle(struct vnode *vp);
-int	hsmfs_trigger_stage(struct vnode *vp);
-int	hsmfs_trigger_vn(struct vnode *vp, int type);
+int	hsmfs_trigger_stage(struct vnode *vp, const char *appendage);
+int	hsmfs_trigger_vn(struct vnode *vp, int type, const char *appendage);
 
 #endif /* !HSMFS_H */

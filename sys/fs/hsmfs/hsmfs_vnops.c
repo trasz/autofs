@@ -393,7 +393,7 @@ null_lookup(struct vop_lookup_args *ap)
 	if (error != 0)
 		return (error);
 	if (dhmp->hm_managed && !dhmp->hm_online && !hsmfs_ignore_thread()) {
-		error = hsmfs_trigger_stage(dvp);
+		error = hsmfs_trigger_stage(dvp, NULL);
 		if (error != 0)
 			return (error);
 	}
@@ -434,17 +434,17 @@ relookup:
 	vdrop(ldvp);
 
 	while (error == ENOENT && hsmfs_stage_on_enoent &&
-	    /*
-	     * XXX: Jak skutecznie jabłko.
-	     */
 	    !relookedup && dhmp->hm_managed && !hsmfs_ignore_thread()) {
-		HSMFS_DEBUG("stage_on_enoent");
+		char *appendage;
 
-		error = hsmfs_trigger_stage(dvp);
-		if (error != 0)
-			break;
+		appendage = strndup(cnp->cn_nameptr, cnp->cn_namelen, M_TEMP);
+		error = hsmfs_trigger_stage(dvp, appendage);
+		free(appendage, M_TEMP);
+		if (error != 0) {
+			HSMFS_DEBUG("trigger before relookup failed; returning %d", error);
+			return (error);
+		}
 
-		HSMFS_DEBUG("stage_on_enoent - relookup");
 		relookedup = true;
 		goto relookup;
 	}
@@ -661,7 +661,7 @@ null_read(struct vop_read_args *ap)
 	if (error != 0)
 		return (error);
 	if (hmp->hm_managed && !hmp->hm_online && !hsmfs_ignore_thread()) {
-		error = hsmfs_trigger_stage(ap->a_vp);
+		error = hsmfs_trigger_stage(ap->a_vp, NULL);
 		if (error != 0)
 			return (error);
 	}
@@ -681,7 +681,7 @@ null_readdir(struct vop_readdir_args *ap)
 	if (error != 0)
 		return (error);
 	if (hmp->hm_managed && !hmp->hm_online && !hsmfs_ignore_thread()) {
-		error = hsmfs_trigger_stage(ap->a_vp);
+		error = hsmfs_trigger_stage(ap->a_vp, NULL);
 		if (error != 0)
 			return (error);
 	}
@@ -702,7 +702,7 @@ null_write(struct vop_write_args *ap)
 	if (hmp->hm_managed && !hsmfs_ignore_thread()) {
 #ifdef notyet
 		if (!hmp->hm_online) {
-			error = hsmfs_trigger_stage(ap->a_vp);
+			error = hsmfs_trigger_stage(ap->a_vp, NULL);
 			if (error != 0)
 				return (error);
 		}
@@ -1177,7 +1177,7 @@ null_ioctl(struct vop_ioctl_args *ap)
 	}
 
 	if (!hsmfs_ignore_thread())
-		error = hsmfs_trigger_vn(ap->a_vp, cmd);
+		error = hsmfs_trigger_vn(ap->a_vp, cmd, NULL);
 
 out:
 	VOP_UNLOCK(ap->a_vp, 0);
