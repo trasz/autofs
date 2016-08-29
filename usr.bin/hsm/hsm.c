@@ -171,6 +171,20 @@ mastercmp(const FTSENT * const *a, const FTSENT * const *b)
 	return (strcoll((*a)->fts_name, (*b)->fts_name));
 }
 
+static int
+skip(FTS *fts, FTSENT *entry)
+{
+	int error;
+
+	error = fts_set(fts, entry, FTS_SKIP);
+	if (error != 0) {
+		warn("%s: fts_set", entry->fts_path);
+		return (1);
+	}
+
+	return (0);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -265,11 +279,8 @@ main(int argc, char **argv)
 
 		switch (entry->fts_info) {
 		case FTS_D:
-			if (max_level >= 0 && entry->fts_level >= max_level) {
-				error = fts_set(fts, entry, FTS_SKIP);
-				if (error != 0)
-					err(1, "%s: fts_set", entry->fts_path);
-			}
+			if (max_level >= 0 && entry->fts_level >= max_level)
+				cumulated_error += skip(fts, entry);
 			break;
 		case FTS_DP:
 			/*
@@ -352,18 +363,21 @@ main(int argc, char **argv)
 			if (error != 0) {
 				warn("%s: HSMSTATE", entry->fts_path);
 				cumulated_error++;
+
+				if (errno == ENOTTY && Lflag != 0) {
+					/*
+					 * Assume it's not a HSM-managed directory;
+					 * don't descend.
+					 */
+					cumulated_error += skip(fts, entry);
+				}
 				break;
 			}
 
 			if (!hs.hs_managed || hs.hs_online)
 				break;
 
-			error = fts_set(fts, entry, FTS_SKIP);
-			if (error != 0) {
-				warn("%s: fts_set", entry->fts_path);
-				cumulated_error++;
-				break;
-			}
+			cumulated_error += skip(fts, entry);
 
 			break;
 		}
