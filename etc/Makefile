@@ -26,6 +26,7 @@ BIN1=	crontab \
 	hosts \
 	hosts.allow \
 	hosts.equiv \
+	hsm.conf \
 	libalias.conf \
 	libmap.conf \
 	login.access \
