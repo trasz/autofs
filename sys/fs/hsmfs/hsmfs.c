@@ -61,6 +61,28 @@
  *
  */
 
+/*
+ *
+ * STATES, actions.
+ *
+ *                   FILE
+ *                    |
+ *     /-------------- -------------\
+ *     |                            |
+ *     V     -- manual action ->    V
+ * UNMANAGED <- manual action -- MANAGED
+ *                                  |
+ *                         /-------- ---------\
+ *                         |                  |
+ *                         V                  V
+ *       /-- release -> OFFLINE -- stage -> ONLINE
+ *       |                                    |
+ *       |                      /------------- -------------\
+ *       |                      |                           |
+ *       |                      V      -- local write ->    V
+ *       \----------------- UNMODIFIED <--- archive ---- MODIFIED
+ *
+ */
 #include <sys/cdefs.h>
  __FBSDID("$FreeBSD$");
 
