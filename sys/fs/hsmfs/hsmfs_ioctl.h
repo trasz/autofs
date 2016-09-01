@@ -117,10 +117,14 @@ struct hsm_stage {
 struct hsm_unmanage {
 };
 
+#define	HSMFS_STATE_UNKNOWN	0
+#define	HSMFS_STATE_UNMANAGED	1
+#define	HSMFS_STATE_OFFLINE	2
+#define	HSMFS_STATE_UNMODIFIED	3
+#define	HSMFS_STATE_MODIFIED	4
+
 struct hsm_state {
-	int		hs_managed;
-	int		hs_online;
-	int		hs_modified;
+	int		hs_state;
 	struct timeval	hs_staged_tv;
 	struct timeval	hs_modified_tv;
 	struct timeval	hs_archived_tv;

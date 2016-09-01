@@ -62,27 +62,27 @@
  */
 
 /*
+ * STATES, actions.  Every file and directory is either UNMANAGED
+ * or MANAGED.  MANAGED files and directories are either OFFLINE
+ * or ONLINE.  ONLINE files and directories are either UNMODIFIED
+ * or MODIFIED.  So there are actually just four valid states:
+ * UNMANAGED, OFFLINE, UNMODIFIED, and MODIFIED.
  *
- * STATES, actions.
+ * An UNMANAGED file can become OFFLINE by manual action (hsm -S).
+ * An UNMANAGED file can become MODIFIED manual action (hsm -A).
  *
- *                   FILE
- *                    |
- *     /-------------- -------------\
- *     |                            |
- *     V     -- manual action ->    V
- * UNMANAGED <- manual action -- MANAGED
- *                                  |
- *                         /-------- ---------\
- *                         |                  |
- *                         V                  V
- *       /-- release -> OFFLINE -- stage -> ONLINE
- *       |                                    |
- *       |                      /------------- -------------\
- *       |                      |                           |
- *       |                      V      -- local write ->    V
- *       \----------------- UNMODIFIED <--- archive ---- MODIFIED
+ * An OFFLINE file can become UNMODIFIED by stage.
+ * An OFFLINE file can become UNMANAGED by manual action (hsm -U).
+ *
+ * An UNMODIFIED file can become OFFLINE by release.
+ * An UNMODIFIED file can become MODIFIED by write.
+ * An UNMODIFIED file can become UNMANAGED by manual action (hsm -U).
+ *
+ * A MODIFIED file can become UNMODIFIED by archive.
+ * A MODIFIED file can become UNMANAGED by manual action (hsm -U).
  *
  */
+
 #include <sys/cdefs.h>
  __FBSDID("$FreeBSD$");
 
@@ -482,43 +482,23 @@ hsmfs_trigger_vn(struct vnode *vp, int type, const char *appendage)
 
 	switch (type) {
 	case HSMFS_TYPE_ARCHIVE:
-		/*
-		 * This obviously only applies when triggered via ioctl
-		 * (eg by the userspace utilities); to get triggered
-		 * by usual file access, the file would have to be already
-		 * marked as managed.
-		 */
-		hmp->hm_managed = true;
-		if (hmp->hm_modified) {
-			microtime(&hmp->hm_archived_tv);
-			hmp->hm_modified = false;
-		}
-		break;
-
-	case HSMFS_TYPE_RECYCLE:
-		hmp->hm_managed = true;
+		hmp->hm_state = HSMFS_STATE_UNMODIFIED;
+		microtime(&hmp->hm_archived_tv);
 		break;
 
 	case HSMFS_TYPE_RELEASE:
-		hmp->hm_managed = true;
-		if (hmp->hm_online) {
-			microtime(&hmp->hm_released_tv);
-			hmp->hm_online = false;
-		}
+		hmp->hm_state = HSMFS_STATE_OFFLINE;
+		microtime(&hmp->hm_released_tv);
 		break;
 
 	case HSMFS_TYPE_STAGE:
-		hmp->hm_managed = true;
-		if (!hmp->hm_online) {
-			microtime(&hmp->hm_staged_tv);
-			hmp->hm_online = true;
-		}
+		hmp->hm_state = HSMFS_STATE_UNMODIFIED;
+		microtime(&hmp->hm_staged_tv);
 		break;
 
 	case HSMFS_TYPE_UNMANAGE:
 		memset(hmp, 0, sizeof(*hmp));
-		hmp->hm_metadata_valid = true;
-		hmp->hm_managed = false;
+		hmp->hm_state = HSMFS_STATE_UNMANAGED;
 		break;
 	}
 
@@ -773,7 +753,7 @@ hsmfs_metadata_read(struct vnode *vp)
 
 	hmp = VTOHM(vp);
 
-	if (hmp->hm_metadata_valid)
+	if (hmp->hm_state != HSMFS_STATE_UNKNOWN)
 		return (0);
 
 	len = sizeof(*hmp);
@@ -782,14 +762,14 @@ hsmfs_metadata_read(struct vnode *vp)
 	    HSMFS_EXTATTR_NAME, &len, (char *)hmp, curthread);
 	if (error == ENOATTR) {
 		//HSMFS_DEBUG("vn_extattr_get() failed with error %d", error);
-		hmp->hm_metadata_valid = true;
+		hmp->hm_state = HSMFS_STATE_UNMANAGED;
 	} else if (error != 0) {
 		HSMFS_WARN("vn_extattr_get() failed with error %d", error);
-		hmp->hm_metadata_valid = false; // XXX?
+		hmp->hm_state = HSMFS_STATE_UNKNOWN;
 		return (error);
 	} else if (len != sizeof(*hmp)) {
 		HSMFS_DEBUG("invalid metadata extattr size, got %zd, should be %zd", len, sizeof(*hmp));
-		hmp->hm_metadata_valid = false; // XXX?
+		hmp->hm_state = HSMFS_STATE_UNKNOWN;
 		return (EIO);
 	}
 
@@ -804,7 +784,7 @@ hsmfs_metadata_write(struct vnode *vp)
 
 	hmp = VTOHM(vp);
 
-	KASSERT(hmp->hm_metadata_valid, ("metadata invalid"));
+	KASSERT(hmp->hm_state != HSMFS_STATE_UNKNOWN, ("unknown state"));
 
 	error = vn_extattr_set(vp, IO_NODELOCKED, HSMFS_EXTATTR_NAMESPACE,
 	    HSMFS_EXTATTR_NAME, sizeof(*hmp), (char *)hmp, curthread);

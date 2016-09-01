@@ -94,18 +94,22 @@ show(const char *path, const struct hsm_state *hs)
 	if (path[0] == '.' && path[1] == '/')
 		path += 2;
 
-	if (!hs->hs_managed && !hs->hs_online && !hs->hs_modified) {
+	switch (hs->hs_state) {
+	case HSMFS_STATE_UNMANAGED:
 		printf("unmanaged -       -          %s\n", path);
-		return;
+		break;
+	case HSMFS_STATE_OFFLINE:
+		printf("managed   offline -          %s\n", path);
+		break;
+	case HSMFS_STATE_UNMODIFIED:
+		printf("managed   online  unmodified %s\n", path);
+		break;
+	case HSMFS_STATE_MODIFIED:
+		printf("managed   online  modified   %s\n", path);
+		break;
+	default:
+		printf("unknown state %3d            %s\n", hs->hs_state, path);
 	}
-	printf("%s ", hs->hs_managed ? "managed  " : "unmanaged");
-	if (!hs->hs_online && !hs->hs_modified) {
-		printf("offline -          %s\n", path);
-		return;
-	}
-	printf("%s ", hs->hs_online ? "online " : "offline");
-	printf("%s ", hs->hs_modified ? "modified  " : "unmodified");
-	printf("%s\n", path);
 }
 
 static void
@@ -115,29 +119,43 @@ show_time(const char *name, const struct timeval *tv)
 	struct tm *tm;
 
 	if (tv->tv_sec == 0) {
-		printf("%s: Never\n", name);
+		printf("%s Never\n", name);
 		return;
 	}
 
 	tm = localtime(&tv->tv_sec);
 	strftime(buf, sizeof(buf), "%c", tm);
-	printf("%s: %s\n", name, buf);
+	printf("%s %s\n", name, buf);
+}
+
+static const char *
+state_name(int state)
+{
+
+	switch (state) {
+	case HSMFS_STATE_UNMANAGED:
+		return ("Unmanaged");
+	case HSMFS_STATE_OFFLINE:
+		return ("Offline");
+	case HSMFS_STATE_UNMODIFIED:
+		return ("Unmodified");
+	case HSMFS_STATE_MODIFIED:
+		return ("Modified");
+	default:
+		return ("Unknown");
+	}
 }
 
 static void
 show_extra(const char *path, const struct hsm_state *hs)
 {
 
-	printf("    File: \"%s\"\n", path);
-	printf(" Managed: %s, Online: %s, Modified: %s\n",
-	    hs->hs_managed ? "Yes" : "No",
-	    hs->hs_online ? "Yes" : "No",
-	    hs->hs_modified ? "Yes" : "No");
-
-	show_time("  Staged", &hs->hs_staged_tv);
-	show_time("Modified", &hs->hs_modified_tv);
-	show_time("Archived", &hs->hs_archived_tv);
-	show_time("Released", &hs->hs_released_tv);
+	printf(   "    File: \"%s\"\n", path);
+	printf(   "   State: %s\n", state_name(hs->hs_state));
+	show_time("  Staged:", &hs->hs_staged_tv);
+	show_time("Modified:", &hs->hs_modified_tv);
+	show_time("Archived:", &hs->hs_archived_tv);
+	show_time("Released:", &hs->hs_released_tv);
 }
 
 /*
@@ -374,7 +392,7 @@ main(int argc, char **argv)
 				break;
 			}
 
-			if (!hs.hs_managed || hs.hs_online)
+			if (hs.hs_state != HSMFS_STATE_OFFLINE)
 				break;
 
 			cumulated_error += skip(fts, entry);

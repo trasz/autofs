@@ -86,46 +86,27 @@ struct hsmfs_request {
  * attribute for each file and directory.
  */
 struct hsmfs_metadata {
-	/*
-	 * XXX
-	 */
-	bool				hm_metadata_valid;
+	int			hm_state;
 
-	/*
-	 * XXX
-	 */
-	bool				hm_managed;
-
-	/*
-	 * Means we have a complete copy of the file; it was either
-	 * here from the beginning, or successfully staged.
-	 */
-	bool				hm_online;
-
-	/*
-	 * Means hsmd(8) will have to archive this file.
-	 */
-	bool				hm_modified;
-
-	struct timeval			hm_staged_tv;
-	struct timeval			hm_modified_tv;
-	struct timeval			hm_archived_tv;
-	struct timeval			hm_released_tv;
+	struct timeval		hm_staged_tv;
+	struct timeval		hm_modified_tv;
+	struct timeval		hm_archived_tv;
+	struct timeval		hm_released_tv;
 
 	/*
 	 * The hsmd has no way to set ctime for staged files;
 	 * we store it here instead and fake it on stat(2).
 	 */
-	struct timespec			hm_ctime;
+	struct timespec		hm_ctime;
 
 	/*
 	 * Those three replace the zeroes that would be returned
 	 * by stat(2) on offline files - ones that hadn't been
 	 * staged yet.
 	 */
-	nlink_t				hm_offline_nlink;
-	off_t				hm_offline_size;
-	u_quad_t			hm_offline_bytes;
+	nlink_t			hm_offline_nlink;
+	off_t			hm_offline_size;
+	u_quad_t		hm_offline_bytes;
 
 };
 

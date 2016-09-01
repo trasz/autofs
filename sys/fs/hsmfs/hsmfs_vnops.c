@@ -392,7 +392,7 @@ null_lookup(struct vop_lookup_args *ap)
 	error = hsmfs_metadata_read(dvp);
 	if (error != 0)
 		return (error);
-	if (dhmp->hm_managed && !dhmp->hm_online && !hsmfs_ignore_thread()) {
+	if (dhmp->hm_state == HSMFS_STATE_OFFLINE && !hsmfs_ignore_thread()) {
 		error = hsmfs_trigger_stage(dvp, NULL);
 		if (error != 0)
 			return (error);
@@ -434,7 +434,7 @@ relookup:
 	vdrop(ldvp);
 
 	while (error == ENOENT && hsmfs_stage_on_enoent &&
-	    !relookedup && dhmp->hm_managed && !hsmfs_ignore_thread()) {
+	    !relookedup && dhmp->hm_state != HSMFS_STATE_UNMANAGED && !hsmfs_ignore_thread()) {
 		char *appendage;
 
 		appendage = strndup(cnp->cn_nameptr, cnp->cn_namelen, M_TEMP);
@@ -543,7 +543,7 @@ null_close(struct vop_close_args *ap)
 	if (error != 0)
 		return (error);
 
-	if (hmp->hm_managed && hmp->hm_modified && !hsmfs_ignore_thread()) {
+	if (hmp->hm_state == HSMFS_STATE_MODIFIED && !hsmfs_ignore_thread()) {
 		error = hsmfs_trigger_archive(vp);
 		if (error != 0)
 			return (error);
@@ -566,10 +566,7 @@ null_create(struct vop_create_args *ap)
 		return (0);
 
 	hmp = VTOHM(*ap->a_vpp);
-	hmp->hm_metadata_valid = true;
-	hmp->hm_managed = true;
-	hmp->hm_online = true;
-	hmp->hm_modified = true;
+	hmp->hm_state = HSMFS_STATE_MODIFIED;
 
 	error = hsmfs_metadata_write(*ap->a_vpp);
 	if (error != 0) {
@@ -594,10 +591,7 @@ null_mkdir(struct vop_mkdir_args *ap)
 		return (0);
 
 	hmp = VTOHM(*ap->a_vpp);
-	hmp->hm_metadata_valid = true;
-	hmp->hm_managed = true;
-	hmp->hm_online = true;
-	hmp->hm_modified = true;
+	hmp->hm_state = HSMFS_STATE_MODIFIED;
 
 	error = hsmfs_metadata_write(*ap->a_vpp);
 	if (error != 0) {
@@ -624,10 +618,10 @@ null_getattr(struct vop_getattr_args *ap)
 	if (error != 0)
 		return (error);
 #ifdef notyet
-	if (hmp->hm_managed) {
+	if (hmp->hm_state != HSMFS_STATE_UNMANAGED) {
 		ap->a_vap->va_ctime = hmp->hm_ctime;
 
-		if (!hmp->hm_online) {
+		if (hmp->hm_state == HSMFS_STATE_OFFLINE) {
 			ap->a_vap->va_nlink = hmp->hm_offline_nlink;
 			ap->a_vap->va_size = hmp->hm_offline_size;
 			ap->a_vap->va_bytes = hmp->hm_offline_bytes;
@@ -660,7 +654,7 @@ null_read(struct vop_read_args *ap)
 	error = hsmfs_metadata_read(ap->a_vp);
 	if (error != 0)
 		return (error);
-	if (hmp->hm_managed && !hmp->hm_online && !hsmfs_ignore_thread()) {
+	if (hmp->hm_state == HSMFS_STATE_OFFLINE && !hsmfs_ignore_thread()) {
 		error = hsmfs_trigger_stage(ap->a_vp, NULL);
 		if (error != 0)
 			return (error);
@@ -680,7 +674,7 @@ null_readdir(struct vop_readdir_args *ap)
 	error = hsmfs_metadata_read(ap->a_vp);
 	if (error != 0)
 		return (error);
-	if (hmp->hm_managed && !hmp->hm_online && !hsmfs_ignore_thread()) {
+	if (hmp->hm_state == HSMFS_STATE_OFFLINE && !hsmfs_ignore_thread()) {
 		error = hsmfs_trigger_stage(ap->a_vp, NULL);
 		if (error != 0)
 			return (error);
@@ -699,16 +693,16 @@ null_write(struct vop_write_args *ap)
 	error = hsmfs_metadata_read(ap->a_vp);
 	if (error != 0)
 		return (error);
-	if (hmp->hm_managed && !hsmfs_ignore_thread()) {
+	if (hmp->hm_state != HSMFS_STATE_UNMANAGED && !hsmfs_ignore_thread()) {
 #ifdef notyet
-		if (!hmp->hm_online) {
+		if (hmp->hm_state == HSMFS_STATE_OFFLINE) {
 			error = hsmfs_trigger_stage(ap->a_vp, NULL);
 			if (error != 0)
 				return (error);
 		}
 #endif
-		if (!hmp->hm_modified) {
-			hmp->hm_modified = true;
+		if (hmp->hm_state == HSMFS_STATE_UNMODIFIED) {
+			hmp->hm_state = HSMFS_STATE_MODIFIED;
 			microtime(&hmp->hm_modified_tv);
 
 			error = hsmfs_metadata_write(ap->a_vp);
@@ -793,7 +787,7 @@ null_remove(struct vop_remove_args *ap)
 	vp = ap->a_vp;
 	hmp = VTOHM(vp);
 
-	if (hmp->hm_managed && !hsmfs_ignore_thread()) {
+	if (hmp->hm_state != HSMFS_STATE_UNMANAGED && !hsmfs_ignore_thread()) {
 		error = hsmfs_trigger_recycle(vp);
 		return (error);
 	}
@@ -860,8 +854,7 @@ null_rename(struct vop_rename_args *ap)
 
 		if (tvp != NULL && !hsmfs_ignore_thread()) {
 			hm = VTOHM(tvp);
-			hm->hm_online = true;
-			hm->hm_modified = true;
+			hm->hm_state = HSMFS_STATE_MODIFIED;
 			hm->hm_archived_tv.tv_sec = 0;
 			hm->hm_released_tv.tv_sec = 0;
 
@@ -905,7 +898,7 @@ null_rmdir(struct vop_rmdir_args *ap)
 	vp = ap->a_vp;
 	hmp = VTOHM(vp);
 
-	if (hmp->hm_managed && !hsmfs_ignore_thread()) {
+	if (hmp->hm_state != HSMFS_STATE_UNMANAGED && !hsmfs_ignore_thread()) {
 		error = hsmfs_trigger_recycle(ap->a_vp);
 		return (error);
 	}
@@ -1071,14 +1064,7 @@ null_ioctl_state(struct vnode *vp, struct hsm_state *hs)
 	if (error != 0)
 		return (error);
 
-	if (!hmp->hm_managed) {
-		hs->hs_managed = 0;
-		return (0);
-	}
-
-	hs->hs_managed = 1;
-	hs->hs_online = hmp->hm_online;
-	hs->hs_modified = hmp->hm_modified;
+	hs->hs_state = hmp->hm_state;
 	hs->hs_staged_tv = hmp->hm_staged_tv;
 	hs->hs_modified_tv = hmp->hm_modified_tv;
 	hs->hs_archived_tv = hmp->hm_archived_tv;
@@ -1106,8 +1092,10 @@ null_ioctl_managed(struct vnode *vp, struct hsm_managed *hm)
 	}
 #endif
 
-	hmp->hm_managed = true;
-	hmp->hm_online = hm->hm_online;
+	if (hm->hm_online)
+		hmp->hm_state = HSMFS_STATE_UNMODIFIED;
+	else
+		hmp->hm_state = HSMFS_STATE_OFFLINE;
 	hmp->hm_ctime = hm->hm_ctime;
 	hmp->hm_offline_nlink = hm->hm_offline_nlink;
 	hmp->hm_offline_size = hm->hm_offline_size;
@@ -1242,8 +1230,7 @@ null_print(struct vop_print_args *ap)
 
 	printf("\tvp=%p, lowervp=%p, retries=%d\n",
 	    vp, VTONULL(vp)->null_lowervp, nn->hn_retries);
-	printf("\tvalid=%d, managed=%d, online=%d, modified=%d\n",
-	    hm->hm_metadata_valid, hm->hm_managed, hm->hm_online, hm->hm_modified);
+	printf("\tstate=%d\n", hm->hm_state);
 
 	return (0);
 }
