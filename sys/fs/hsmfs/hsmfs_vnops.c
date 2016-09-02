@@ -1095,6 +1095,7 @@ null_ioctl_offline(struct vnode *vp, struct hsm_offline *ho)
 	if (error != 0)
 		return (error);
 
+#if 0
 	/*
 	 * XXX: Remove OFFLINE.
 	 */
@@ -1104,6 +1105,7 @@ null_ioctl_offline(struct vnode *vp, struct hsm_offline *ho)
 		HSMFS_WARN("HSMOFFLINE called for file in state %d", hmp->hm_state);
 		return (EBUSY);
 	}
+#endif
 
 	hmp->hm_state = HSMFS_STATE_OFFLINE;
 	hmp->hm_ctime = ho->ho_ctime;
@@ -1128,6 +1130,7 @@ null_ioctl_unmodified(struct vnode *vp, struct hsm_unmodified *hu)
 	if (error != 0)
 		return (error);
 
+#if 0
 	/*
 	 * XXX: Drop UNMANAGED?
 	 */
@@ -1137,6 +1140,7 @@ null_ioctl_unmodified(struct vnode *vp, struct hsm_unmodified *hu)
 		HSMFS_WARN("HSMUNMODIFIED called for file in state %d", hmp->hm_state);
 		return (EBUSY);
 	}
+#endif
 
 	hmp->hm_state = HSMFS_STATE_UNMODIFIED;
 
