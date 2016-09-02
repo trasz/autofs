@@ -693,21 +693,31 @@ null_write(struct vop_write_args *ap)
 	error = hsmfs_metadata_read(ap->a_vp);
 	if (error != 0)
 		return (error);
-	if (hmp->hm_state != HSMFS_STATE_UNMANAGED && !hsmfs_ignore_thread()) {
-#ifdef notyet
-		if (hmp->hm_state == HSMFS_STATE_OFFLINE) {
-			error = hsmfs_trigger_stage(ap->a_vp, NULL);
-			if (error != 0)
-				return (error);
-		}
-#endif
-		if (hmp->hm_state == HSMFS_STATE_UNMODIFIED) {
-			hmp->hm_state = HSMFS_STATE_MODIFIED;
-			microtime(&hmp->hm_modified_tv);
 
-			error = hsmfs_metadata_write(ap->a_vp);
-			if (error != 0)
-				return (error);
+	if (hsmfs_ignore_thread()) {
+		if (hmp->hm_state == HSMFS_STATE_UNMANAGED) {
+#ifdef notyet
+			HSMFS_WARN("hsmd tried to write to unmanaged file; ignoring");
+			return (EDOOFUS);
+#endif
+		}
+	} else {
+		if (hmp->hm_state != HSMFS_STATE_UNMANAGED) {
+#ifdef notyet
+			if (hmp->hm_state == HSMFS_STATE_OFFLINE) {
+				error = hsmfs_trigger_stage(ap->a_vp, NULL);
+				if (error != 0)
+					return (error);
+			}
+#endif
+			if (hmp->hm_state == HSMFS_STATE_UNMODIFIED) {
+				hmp->hm_state = HSMFS_STATE_MODIFIED;
+				microtime(&hmp->hm_modified_tv);
+	
+				error = hsmfs_metadata_write(ap->a_vp);
+				if (error != 0)
+					return (error);
+			}
 		}
 	}
 
@@ -1074,7 +1084,7 @@ null_ioctl_state(struct vnode *vp, struct hsm_state *hs)
 }
 
 static int
-null_ioctl_managed(struct vnode *vp, struct hsm_managed *hm)
+null_ioctl_offline(struct vnode *vp, struct hsm_offline *ho)
 {
 	struct hsmfs_metadata *hmp;
 	int error;
@@ -1085,21 +1095,50 @@ null_ioctl_managed(struct vnode *vp, struct hsm_managed *hm)
 	if (error != 0)
 		return (error);
 
-#if 0
-	if (hmp->hm_managed) {
-		error = EALREADY;
-		goto out;
+	/*
+	 * XXX: Remove OFFLINE.
+	 */
+	if (hmp->hm_state != HSMFS_STATE_UNMANAGED &&
+	    hmp->hm_state != HSMFS_STATE_OFFLINE &&
+	    hmp->hm_state != HSMFS_STATE_UNMODIFIED) {
+		HSMFS_WARN("HSMOFFLINE called for file in state %d", hmp->hm_state);
+		return (EBUSY);
 	}
-#endif
 
-	if (hm->hm_online)
-		hmp->hm_state = HSMFS_STATE_UNMODIFIED;
-	else
-		hmp->hm_state = HSMFS_STATE_OFFLINE;
-	hmp->hm_ctime = hm->hm_ctime;
-	hmp->hm_offline_nlink = hm->hm_offline_nlink;
-	hmp->hm_offline_size = hm->hm_offline_size;
-	hmp->hm_offline_bytes = hm->hm_offline_bytes;
+	hmp->hm_state = HSMFS_STATE_OFFLINE;
+	hmp->hm_ctime = ho->ho_ctime;
+	hmp->hm_offline_nlink = ho->ho_nlink;
+	hmp->hm_offline_size = ho->ho_size;
+	hmp->hm_offline_bytes = ho->ho_bytes;
+
+	error = hsmfs_metadata_write(vp);
+
+	return (error);
+}
+
+static int
+null_ioctl_unmodified(struct vnode *vp, struct hsm_unmodified *hu)
+{
+	struct hsmfs_metadata *hmp;
+	int error;
+
+	hmp = VTOHM(vp);
+
+	error = hsmfs_metadata_read(vp);
+	if (error != 0)
+		return (error);
+
+	/*
+	 * XXX: Drop UNMANAGED?
+	 */
+	if (hmp->hm_state != HSMFS_STATE_UNMANAGED &&
+	    hmp->hm_state != HSMFS_STATE_OFFLINE &&
+	    hmp->hm_state != HSMFS_STATE_MODIFIED) {
+		HSMFS_WARN("HSMUNMODIFIED called for file in state %d", hmp->hm_state);
+		return (EBUSY);
+	}
+
+	hmp->hm_state = HSMFS_STATE_UNMODIFIED;
 
 	error = hsmfs_metadata_write(vp);
 
@@ -1155,8 +1194,11 @@ null_ioctl(struct vop_ioctl_args *ap)
 	case HSMSTATE:
 		error = null_ioctl_state(ap->a_vp, (struct hsm_state *)ap->a_data);
 		goto out;
-	case HSMMANAGED:
-		error = null_ioctl_managed(ap->a_vp, (struct hsm_managed *)ap->a_data);
+	case HSMOFFLINE:
+		error = null_ioctl_offline(ap->a_vp, (struct hsm_offline *)ap->a_data);
+		goto out;
+	case HSMUNMODIFIED:
+		error = null_ioctl_unmodified(ap->a_vp, (struct hsm_unmodified *)ap->a_data);
 		goto out;
 	default:
 		HSMFS_DEBUG("invalid command %lu", ap->a_command);

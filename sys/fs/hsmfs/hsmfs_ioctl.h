@@ -100,7 +100,7 @@ struct hsmfs_queue {
 #define	HSMFSQUEUE	_IOWR('I', 0x03, struct hsmfs_queue)
 
 /*
- * IOCTL interface for hsmarchive(8) et all, called on individual files.
+ * IOCTL interface for hsm(1), called on individual files.
  */
 struct hsm_archive {
 };
@@ -131,21 +131,28 @@ struct hsm_state {
 	struct timeval	hs_released_tv;
 };
 
-struct hsm_managed {
-	int		hm_online;
-	struct timespec	hm_ctime;
-	nlink_t		hm_offline_nlink;
-	off_t		hm_offline_size;
-	u_quad_t	hm_offline_bytes;
-};
-
 #define	HSMARCHIVE	_IOW('I', 0x11, struct hsm_archive)
 #define	HSMRECYCLE	_IOW('I', 0x12, struct hsm_recycle)
 #define	HSMRELEASE	_IOW('I', 0x13, struct hsm_release)
 #define	HSMSTAGE	_IOW('I', 0x14, struct hsm_stage)
 #define	HSMUNMANAGE	_IOW('I', 0x15, struct hsm_unmanage)
-
 #define	HSMSTATE	_IOR('I', 0x16, struct hsm_state)
-#define	HSMMANAGED	_IOW('I', 0x17, struct hsm_managed)
+
+/*
+ * IOCTL interface for hsmd(8), called on individual files.
+ */
+struct hsm_offline {
+	int		ho_online;
+	struct timespec	ho_ctime;
+	nlink_t		ho_nlink;
+	off_t		ho_size;
+	u_quad_t	ho_bytes;
+};
+
+struct hsm_unmodified {
+};
+
+#define	HSMOFFLINE	_IOW('I', 0x21, struct hsm_offline)
+#define	HSMUNMODIFIED	_IOW('I', 0x22, struct hsm_unmodified)
 
 #endif /* !HSMFS_IOCTL_H */

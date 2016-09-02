@@ -527,10 +527,10 @@ exit_callback(void)
 static void
 hsmfs_mark_managed(char *path)
 {
-	struct hsm_managed hm;
 	char *fts_argv[2];
 	FTS *fts;
 	FTSENT *entry;
+	bool online;
 	int error, fd;
 
 	fts_argv[0] = path;
@@ -548,37 +548,52 @@ hsmfs_mark_managed(char *path)
 			break;
 		}
 
-		memset(&hm, 0, sizeof(hm));
-
 		switch (entry->fts_info) {
 		case FTS_F:
 		case FTS_NSOK:
 			/*
 			 * Mark files online, directories offline.
 			 */
-			hm.hm_online = 1;
+			online = true;
 			break;
 		case FTS_DP:
-			hm.hm_online = 0;
+			online = false;
 			break;
 		case FTS_D:
 			continue;
 		case FTS_DNR:
 		case FTS_ERR:
 		case FTS_NS:
-			log_errx(1, "%s: %s", entry->fts_path, strerror(entry->fts_errno));
+			log_errx(1, "%s: %s", entry->fts_path,
+			    strerror(entry->fts_errno));
 		}
 
-		log_debugx("marking %s as managed, %s",
-		    entry->fts_path, hm.hm_online ? "online" : "offline");
+		log_debugx("marking %s as %s", entry->fts_path,
+		    online ? "online, unmodified" : "offline");
 
 		fd = open(entry->fts_accpath, O_RDONLY);
 		if (fd < 0)
 			log_err(1, "%s", entry->fts_path);
 
-		error = ioctl(fd, HSMMANAGED, &hm);
-		if (error != 0)
-			log_err(1, "%s: HSMMANAGED", entry->fts_path);
+		if (online) {
+			struct hsm_unmodified hu;
+
+			memset(&hu, 0, sizeof(hu));
+			error = ioctl(fd, HSMUNMODIFIED, &hu);
+			if (error != 0) {
+				log_err(1, "%s: HSMUNMODIFIED",
+				    entry->fts_path);
+			}
+		} else {
+			struct hsm_offline ho;
+
+			memset(&ho, 0, sizeof(ho));
+			error = ioctl(fd, HSMOFFLINE, &ho);
+			if (error != 0) {
+				log_err(1, "%s: HSMOFFLINE",
+				    entry->fts_path);
+			}
+		}
 
 		error = close(fd);
 		if (error != 0)
