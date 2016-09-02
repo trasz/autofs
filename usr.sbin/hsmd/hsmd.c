@@ -208,8 +208,6 @@ hsmd_mount_strip(const struct hsmd_mount *mount, const char *path)
 	if (stripped_path[0] == '\0')
 		stripped_path = "/";
 
-	log_debugx("got %s, returning %s", path, stripped_path);
-
 	return (stripped_path);
 }
 
