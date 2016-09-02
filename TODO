@@ -1,0 +1,10 @@
+Things to do before it's ready, in no particular order:
+
+- man pages for hsm(1), hsmd(8), hsmq(8), hsmfs(5), and hsm.conf(5)
+- fix handling of failed requests - don't create leftover files and directories
+- add async ioctls, so that eg hsm(1) can trigger staging multiple files at once
+- make triggers work on non-directories
+- implement release; we don't need hsmd for that, so don't trigger it, and remove exec in hsmd
+- add HSM-related primaries to find(1)
+- add "don't descend into offline dirs" option for du(1)
+
