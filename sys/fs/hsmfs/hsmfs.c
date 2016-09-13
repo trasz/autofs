@@ -537,21 +537,38 @@ hsmfs_trigger_stage(struct vnode *vp, const char *appendage)
 	return (error);
 }
 
-static void
-hsmfs_request_done(struct hsmfs_request *hr, int error)
+static int
+hsmfs_request_done(int id, int error)
 {
+	struct hsmfs_request *hr;
+
+	sx_xlock(&hsmfs_softc->sc_lock);
+	TAILQ_FOREACH(hr, &hsmfs_softc->sc_requests, hr_next) {
+		if (hr->hr_id == id)
+			break;
+	}
+
+	if (hr == NULL) {
+		sx_xunlock(&hsmfs_softc->sc_lock);
+		HSMFS_DEBUG("id %d not found", id);
+		return (ESRCH);
+	}
 
 	hr->hr_error = error;
 	hr->hr_done = true;
 	hr->hr_in_progress = false;
 	cv_broadcast(&hsmfs_softc->sc_cv);
+	sx_xunlock(&hsmfs_softc->sc_lock);
+
+	return (0);
 }
 
 static int
 hsmfs_ioctl_request(struct hsmfs_daemon_request *hdr)
 {
 	struct hsmfs_request *hr;
-	char *retbuf, *freebuf;
+	struct vnode *vp;
+	char *abuf, *retbuf, *freebuf;
 	int error;
 
 	sx_xlock(&hsmfs_softc->sc_lock);
@@ -576,29 +593,39 @@ hsmfs_ioctl_request(struct hsmfs_daemon_request *hdr)
 		}
 	}
 
-	hr->hr_in_progress = true;
-	sx_xunlock(&hsmfs_softc->sc_lock);
-
 	KASSERT(hsmfs_softc->sc_hsmd_sid == curproc->p_session->s_sid,
 	    ("sid %d != hsmd_sid %d",
 	     curproc->p_session->s_sid, hsmfs_softc->sc_hsmd_sid));
 
-	error = vn_fullpath(curthread, hr->hr_vp, &retbuf, &freebuf);
+	hdr->hdr_id = hr->hr_id;
+	hdr->hdr_type = hr->hr_type;
+
+	if (hr->hr_appendage != NULL)
+		abuf = strdup(hr->hr_appendage, M_TEMP);
+	else
+		abuf = NULL;
+
+	vp = hr->hr_vp;
+	vref(vp);
+
+	hr->hr_in_progress = true;
+	sx_xunlock(&hsmfs_softc->sc_lock);
+
+	error = vn_fullpath(curthread, vp, &retbuf, &freebuf);
+	vrele(vp);
 	if (error != 0) {
 		HSMFS_WARN("vn_fullpath() failed with error %d", error);
-		sx_xlock(&hsmfs_softc->sc_lock);
-		hsmfs_request_done(hr, error);
-		sx_xunlock(&hsmfs_softc->sc_lock);
+		hsmfs_request_done(hdr->hdr_id, error);
 		return (error);
 	}
 
-	hdr->hdr_id = hr->hr_id;
-	hdr->hdr_type = hr->hr_type;
 	strlcpy(hdr->hdr_path, retbuf, sizeof(hdr->hdr_path));
 	free(freebuf, M_TEMP);
-	if (hr->hr_appendage != NULL) {
+
+	if (abuf != NULL) {
 		strlcat(hdr->hdr_path, "/", sizeof(hdr->hdr_path));
-		strlcat(hdr->hdr_path, hr->hr_appendage, sizeof(hdr->hdr_path));
+		strlcat(hdr->hdr_path, abuf, sizeof(hdr->hdr_path));
+		free(abuf, M_TEMP);
 	}
 
 	return (0);
@@ -607,24 +634,8 @@ hsmfs_ioctl_request(struct hsmfs_daemon_request *hdr)
 static int
 hsmfs_ioctl_done(struct hsmfs_daemon_done *hdd)
 {
-	struct hsmfs_request *hr;
 
-	sx_xlock(&hsmfs_softc->sc_lock);
-	TAILQ_FOREACH(hr, &hsmfs_softc->sc_requests, hr_next) {
-		if (hr->hr_id == hdd->hdd_id)
-			break;
-	}
-
-	if (hr == NULL) {
-		sx_xunlock(&hsmfs_softc->sc_lock);
-		HSMFS_DEBUG("id %d not found", hdd->hdd_id);
-		return (ESRCH);
-	}
-
-	hsmfs_request_done(hr, hdd->hdd_error);
-	sx_xunlock(&hsmfs_softc->sc_lock);
-
-	return (0);
+	return (hsmfs_request_done(hdd->hdd_id, hdd->hdd_error));
 }
 
 static int
