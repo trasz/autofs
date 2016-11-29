@@ -5,6 +5,7 @@ Things to do before it's ready, in no particular order:
 - example configuration for rsync, as cachefs and sshfs
 - make it work with Dropbox (net/dropbox-api-command?)
 - example configuration for Dropbox
+- is there a working filesystem-on-a-blockchain we could interface to?  Or at least p2p?
 - fix handling of failed requests - don't create leftover unmanaged files and directories
 - add async ioctls, so that eg hsm(1) can trigger staging multiple files at once
 - make triggers work on non-directories
@@ -16,4 +17,6 @@ Things to do before it's ready, in no particular order:
 - add "don't descend into offline dirs" option for du(1)
 - rethink the terminology - how about s/stage/download/g and s/archive/upload/g?
 - hsm(1) should report different states for files that are being staged or archived
+- interface to Coda servers somehow?
+- use cpdup instead of rsync
 
