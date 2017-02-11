@@ -1,6 +1,8 @@
 FreeBSD 12-CURRENT branch to work on a HSM implementation.  Formerly also used
 for autofs(5) development (http://people.freebsd.org/~trasz/autofs.pdf).
 
+There's also the "coda" branch.
+
 Source Roadmap:
 ---------------
 
