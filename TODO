@@ -19,4 +19,21 @@ Things to do before it's ready, in no particular order:
 - hsm(1) should report different states for files that are being staged or archived
 - interface to Coda servers somehow?
 - use cpdup instead of rsync
-
+- documentation update: mention that one of the nice things about HSM is that just
+  after staging the file is already in the page cache, and so the time spent on
+  staging can be made up by subsequent faster access by the application
+- documentation update: mention that HSM is perfectly suited for Media Transfer Protocol
+- implement HSM backend using gvfs
+- to implement something like Shadow Migration we need priorities for staging
+  requests, so that staging caused by trigger doesn't have to wait for scheduled
+  staging of files due to migration
+- KASSERT that we're not calling triggers for unmanaged files
+- after manual "hsm -S" we need to drop the vnode and mark it dead; otherwise the
+  applications won't notice that the file was replaced and might corrupt it
+- removing a file needs to set "modified" on the containing directory.  This way
+  we don't need whiteouts; on directory archival just remove remote files that
+  don't exist in the local directory
+- unlink must wait until archiving is finished
+- make sure we never try to stage a modified file, except when forced by "hsm -S"
+- prevent hsmd and it descendants from accessing unmanaged files by checking
+  their SID
