@@ -55,7 +55,7 @@ __FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/capability.h>
+#include <sys/capsicum.h>
 #include <sys/conf.h>
 #include <sys/ioccom.h>
 #include <sys/kernel.h>
@@ -261,6 +261,7 @@ vc_read(struct cdev *dev, struct uio *uiop, int flag)
 int
 vc_write(struct cdev *dev, struct uio *uiop, int flag)
 {
+	cap_rights_t rights;
 	struct vcomm *vcp;
 	struct vmsg *vmp;
 	struct coda_out_hdr *out;
@@ -372,8 +373,7 @@ vc_write(struct cdev *dev, struct uio *uiop, int flag)
 		struct vnode *vp = NULL;
 
 		if (tmp->oh.result == 0) {
-			error = getvnode(uiop->uio_td->td_proc->p_fd, CAP_WRITE,
-			    tmp->fd, &fp);
+			error = getvnode(uiop->uio_td, tmp->fd, cap_rights_init(&rights, CAP_WRITE), &fp);
 			if (!error) {
 				/*
 				 * XXX: Since the whole driver runs with
