@@ -105,6 +105,7 @@ MAN=	aac.4 \
 	cloudabi.4 \
 	cm.4 \
 	cmx.4 \
+	coda.4 \
 	${_coretemp.4} \
 	${_cpuctl.4} \
 	cpufreq.4 \
