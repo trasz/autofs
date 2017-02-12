@@ -53,6 +53,8 @@
  * 4.	coda_cacheprint (under DEBUG) prints names with vnode/cnode address.
  */
 
+#pragma clang optimize off
+
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 

@@ -50,6 +50,8 @@
  * These routines are the device entry points for Venus.
  */
 
+#pragma clang optimize off
+
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
