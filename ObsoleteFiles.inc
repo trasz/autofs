@@ -2892,8 +2892,6 @@ OLD_FILES+=usr/share/examples/portal/README
 OLD_FILES+=usr/share/examples/portal/portal.conf
 OLD_DIRS+=usr/share/examples/portal
 OLD_FILES+=usr/share/man/man8/mount_portalfs.8.gz
-# 20130302: CODAFS support removed
-OLD_FILES+=usr/share/man/man4/coda.4.gz
 # 20130302: XFS support removed
 OLD_FILES+=usr/share/man/man5/xfs.5.gz
 # 20130302: Capsicum overhaul
