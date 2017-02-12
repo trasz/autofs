@@ -262,7 +262,7 @@ coda_kill(struct mount *whoIam, enum dc_status dcstat)
 	 * XXXRW: Perhaps we no longer need to purge the name cache when
 	 * using the VFS name cache, as unmount will do that.
 	 */
-	cache_purgevfs(whoIam);
+	cache_purgevfs(whoIam, false);
 	for (hash = 0; hash < CODA_CACHESIZE; hash++) {
 		for (cp = coda_cache[hash];cp != NULL;
 		    cp = CNODE_NEXT(cp)) {
@@ -296,7 +296,7 @@ coda_flush(struct coda_mntinfo *mnt, enum dc_status dcstat)
 	coda_clstat.reqs[CODA_FLUSH]++;
 
 	coda_acccache_purge(mnt->mi_vfsp);
-	cache_purgevfs(mnt->mi_vfsp);
+	cache_purgevfs(mnt->mi_vfsp, false);
 	for (hash = 0; hash < CODA_CACHESIZE; hash++) {
 		for (cp = coda_cache[hash]; cp != NULL;
 		    cp = CNODE_NEXT(cp)) {
