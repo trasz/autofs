@@ -75,14 +75,8 @@ static struct cnode *coda_freelist = NULL;
 static struct cnode *coda_cache[CODA_CACHESIZE];
 
 #define	CNODE_NEXT(cp)	((cp)->c_next)
-
-#ifdef CODA_COMPAT_5
-#define	coda_hash(fid)	(((fid)->Volume + (fid)->Vnode) & (CODA_CACHESIZE-1))
-#define	IS_DIR(cnode)	(cnode.Vnode & 0x1)
-#else
 #define	coda_hash(fid)	(coda_f2i(fid) & (CODA_CACHESIZE-1))
 #define	IS_DIR(cnode)	(cnode.opaque[2] & 0x1)
-#endif
 
 /*
  * Allocate a cnode.
@@ -464,13 +458,8 @@ handleDownCall(struct coda_mntinfo *mnt, int opcode, union outputArgs *out)
 		/*
 		 * Purge any access cache entries for the uid.
 		 */
-#ifdef CODA_COMPAT_5
-	  	coda_acccache_purgeuser(mnt->mi_vfsp,
-		    out->coda_purgeuser.cred.cr_uid);
-#else
 		coda_acccache_purgeuser(mnt->mi_vfsp,
 		    out->coda_purgeuser.uid);
-#endif
 		return (0);
 	}
 
