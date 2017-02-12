@@ -41,6 +41,8 @@
  * M. Satyanarayanan.
  */
 
+#pragma clang optimize off
+
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
