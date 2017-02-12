@@ -41,10 +41,6 @@
 #ifndef _CODA_HEADER_
 #define _CODA_HEADER_
 
-#ifdef _KERNEL
-#include "opt_coda.h"	/* for CODA_COMPAT_5 option */
-#endif
-
 /* Avoid CODA_COMPAT_5 redefinition in coda5 module */
 #if defined (CODA5_MODULE) && !defined(CODA_COMPAT_5)
 #define CODA_COMPAT_5
