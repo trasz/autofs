@@ -91,6 +91,7 @@ SUBDIR=	\
 	${_cloudabi64} \
 	${_cm} \
 	${_cmx} \
+	coda \
 	${_coff} \
 	${_coretemp} \
 	${_cp} \
