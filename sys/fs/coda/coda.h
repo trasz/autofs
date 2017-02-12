@@ -41,11 +41,6 @@
 #ifndef _CODA_HEADER_
 #define _CODA_HEADER_
 
-/* Avoid CODA_COMPAT_5 redefinition in coda5 module */
-#if defined (CODA5_MODULE) && !defined(CODA_COMPAT_5)
-#define CODA_COMPAT_5
-#endif
-
 /* Catch new _KERNEL defn for NetBSD */
 #ifdef __NetBSD__
 #include <sys/types.h>
@@ -166,42 +161,6 @@ struct venus_dirent {
 
 #endif
 
-#ifdef CODA_COMPAT_5
-
-struct CodaFid {
-    u_long Volume;
-    u_long Vnode;
-    u_long Unique;      
-};
-
-static __inline__ ino_t coda_f2i(struct CodaFid *fid)
-{
-	if (!fid) return 0;
-	return (fid->Unique + (fid->Vnode<<10) + (fid->Volume<<20));
-}
-
-static __inline__ char * coda_f2s(struct CodaFid *fid)
-{
-  static char fid_str [35];
-  snprintf (fid_str, 35, "[%lx.%lx.%lx]", fid->Volume,
-	    fid->Vnode, fid->Unique);
-  return fid_str;
-}
- 
-static __inline__ int coda_fid_eq (struct CodaFid *fid1, struct CodaFid *fid2)
-{
-  return (fid1->Volume == fid2->Volume &&
-	  fid1->Vnode == fid2->Vnode &&
-	  fid1->Unique == fid2->Unique);
-}
-  
-struct coda_cred {
-    u_int32_t cr_uid, cr_euid, cr_suid, cr_fsuid; /* Real, efftve, set, fs uid*/
-    u_int32_t cr_groupid,     cr_egid, cr_sgid, cr_fsgid; /* same for groups */
-};
-
-#else	/* CODA_COMPAT_5 */
-
 struct CodaFid {
 	u_int32_t opaque[4];
 };
@@ -228,8 +187,6 @@ static __inline__ int coda_fid_eq (struct CodaFid *fid1, struct CodaFid *fid2)
 	  fid1->opaque[2] == fid2->opaque[2] &&
 	  fid1->opaque[3] == fid2->opaque[3]);
 }
-
-#endif	/* CODA_COMPAT_5 */
 
 #ifndef _VENUS_VATTR_T_
 #define _VENUS_VATTR_T_
@@ -313,33 +270,11 @@ struct coda_statfs {
                             VC_MAXDATASIZE  
 
 #define CIOC_KERNEL_VERSION _IOWR('c', 10, int)
-#if	0
-	/* don't care about kernel version number */
-#define CODA_KERNEL_VERSION 0
-	/* The old venus 4.6 compatible interface */
-#define CODA_KERNEL_VERSION 1
-#endif  /* realms/cells */
-#ifdef CODA_COMPAT_5
-	/* venus_lookup gets an extra parameter to aid windows.*/
-#define CODA_KERNEL_VERSION 2
-#else
-	/* 128-bit fids for realms */
 #define CODA_KERNEL_VERSION 3 
-#endif
 
 /*
  *        Venus <-> Coda  RPC arguments
  */
-#ifdef CODA_COMPAT_5
-struct coda_in_hdr {
-    unsigned long opcode;
-    unsigned long unique;           /* Keep multiple outstanding msgs distinct */
-    u_short pid;                    /* Common to all */
-    u_short pgid;                   /* Common to all */
-    u_short sid;                    /* Common to all */
-    struct coda_cred cred;          /* Common to all */    
-};
-#else
 struct coda_in_hdr {
     u_int32_t opcode;
     u_int32_t unique;	    /* Keep multiple outstanding msgs distinct */
@@ -347,7 +282,6 @@ struct coda_in_hdr {
     pid_t pgid;
     cuid_t uid;
 };
-#endif
 
 /* Really important that opcode and unique are 1st two fields! */
 struct coda_out_hdr {
@@ -622,11 +556,7 @@ struct coda_vget_out {
 /* CODA_PURGEUSER is a venus->kernel call */
 struct coda_purgeuser_out {
     struct coda_out_hdr oh;
-#ifdef CODA_COMPAT_5
-    struct coda_cred cred;
-#else
     cuid_t uid;
-#endif
 };
 
 /* coda_zapfile: */
@@ -647,9 +577,6 @@ struct coda_zapdir_out {
 /* CODA_ZAPVNODE is a venus->kernel call */	
 struct coda_zapvnode_out { 
     struct coda_out_hdr oh;
-#ifdef CODA_COMPAT_5
-    struct coda_cred cred;
-#endif
     struct CodaFid Fid;
 };
 
@@ -807,19 +734,11 @@ struct PioctlData {
 #define CTL_INO                 -1
 #define	CTL_FILE		"/coda/.CONTROL"
 
-#ifdef CODA_COMPAT_5
-#define CTL_FID			{ -1, -1, -1 }
-#define IS_CTL_FID(fidp)	((fidp)->Volume == -1 &&\
-				 (fidp)->Vnode == -1 &&\
-				 (fidp)->Unique == -1)
-#define INVAL_FID		{ 0, 0, 0 }
-#else
 #define	CTL_FID			{ { -1, -1, -1, -1 } }
 #define	IS_CTL_FID(fidp)	((fidp)->opaque[1] == CTL_VOL && \
 				(fidp)->opaque[2] == CTL_VNO && \
 				(fidp)->opaque[3] == CTL_UNI)
 #define	INVAL_FID		{ { 0, 0, 0, 0 } }
-#endif
 
 /* Data passed to mount */
 

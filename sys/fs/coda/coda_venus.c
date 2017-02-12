@@ -93,25 +93,6 @@ __FBSDID("$FreeBSD$");
 	((char*)inp + (int)inp->struc)[len++] = 0;			\
 	Isize += len
 
-#ifdef CODA_COMPAT_5
-#define	INIT_IN(in, op, ident, p) do {					\
-	(in)->opcode = (op);						\
-	sx_slock(&proctree_lock);					\
-	(in)->pid = p ? p->p_pid : -1;					\
-	(in)->pgid = p ? p->p_pgid : -1;				\
-	(in)->sid = (p && p->p_session && p->p_session->s_leader) ?	\
-	    (p->p_session->s_leader->p_pid) : -1;			\
-	sx_sunlock(&proctree_lock);					\
-	if (ident != NOCRED) {						\
-		(in)->cred.cr_uid = ident->cr_uid;			\
-		(in)->cred.cr_groupid = ident->cr_gid;			\
-	} else {							\
-		bzero(&((in)->cred),sizeof(struct coda_cred));		\
-		(in)->cred.cr_uid = -1;					\
-		(in)->cred.cr_groupid = -1;				\
-	}								\
-} while (0)
-#else
 #define	INIT_IN(in, op, ident, p) do {					\
 	(in)->opcode = (op);						\
 	(in)->pid = p ? p->p_pid : -1;					\
@@ -121,7 +102,6 @@ __FBSDID("$FreeBSD$");
 	else								\
 		(in)->uid = -1;						\
 } while (0)
-#endif
 
 #define	CNV_OFLAG(to, from) do { 					\
 	to = 0;								\
