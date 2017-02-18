@@ -108,33 +108,55 @@ static int coda_lockdebug = 0;
 		myprintf(("Entered %s\n", __func__));			\
 } while (0)
 
+int	coda_open_g(struct vop_open_args *ap);
+int	coda_close_g(struct vop_close_args *ap);
+int	coda_read_g(struct vop_read_args *ap);
+int	coda_write_g(struct vop_write_args *ap);
+int	coda_ioctl_g(struct vop_ioctl_args *ap);
+int	coda_getattr_g(struct vop_getattr_args *ap);
+int	coda_setattr_g(struct vop_setattr_args *ap);
+int	coda_access_g(struct vop_access_args *ap);
+int	coda_readlink_g(struct vop_readlink_args *ap);
+int	coda_fsync_g(struct vop_fsync_args *ap);
+int	coda_inactive_g(struct vop_inactive_args *ap);
+int	coda_lookup_g(struct vop_cachedlookup_args *ap);
+int	coda_create_g(struct vop_create_args *ap);
+int	coda_remove_g(struct vop_remove_args *ap);
+int	coda_link_g(struct vop_link_args *ap);
+int	coda_rename_g(struct vop_rename_args *ap);
+int	coda_mkdir_g(struct vop_mkdir_args *ap);
+int	coda_rmdir_g(struct vop_rmdir_args *ap);
+int	coda_symlink_g(struct vop_symlink_args *ap);
+int	coda_readdir_g(struct vop_readdir_args *ap);
+int	coda_reclaim_g(struct vop_reclaim_args *ap);
+
 /*
  * Definition of the vnode operation vector.
  */
 struct vop_vector coda_vnodeops = {
 	.vop_default = &default_vnodeops,
-	.vop_cachedlookup = coda_lookup,	/* uncached lookup */
+	.vop_cachedlookup = coda_lookup_g,	/* uncached lookup */
 	.vop_lookup = vfs_cache_lookup,		/* namecache lookup */
-	.vop_create = coda_create,		/* create */
-	.vop_open = coda_open,			/* open */
-	.vop_close = coda_close,		/* close */
-	.vop_access = coda_access,		/* access */
-	.vop_getattr = coda_getattr,		/* getattr */
-	.vop_setattr = coda_setattr,		/* setattr */
-	.vop_read = coda_read,			/* read */
-	.vop_write = coda_write,		/* write */
-	.vop_ioctl = coda_ioctl,		/* ioctl */
-	.vop_fsync = coda_fsync,		/* fsync */
-	.vop_remove = coda_remove,		/* remove */
-	.vop_link = coda_link,			/* link */
-	.vop_rename = coda_rename,		/* rename */
-	.vop_mkdir = coda_mkdir,		/* mkdir */
-	.vop_rmdir = coda_rmdir,		/* rmdir */
-	.vop_symlink = coda_symlink,		/* symlink */
-	.vop_readdir = coda_readdir,		/* readdir */
-	.vop_readlink = coda_readlink,		/* readlink */
-	.vop_inactive = coda_inactive,		/* inactive */
-	.vop_reclaim = coda_reclaim,		/* reclaim */
+	.vop_create = coda_create_g,		/* create */
+	.vop_open = coda_open_g,		/* open */
+	.vop_close = coda_close_g,		/* close */
+	.vop_access = coda_access_g,		/* access */
+	.vop_getattr = coda_getattr_g,		/* getattr */
+	.vop_setattr = coda_setattr_g,		/* setattr */
+	.vop_read = coda_read_g,		/* read */
+	.vop_write = coda_write_g,		/* write */
+	.vop_ioctl = coda_ioctl_g,		/* ioctl */
+	.vop_fsync = coda_fsync_g,		/* fsync */
+	.vop_remove = coda_remove_g,		/* remove */
+	.vop_link = coda_link_g,		/* link */
+	.vop_rename = coda_rename_g,		/* rename */
+	.vop_mkdir = coda_mkdir_g,		/* mkdir */
+	.vop_rmdir = coda_rmdir_g,		/* rmdir */
+	.vop_symlink = coda_symlink_g,		/* symlink */
+	.vop_readdir = coda_readdir_g,		/* readdir */
+	.vop_readlink = coda_readlink_g,	/* readlink */
+	.vop_inactive = coda_inactive_g,	/* inactive */
+	.vop_reclaim = coda_reclaim_g,		/* reclaim */
 	.vop_lock1 = coda_lock,			/* lock */
 	.vop_unlock = coda_unlock,		/* unlock */
 	.vop_bmap = VOP_EOPNOTSUPP,		/* bmap */
@@ -251,6 +273,17 @@ coda_open(struct vop_open_args *ap)
 	return (0);
 }
 
+int
+coda_open_g(struct vop_open_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_open(ap);
+	mtx_unlock(&Giant);
+	return (error);
+}
+
 /*
  * Close the cache file used for I/O and notify Venus.
  */
@@ -303,6 +336,17 @@ coda_close(struct vop_close_args *ap)
 }
 
 int
+coda_close_g(struct vop_close_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_close(ap);
+	mtx_unlock(&Giant);
+	return (error);
+}
+
+int
 coda_read(struct vop_read_args *ap)
 {
 
@@ -312,12 +356,34 @@ coda_read(struct vop_read_args *ap)
 }
 
 int
+coda_read_g(struct vop_read_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_read(ap);
+	mtx_unlock(&Giant);
+	return (error);
+}
+
+int
 coda_write(struct vop_write_args *ap)
 {
 
 	ENTRY;
 	return (coda_rdwr(ap->a_vp, ap->a_uio, UIO_WRITE, ap->a_ioflag,
 	    ap->a_cred, ap->a_uio->uio_td));
+}
+
+int
+coda_write_g(struct vop_write_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_write(ap);
+	mtx_unlock(&Giant);
+	return (error);
 }
 
 int
@@ -490,6 +556,17 @@ coda_ioctl(struct vop_ioctl_args *ap)
 	return (error);
 }
 
+int
+coda_ioctl_g(struct vop_ioctl_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_ioctl(ap);
+	mtx_unlock(&Giant);
+	return (error);
+}
+
 /*
  * To reduce the cost of a user-level venus;we cache attributes in the
  * kernel.  Each cnode has storage allocated for an attribute.  If c_vattr is
@@ -563,6 +640,17 @@ coda_getattr(struct vop_getattr_args *ap)
 }
 
 int
+coda_getattr_g(struct vop_getattr_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_getattr(ap);
+	mtx_unlock(&Giant);
+	return (error);
+}
+
+int
 coda_setattr(struct vop_setattr_args *ap)
 {
 	/* true args */
@@ -601,6 +689,17 @@ coda_setattr(struct vop_setattr_args *ap)
 	if (size != VNOVAL && convp != NULL)
 		vnode_pager_setsize(convp, size);
 	CODADEBUG(CODA_SETATTR,	myprintf(("setattr %d\n", error)););
+	return (error);
+}
+
+int
+coda_setattr_g(struct vop_setattr_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_setattr(ap);
+	mtx_unlock(&Giant);
 	return (error);
 }
 
@@ -670,6 +769,17 @@ coda_access(struct vop_access_args *ap)
 }
 
 int
+coda_access_g(struct vop_access_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_access(ap);
+	mtx_unlock(&Giant);
+	return (error);
+}
+
+int
 coda_readlink(struct vop_readlink_args *ap)
 {
 	/* true args */
@@ -718,6 +828,17 @@ coda_readlink(struct vop_readlink_args *ap)
 	}
 	CODADEBUG(CODA_READLINK, myprintf(("in readlink result %d\n",
 	    error)););
+	return (error);
+}
+
+int
+coda_readlink_g(struct vop_readlink_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_readlink(ap);
+	mtx_unlock(&Giant);
 	return (error);
 }
 
@@ -792,6 +913,17 @@ coda_fsync(struct vop_fsync_args *ap)
 }
 
 int
+coda_fsync_g(struct vop_fsync_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_fsync(ap);
+	mtx_unlock(&Giant);
+	return (error);
+}
+
+int
 coda_inactive(struct vop_inactive_args *ap)
 {
 	/*
@@ -846,6 +978,17 @@ coda_inactive(struct vop_inactive_args *ap)
 		vgone(vp);
 	MARK_INT_SAT(CODA_INACTIVE_STATS);
 	return (0);
+}
+
+int
+coda_inactive_g(struct vop_inactive_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_inactive(ap);
+	mtx_unlock(&Giant);
+	return (error);
 }
 
 /*
@@ -993,6 +1136,17 @@ exit:
 	return (error);
 }
 
+int
+coda_lookup_g(struct vop_cachedlookup_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_lookup(ap);
+	mtx_unlock(&Giant);
+	return (error);
+}
+
 /*ARGSUSED*/
 int
 coda_create(struct vop_create_args *ap)
@@ -1088,6 +1242,17 @@ coda_create(struct vop_create_args *ap)
 }
 
 int
+coda_create_g(struct vop_create_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_create(ap);
+	mtx_unlock(&Giant);
+	return (error);
+}
+
+int
 coda_remove(struct vop_remove_args *ap)
 {
 	/* true args */
@@ -1129,6 +1294,17 @@ coda_remove(struct vop_remove_args *ap)
 	    td->td_proc);
 	cache_purge(vp);
 	CODADEBUG(CODA_REMOVE, myprintf(("in remove result %d\n",error)););
+	return (error);
+}
+
+int
+coda_remove_g(struct vop_remove_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_remove(ap);
+	mtx_unlock(&Giant);
 	return (error);
 }
 
@@ -1177,6 +1353,17 @@ coda_link(struct vop_link_args *ap)
 	VTOC(tdvp)->c_flags &= ~C_VATTR;
 	VTOC(vp)->c_flags &= ~C_VATTR;
 	CODADEBUG(CODA_LINK, myprintf(("in link result %d\n",error)););
+	return (error);
+}
+
+int
+coda_link_g(struct vop_link_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_link(ap);
+	mtx_unlock(&Giant);
 	return (error);
 }
 
@@ -1266,6 +1453,17 @@ exit:
 }
 
 int
+coda_rename_g(struct vop_rename_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_rename(ap);
+	mtx_unlock(&Giant);
+	return (error);
+}
+
+int
 coda_mkdir(struct vop_mkdir_args *ap)
 {
 	/* true args */
@@ -1337,6 +1535,17 @@ coda_mkdir(struct vop_mkdir_args *ap)
 }
 
 int
+coda_mkdir_g(struct vop_mkdir_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_mkdir(ap);
+	mtx_unlock(&Giant);
+	return (error);
+}
+
+int
 coda_rmdir(struct vop_rmdir_args *ap)
 {
 	/* true args */
@@ -1379,6 +1588,17 @@ coda_rmdir(struct vop_rmdir_args *ap)
 	error = venus_rmdir(vtomi(dvp), &dcp->c_fid, nm, len, cred,
 	    td->td_proc);
 	CODADEBUG(CODA_RMDIR, myprintf(("in rmdir result %d\n", error)););
+	return (error);
+}
+
+int
+coda_rmdir_g(struct vop_rmdir_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_rmdir(ap);
+	mtx_unlock(&Giant);
 	return (error);
 }
 
@@ -1446,6 +1666,17 @@ coda_symlink(struct vop_symlink_args *ap)
 		error = VOP_LOOKUP(tdvp, vpp, cnp);
 exit:
 	CODADEBUG(CODA_SYMLINK, myprintf(("in symlink result %d\n",error)););
+	return (error);
+}
+
+int
+coda_symlink_g(struct vop_symlink_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_symlink(ap);
+	mtx_unlock(&Giant);
 	return (error);
 }
 
@@ -1529,6 +1760,17 @@ coda_readdir(struct vop_readdir_args *ap)
 }
 
 int
+coda_readdir_g(struct vop_readdir_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_readdir(ap);
+	mtx_unlock(&Giant);
+	return (error);
+}
+
+int
 coda_reclaim(struct vop_reclaim_args *ap)
 {
 	/* true args */
@@ -1557,6 +1799,17 @@ coda_reclaim(struct vop_reclaim_args *ap)
 	vp->v_data = NULL;
 	vp->v_object = NULL;
 	return (0);
+}
+
+int
+coda_reclaim_g(struct vop_reclaim_args *ap)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_reclaim(ap);
+	mtx_unlock(&Giant);
+	return (error);
 }
 
 int
