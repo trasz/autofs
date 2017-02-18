@@ -345,6 +345,17 @@ coda_root(struct mount *vfsp, int flags, struct vnode **vpp)
 	return (error);
 }
 
+static int
+coda_root_g(struct mount *vfsp, int flags, struct vnode **vpp)
+{
+	int error;
+
+	mtx_lock(&Giant);
+	error = coda_root(vfsp, flags, vpp);
+	mtx_unlock(&Giant);
+	return (error);
+}
+
 /*
  * Get filesystem statistics.
  */
@@ -440,7 +451,7 @@ coda_fhtovp(struct mount *vfsp, struct fid *fhp, struct mbuf *nam,
 
 struct vfsops coda_vfsops = {
 	.vfs_mount =		coda_mount,
-	.vfs_root = 		coda_root,
+	.vfs_root = 		coda_root_g,
 	.vfs_statfs =		coda_statfs,
 	.vfs_sync = 		coda_sync,
 	.vfs_unmount =		coda_unmount,
