@@ -205,6 +205,11 @@ vc_close(struct cdev *dev, int flag, int mode, struct thread *td)
 		    outstanding_upcalls);
 #endif
 	}
+	/*
+	 * XXX: This is a workaround for "negative mnt_ref" panic that would
+	 * 	happen otherwise.
+	 */
+	MNT_REF(mi->mi_vfsp);
 	err = dounmount(mi->mi_vfsp, flag, td);
 	if (err)
 		myprintf(("Error %d unmounting vfs in vcclose(%s)\n", err,
