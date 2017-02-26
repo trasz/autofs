@@ -294,10 +294,8 @@ coda_flush(struct coda_mntinfo *mnt, enum dc_status dcstat)
 	/*
 	 * venus(8) does this at startup, to "ping" the kernel side.
 	 */
-	if (mnt->mi_vfsp == NULL) {
-		myprintf(("%s: NULL vfsp", __func__));
+	if (mnt->mi_vfsp == NULL)
 		return;
-	}
 
 	coda_acccache_purge(mnt->mi_vfsp);
 	cache_purgevfs(mnt->mi_vfsp, false);
