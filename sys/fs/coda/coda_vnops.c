@@ -1694,9 +1694,6 @@ coda_readdir(struct vop_readdir_args *ap)
 	struct cnode *cp = VTOC(vp);
 	struct uio *uiop = ap->a_uio;
 	struct ucred *cred = ap->a_cred;
-	int *eofflag = ap->a_eofflag;
-	u_long **cookies = ap->a_cookies;
-	int *ncookies = ap->a_ncookies;
 	struct thread *td = ap->a_uio->uio_td;
 	/* upcall decl */
 	/* locals */
@@ -1741,8 +1738,7 @@ coda_readdir(struct vop_readdir_args *ap)
 	CODADEBUG(CODA_READDIR, myprintf(("indirect readdir: fid = %s, "
 	    "refcnt = %d\n", coda_f2s(&cp->c_fid), vp->v_usecount)););
 	vn_lock(cp->c_ovp, LK_SHARED | LK_RETRY);
-	error = VOP_READDIR(cp->c_ovp, uiop, cred, eofflag, ncookies,
-	    cookies);
+	error = VOP_READ(cp->c_ovp, uiop, 0, cred);
 	VOP_UNLOCK(cp->c_ovp, 0);
 	if (error)
 		MARK_INT_FAIL(CODA_READDIR_STATS);
