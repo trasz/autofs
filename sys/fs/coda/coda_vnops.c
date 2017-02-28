@@ -208,21 +208,21 @@ coda_open(struct vop_open_args *ap)
 	 * passed the EXCL, it must be a bug.  We strip the flag here.
 	 */
 	/* true args */
-	struct vnode **vpp = &(ap->a_vp);
-	struct cnode *cp = VTOC(*vpp);
+	struct vnode *vp = ap->a_vp;
+	struct cnode *cp = VTOC(vp);
 	int flag = ap->a_mode & (~O_EXCL);
 	struct ucred *cred = ap->a_cred;
 	struct thread *td = ap->a_td;
 	/* locals */
 	int error;
-	struct vnode *vp;
+	struct vnode *newvp;
 
 	MARK_ENTRY(CODA_OPEN_STATS);
 
 	/*
 	 * Check for open of control file.
 	 */
-	if (IS_CTL_VP(*vpp)) {
+	if (IS_CTL_VP(vp)) {
 		/* XXX */
 		/* if (WRITEABLE(flag)) */
 		if (flag & (FWRITE | O_TRUNC | O_CREAT | O_EXCL)) {
@@ -232,20 +232,20 @@ coda_open(struct vop_open_args *ap)
 		MARK_INT_SAT(CODA_OPEN_STATS);
 		return (0);
 	}
-	error = venus_open(vtomi((*vpp)), &cp->c_fid, flag, cred,
-	    td->td_proc, &vp);
+	error = venus_open(vtomi(vp), &cp->c_fid, flag, cred,
+	    td->td_proc, &newvp);
 	if (error)
 		return (error);
-	CODADEBUG(CODA_OPEN, myprintf(("open: vp %p result %d\n", vp,
+	CODADEBUG(CODA_OPEN, myprintf(("open: vp %p result %d\n", newvp,
 	    error)););
 
 	/*
 	 * Save the vnode pointer for the cache file.
 	 */
 	if (cp->c_ovp == NULL) {
-		cp->c_ovp = vp;
+		cp->c_ovp = newvp;
 	} else {
-		if (cp->c_ovp != vp)
+		if (cp->c_ovp != newvp)
 			panic("coda_open: cp->c_ovp != ITOV(ip)");
 	}
 	cp->c_ocount++;
@@ -261,15 +261,15 @@ coda_open(struct vop_open_args *ap)
 	/*
 	 * Open the cache file.
 	 */
-	vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
-	error = VOP_OPEN(vp, flag, cred, td, NULL);
+	vn_lock(newvp, LK_EXCLUSIVE | LK_RETRY);
+	error = VOP_OPEN(newvp, flag, cred, td, NULL);
 	if (error) {
-		VOP_UNLOCK(vp, 0);
+		VOP_UNLOCK(newvp, 0);
     		printf("coda_open: VOP_OPEN on container failed %d\n", error);
 		return (error);
 	}
-	(*vpp)->v_object = vp->v_object;
-	VOP_UNLOCK(vp, 0);
+	vp->v_object = newvp->v_object;
+	VOP_UNLOCK(newvp, 0);
 	return (0);
 }
 
