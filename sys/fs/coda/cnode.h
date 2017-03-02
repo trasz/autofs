@@ -91,6 +91,9 @@ extern int coda_vfsop_print_entry;
 	printf args ;							\
 } while (0)
 
+#define	CODA_LOCK()	mtx_lock(&Giant)
+#define	CODA_UNLOCK()	mtx_unlock(&Giant)
+
 struct cnode {
 	struct vnode	*c_vnode;
 	u_short		 c_flags;	/* flags (see below) */

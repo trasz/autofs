@@ -350,9 +350,9 @@ coda_root_g(struct mount *vfsp, int flags, struct vnode **vpp)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_root(vfsp, flags, vpp);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
