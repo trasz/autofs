@@ -1960,6 +1960,11 @@ make_coda_node(struct CodaFid *fid, struct mount *vfsp, short type)
 	err = getnewvnode("coda", vfsp, &coda_vnodeops, &vp);
 	if (err)
 		panic("coda: getnewvnode returned error %d\n", err);
+
+	err = vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
+	if (err)
+		panic("coda: vn_lock returned error %d\n", err);
+
 	vp->v_data = cp;
 	vp->v_type = type;
 	cp->c_vnode = vp;
@@ -1967,6 +1972,7 @@ make_coda_node(struct CodaFid *fid, struct mount *vfsp, short type)
 	err = insmntque(vp, vfsp);
 	if (err != 0)
 		printf("coda: insmntque failed: error %d", err);
+	VOP_UNLOCK(vp, 0);
 	return (cp);
 }
 
