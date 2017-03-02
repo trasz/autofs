@@ -54,7 +54,7 @@ __FBSDID("$FreeBSD$");
 
 static struct cdevsw codadevsw = {
 	.d_version =	D_VERSION,
-	.d_flags =	D_NEEDGIANT,
+	.d_flags =	0,
 	.d_open =	vc_open,
 	.d_close =	vc_close,
 	.d_read =	vc_read,
