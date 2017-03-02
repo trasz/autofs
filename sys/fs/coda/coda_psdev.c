@@ -113,8 +113,8 @@ struct vmsg {
 #define	VM_WRITE	2
 #define	VM_INTR		4		/* Unused. */
 
-int
-vc_open(struct cdev *dev, int flag, int mode, struct thread *td)
+static int
+vc_open_locked(struct cdev *dev, int flag, int mode, struct thread *td)
 {
 	struct vcomm *vcp;
 	struct coda_mntinfo *mnt;
@@ -135,7 +135,18 @@ vc_open(struct cdev *dev, int flag, int mode, struct thread *td)
 }
 
 int
-vc_close(struct cdev *dev, int flag, int mode, struct thread *td)
+vc_open(struct cdev *dev, int flag, int mode, struct thread *td)
+{
+	int error;
+
+	CODA_LOCK();
+	error = vc_open_locked(dev, flag, mode, td);
+	CODA_UNLOCK();
+	return (error);
+}
+
+static int
+vc_close_locked(struct cdev *dev, int flag, int mode, struct thread *td)
 {
 	struct vcomm *vcp;
 	struct vmsg *vmp, *nvmp = NULL;
@@ -218,7 +229,18 @@ vc_close(struct cdev *dev, int flag, int mode, struct thread *td)
 }
 
 int
-vc_read(struct cdev *dev, struct uio *uiop, int flag)
+vc_close(struct cdev *dev, int flag, int mode, struct thread *td)
+{
+	int error;
+
+	CODA_LOCK();
+	error = vc_close_locked(dev, flag, mode, td);
+	CODA_UNLOCK();
+	return (error);
+}
+
+static int
+vc_read_locked(struct cdev *dev, struct uio *uiop, int flag)
 {
 	struct vcomm *vcp;
 	struct vmsg *vmp;
@@ -266,7 +288,18 @@ vc_read(struct cdev *dev, struct uio *uiop, int flag)
 }
 
 int
-vc_write(struct cdev *dev, struct uio *uiop, int flag)
+vc_read(struct cdev *dev, struct uio *uiop, int flag)
+{
+	int error;
+
+	CODA_LOCK();
+	error = vc_read_locked(dev, uiop, flag);
+	CODA_UNLOCK();
+	return (error);
+}
+
+static int
+vc_write_locked(struct cdev *dev, struct uio *uiop, int flag)
 {
 	cap_rights_t rights;
 	struct vcomm *vcp;
@@ -401,7 +434,19 @@ vc_write(struct cdev *dev, struct uio *uiop, int flag)
 }
 
 int
-vc_ioctl(struct cdev *dev, u_long cmd, caddr_t addr, int flag,
+vc_write(struct cdev *dev, struct uio *uiop, int flag)
+{
+
+	int error;
+
+	CODA_LOCK();
+	error = vc_write_locked(dev, uiop, flag);
+	CODA_UNLOCK();
+	return (error);
+}
+
+static int
+vc_ioctl_locked(struct cdev *dev, u_long cmd, caddr_t addr, int flag,
     struct thread *t)
 {
 
@@ -439,7 +484,19 @@ vc_ioctl(struct cdev *dev, u_long cmd, caddr_t addr, int flag,
 }
 
 int
-vc_poll(struct cdev *dev, int events, struct thread *td)
+vc_ioctl(struct cdev *dev, u_long cmd, caddr_t addr, int flag,
+    struct thread *t)
+{
+	int error;
+
+	CODA_LOCK();
+	error = vc_ioctl_locked(dev, cmd, addr, flag, t);
+	CODA_UNLOCK();
+	return (error);
+}
+
+static int
+vc_poll_locked(struct cdev *dev, int events, struct thread *td)
 {
 	struct vcomm *vcp;
 	int event_msk = 0;
@@ -453,6 +510,17 @@ vc_poll(struct cdev *dev, int events, struct thread *td)
 		return (events & (POLLIN|POLLRDNORM));
 	selrecord(td, &(vcp->vc_selproc));
 	return (0);
+}
+
+int
+vc_poll(struct cdev *dev, int events, struct thread *td)
+{
+	int error;
+
+	CODA_LOCK();
+	error = vc_poll_locked(dev, events, td);
+	CODA_UNLOCK();
+	return (error);
 }
 
 /*
