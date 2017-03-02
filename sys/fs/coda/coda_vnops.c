@@ -278,9 +278,9 @@ coda_open_g(struct vop_open_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_open(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -340,9 +340,9 @@ coda_close_g(struct vop_close_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_close(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -360,9 +360,9 @@ coda_read_g(struct vop_read_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_read(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -380,9 +380,9 @@ coda_write_g(struct vop_write_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_write(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -561,9 +561,9 @@ coda_ioctl_g(struct vop_ioctl_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_ioctl(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -644,9 +644,9 @@ coda_getattr_g(struct vop_getattr_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_getattr(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -697,9 +697,9 @@ coda_setattr_g(struct vop_setattr_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_setattr(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -773,9 +773,9 @@ coda_access_g(struct vop_access_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_access(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -836,9 +836,9 @@ coda_readlink_g(struct vop_readlink_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_readlink(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -917,9 +917,9 @@ coda_fsync_g(struct vop_fsync_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_fsync(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -985,9 +985,9 @@ coda_inactive_g(struct vop_inactive_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_inactive(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -1141,9 +1141,9 @@ coda_lookup_g(struct vop_cachedlookup_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_lookup(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -1246,9 +1246,9 @@ coda_create_g(struct vop_create_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_create(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -1302,9 +1302,9 @@ coda_remove_g(struct vop_remove_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_remove(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -1361,9 +1361,9 @@ coda_link_g(struct vop_link_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_link(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -1457,9 +1457,9 @@ coda_rename_g(struct vop_rename_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_rename(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -1539,9 +1539,9 @@ coda_mkdir_g(struct vop_mkdir_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_mkdir(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -1596,9 +1596,9 @@ coda_rmdir_g(struct vop_rmdir_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_rmdir(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -1674,9 +1674,9 @@ coda_symlink_g(struct vop_symlink_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_symlink(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -1760,9 +1760,9 @@ coda_readdir_g(struct vop_readdir_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_readdir(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -1802,9 +1802,9 @@ coda_reclaim_g(struct vop_reclaim_args *ap)
 {
 	int error;
 
-	mtx_lock(&Giant);
+	CODA_LOCK();
 	error = coda_reclaim(ap);
-	mtx_unlock(&Giant);
+	CODA_UNLOCK();
 	return (error);
 }
 
