@@ -524,11 +524,6 @@ vc_poll(struct cdev *dev, int events, struct thread *td)
 }
 
 /*
- * Statistics.
- */
-struct coda_clstat coda_clstat;
-
-/*
  * Key question: whether to sleep interuptably or uninteruptably when waiting
  * for Venus.  The former seems better (cause you can ^C a job), but then
  * GNU-EMACS completion breaks.  Use tsleep with no timeout, and no longjmp
@@ -556,8 +551,6 @@ coda_call(struct coda_mntinfo *mntinfo, int inSize, int *outSize,
 	if (mntinfo == NULL)
 		return ENODEV;
 	vcp = &(mntinfo->mi_vcomm);
-	coda_clstat.ncalls++;
-	coda_clstat.reqs[((struct coda_in_hdr *)buffer)->opcode]++;
 	if (!VC_OPEN(vcp))
 		return (ENODEV);
 	CODA_ALLOC(vmp,struct vmsg *,sizeof(struct vmsg));
