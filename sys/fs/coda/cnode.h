@@ -189,7 +189,6 @@ extern int coda_kernel_version;
 int	handleDownCall(struct coda_mntinfo *mnt, int opcode,
 	    union outputArgs *out);
 void	coda_unmounting(struct mount *whoIam);
-int	coda_vmflush(struct cnode *cp);
 
 /* cfs_vnodeops.h */
 struct cnode	*make_coda_node(struct CodaFid *fid, struct mount *vfsp,

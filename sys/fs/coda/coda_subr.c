@@ -244,8 +244,6 @@ coda_kill(struct mount *whoIam, enum dc_status dcstat)
 void
 coda_flush(struct coda_mntinfo *mnt, enum dc_status dcstat)
 {
-	int hash;
-	struct cnode *cp;
 
 	/*
 	 * venus(8) does this at startup, to "ping" the kernel side.
@@ -255,20 +253,6 @@ coda_flush(struct coda_mntinfo *mnt, enum dc_status dcstat)
 
 	coda_acccache_purge(mnt->mi_vfsp);
 	cache_purgevfs(mnt->mi_vfsp, false);
-	for (hash = 0; hash < CODA_CACHESIZE; hash++) {
-		for (cp = coda_cache[hash]; cp != NULL;
-		    cp = CNODE_NEXT(cp)) {
-			/*
-			 * Only files that can be executed need to be flushed
-			 * from the VM.
-			 *
-			 * NOTE: Currently this doesn't do anything, but
-			 * perhaps it should?
-			 */
-			if (!IS_DIR(cp->c_fid))
-				coda_vmflush(cp);
-		}
-	}
 }
 
 /*
@@ -399,7 +383,6 @@ coda_cacheprint(struct mount *whoIam)
 int
 handleDownCall(struct coda_mntinfo *mnt, int opcode, union outputArgs *out)
 {
-	int error;
 
 	/*
 	 * Handle invalidate requests.
@@ -427,24 +410,21 @@ handleDownCall(struct coda_mntinfo *mnt, int opcode, union outputArgs *out)
 	case CODA_ZAPFILE: {
 		struct cnode *cp;
 
-		error = 0;
 		cp = coda_find(&out->coda_zapfile.Fid);
 		if (cp != NULL) {
 			vref(CTOV(cp));
 			cache_purge(CTOV(cp));
 			cp->c_flags &= ~(C_VATTR | C_ACCCACHE);
 			ASSERT_VOP_LOCKED(CTOV(cp), "coda HandleDownCall");
-			if (VOP_IS_TEXT(CTOV(cp)))
-				error = coda_vmflush(cp);
 			CODADEBUG(CODA_ZAPFILE,
-			myprintf(("zapfile: fid = %s, refcnt = %d, error = "
-			    "%d\n", coda_f2s(&cp->c_fid),
-			    CTOV(cp)->v_usecount - 1, error)););
+			myprintf(("zapfile: fid = %s, refcnt = %d\n",
+			    coda_f2s(&cp->c_fid),
+			    CTOV(cp)->v_usecount - 1)););
 			if (vrefcnt(CTOV(cp)) == 1)
 				cp->c_flags |= C_PURGING;
 			vrele(CTOV(cp));
 		}
-		return (error);
+		return (0);
       }
 
       case CODA_ZAPDIR: {
@@ -468,25 +448,21 @@ handleDownCall(struct coda_mntinfo *mnt, int opcode, union outputArgs *out)
       case CODA_PURGEFID: {
 		struct cnode *cp;
 
-		error = 0;
 		cp = coda_find(&out->coda_purgefid.Fid);
 		if (cp != NULL) {
 			vref(CTOV(cp));
 			cache_purge(CTOV(cp));
 			cp->c_flags &= ~(C_VATTR | C_ACCCACHE);
 			ASSERT_VOP_LOCKED(CTOV(cp), "coda HandleDownCall");
-			if (!(IS_DIR(out->coda_purgefid.Fid))
-			    && VOP_IS_TEXT(CTOV(cp)))
-				error = coda_vmflush(cp);
 			CODADEBUG(CODA_PURGEFID, myprintf(("purgefid: fid "
-			    "= %s, refcnt = %d, error = %d\n",
+			    "= %s, refcnt = %d\n",
 			    coda_f2s(&cp->c_fid),
-			    CTOV(cp)->v_usecount - 1, error)););
+			    CTOV(cp)->v_usecount - 1)););
 			if (vrefcnt(CTOV(cp)) == 1)
 				cp->c_flags |= C_PURGING;
 			vrele(CTOV(cp));
 		}
-		return (error);
+		return (0);
 	}
 
 	case CODA_REPLACE: {
@@ -517,13 +493,6 @@ handleDownCall(struct coda_mntinfo *mnt, int opcode, union outputArgs *out)
 		myprintf(("handleDownCall: unknown opcode %d\n", opcode));
 		return (EINVAL);
 	}
-}
-
-int
-coda_vmflush(struct cnode *cp)
-{
-
-	return (0);
 }
 
 /*
