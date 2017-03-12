@@ -62,7 +62,6 @@ __FBSDID("$FreeBSD$");
 #include <fs/coda/coda_vfsops.h>
 #include <fs/coda/coda_venus.h>
 #include <fs/coda/coda_subr.h>
-#include <fs/coda/coda_opstats.h>
 
 MALLOC_DEFINE(M_CODA, "coda", "Various Coda Structures");
 
@@ -74,31 +73,6 @@ int coda_vfsop_print_entry = 0;
 } while (0)
 
 struct vnode *coda_ctlvp;
-
-/*
- * Structure to keep statistics of internally generated/satisfied calls.
- */
-static struct coda_op_stats coda_vfsopstats[CODA_VFSOPS_SIZE];
-
-#define	MARK_ENTRY(op)		(coda_vfsopstats[op].entries++)
-#define	MARK_INT_SAT(op)	(coda_vfsopstats[op].sat_intrn++)
-#define	MARK_INT_FAIL(op)	(coda_vfsopstats[op].unsat_intrn++)
-#define	MARK_INT_GEN(op)	(coda_vfsopstats[op].gen_intrn++)
-
-int
-coda_vfsopstats_init(void)
-{
-	int i;
-
-	for (i=0; i<CODA_VFSOPS_SIZE;i++) {
-		coda_vfsopstats[i].opcode = i;
-		coda_vfsopstats[i].entries = 0;
-		coda_vfsopstats[i].sat_intrn = 0;
-		coda_vfsopstats[i].unsat_intrn = 0;
-		coda_vfsopstats[i].gen_intrn = 0;
-	}
-	return (0);
-}
 
 static const char *coda_opts[] = { "from", NULL };
 /*
@@ -127,13 +101,8 @@ coda_mount(struct mount *vfsp)
 	from = vfs_getopts(vfsp->mnt_optnew, "from", &error);
 	if (error)
 		return (error);
-	coda_vfsopstats_init();
-	coda_vnodeopstats_init();
-	MARK_ENTRY(CODA_MOUNT_STATS);
-	if (CODA_MOUNTED(vfsp)) {
-		MARK_INT_FAIL(CODA_MOUNT_STATS);
+	if (CODA_MOUNTED(vfsp))
 		return (EBUSY);
-	}
 
 	/*
 	 * Validate mount device.  Similar to getmdev().
@@ -141,12 +110,9 @@ coda_mount(struct mount *vfsp)
 	NDINIT(&ndp, LOOKUP, FOLLOW, UIO_SYSSPACE, from, curthread);
 	error = namei(&ndp);
 	dvp = ndp.ni_vp;
-	if (error) {
-		MARK_INT_FAIL(CODA_MOUNT_STATS);
+	if (error)
 		return (error);
-	}
 	if (dvp->v_type != VCHR) {
-		MARK_INT_FAIL(CODA_MOUNT_STATS);
 		vrele(dvp);
 		NDFREE(&ndp, NDF_ONLY_PNBUF);
 		return (ENXIO);
@@ -160,14 +126,11 @@ coda_mount(struct mount *vfsp)
 	 */
 	mi = dev2coda_mntinfo(dev);
 	if (!mi) {
-		MARK_INT_FAIL(CODA_MOUNT_STATS);
 		printf("Coda mount: %s is not a cfs device\n", from);
 		return (ENXIO);
 	}
-	if (!VC_OPEN(&mi->mi_vcomm)) {
-		MARK_INT_FAIL(CODA_MOUNT_STATS);
+	if (!VC_OPEN(&mi->mi_vcomm))
 		return (ENODEV);
-	}
 
 	/*
 	 * No initialization (here) of mi_vcomm!
@@ -200,10 +163,6 @@ coda_mount(struct mount *vfsp)
 	 * changes...
 	 */
 	CODADEBUG(1, myprintf(("coda_mount returned %d\n", error)););
-	if (error)
-		MARK_INT_FAIL(CODA_MOUNT_STATS);
-	else
-		MARK_INT_SAT(CODA_MOUNT_STATS);
 	return (error);
 }
 
@@ -214,11 +173,8 @@ coda_unmount(struct mount *vfsp, int mntflags)
 	int active, error = 0;
 
 	ENTRY;
-	MARK_ENTRY(CODA_UMOUNT_STATS);
-	if (!CODA_MOUNTED(vfsp)) {
-		MARK_INT_FAIL(CODA_UMOUNT_STATS);
+	if (!CODA_MOUNTED(vfsp))
 		return (EINVAL);
-	}
 	if (mi->mi_vfsp == vfsp) {
 		/*
 		 * We found the victim.
@@ -251,10 +207,6 @@ coda_unmount(struct mount *vfsp, int mntflags)
 		 */
 		mi->mi_vfsp = NULL;
 
-		if (error)
-			MARK_INT_FAIL(CODA_UMOUNT_STATS);
-		else
-			MARK_INT_SAT(CODA_UMOUNT_STATS);
 		return (error);
 	}
 	return (EINVAL);
@@ -276,7 +228,6 @@ coda_root(struct mount *vfsp, int flags, struct vnode **vpp)
 	td = curthread;
 	p = td->td_proc;
 	ENTRY;
-	MARK_ENTRY(CODA_ROOT_STATS);
 	if (vfsp == mi->mi_vfsp) {
 		/*
 		 * Cache the root across calls.  We only need to pass the
@@ -303,7 +254,6 @@ coda_root(struct mount *vfsp, int flags, struct vnode **vpp)
 			 */
 			vref(*vpp);
 			vn_lock(*vpp, LK_EXCLUSIVE | LK_RETRY);
-			MARK_INT_SAT(CODA_ROOT_STATS);
 			return (0);
 		}
 	}
@@ -320,7 +270,6 @@ coda_root(struct mount *vfsp, int flags, struct vnode **vpp)
 		*vpp = mi->mi_rootvp;
 		vref(*vpp);
 		vn_lock(*vpp, LK_EXCLUSIVE | LK_RETRY);
-		MARK_INT_SAT(CODA_ROOT_STATS);
 	} else if (error == ENODEV || error == EINTR) {
 		/*
 		 * Gross hack here!
@@ -335,12 +284,10 @@ coda_root(struct mount *vfsp, int flags, struct vnode **vpp)
 		*vpp = mi->mi_rootvp;
 		vref(*vpp);
 		vn_lock(*vpp, LK_EXCLUSIVE | LK_RETRY);
-		MARK_INT_FAIL(CODA_ROOT_STATS);
 		error = 0;
 	} else {
 		CODADEBUG(CODA_ROOT, myprintf(("error %d in CODA_ROOT\n",
 		    error)););
-		MARK_INT_FAIL(CODA_ROOT_STATS);
 	}
 	return (error);
 }
@@ -364,11 +311,8 @@ coda_statfs(struct mount *vfsp, struct statfs *sbp)
 {
 
 	ENTRY;
-	MARK_ENTRY(CODA_STATFS_STATS);
-	if (!CODA_MOUNTED(vfsp)) {
-		MARK_INT_FAIL(CODA_STATFS_STATS);
+	if (!CODA_MOUNTED(vfsp))
 		return (EINVAL);
-	}
 
 	/*
 	 * XXX - what to do about f_flags, others? --bnoble
@@ -384,7 +328,6 @@ coda_statfs(struct mount *vfsp, struct statfs *sbp)
 	sbp->f_bavail = CODA_SFS_SIZ;
 	sbp->f_files = CODA_SFS_SIZ;
 	sbp->f_ffree = CODA_SFS_SIZ;
-	MARK_INT_SAT(CODA_STATFS_STATS);
 	return (0);
 }
 
@@ -396,8 +339,6 @@ coda_sync(struct mount *vfsp, int waitfor)
 {
 
 	ENTRY;
-	MARK_ENTRY(CODA_SYNC_STATS);
-	MARK_INT_SAT(CODA_SYNC_STATS);
 	return (0);
 }
 
@@ -424,7 +365,6 @@ coda_fhtovp(struct mount *vfsp, struct fid *fhp, struct mbuf *nam,
 	int vtype;
 
 	ENTRY;
-	MARK_ENTRY(CODA_VGET_STATS);
 
 	/*
 	 * Check for vget of control object.
@@ -432,7 +372,6 @@ coda_fhtovp(struct mount *vfsp, struct fid *fhp, struct mbuf *nam,
 	if (IS_CTL_FID(&cfid->cfid_fid)) {
 		*vpp = coda_ctlvp;
 		vref(coda_ctlvp);
-		MARK_INT_SAT(CODA_VGET_STATS);
 		return (0);
 	}
 	error = venus_fhtovp(vftomi(vfsp), &cfid->cfid_fid, td->td_ucred, p,
