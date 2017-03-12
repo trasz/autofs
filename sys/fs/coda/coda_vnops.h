@@ -79,6 +79,5 @@ vop_pathconf_t	coda_pathconf;
 
 int	coda_rdwr(struct vnode *vp, struct uio *uiop, enum uio_rw rw,
 	    int ioflag, struct ucred *cred, struct thread *td);
-void	coda_print_cred(struct ucred *cred);
 
 #endif /* !_CODA_VNOPS_H_ */
