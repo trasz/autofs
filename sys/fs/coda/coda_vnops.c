@@ -1792,20 +1792,6 @@ coda_print_vattr(struct vattr *attr)
 }
 
 /*
- * How to print a ucred.
- */
-void
-coda_print_cred(struct ucred *cred)
-{
-	int i;
-
-	myprintf(("ref %d\tuid %d\n",cred->cr_ref,cred->cr_uid));
-	for (i=0; i < cred->cr_ngroups; i++)
-		myprintf(("\tgroup %d: (%d)\n",i,cred->cr_groups[i]));
-	myprintf(("\n"));
-}
-
-/*
  * Return a vnode for the given fid.  If no cnode exists for this fid create
  * one and put it in a table hashed by coda_f2i().  If the cnode for this fid
  * is already in the table return it (ref count is incremented by coda_find.
