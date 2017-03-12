@@ -137,13 +137,6 @@ struct vcomm {
 #define	MARK_VC_CLOSED(vcp)	(vcp)->vc_open = 0
 #define	MARK_VC_OPEN(vcp)	(vcp)->vc_open = 1
 
-struct coda_clstat {
-	int	ncalls;			/* client requests */
-	int	nbadcalls;		/* upcall failures */
-	int	reqs[CODA_NCALLS];	/* count of each request */
-};
-extern struct coda_clstat coda_clstat;
-
 /*
  * CODA structure to hold mount/filesystem information.
  */
