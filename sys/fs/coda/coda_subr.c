@@ -415,7 +415,6 @@ handleDownCall(struct coda_mntinfo *mnt, int opcode, union outputArgs *out)
 			vref(CTOV(cp));
 			cache_purge(CTOV(cp));
 			cp->c_flags &= ~(C_VATTR | C_ACCCACHE);
-			ASSERT_VOP_LOCKED(CTOV(cp), "coda HandleDownCall");
 			CODADEBUG(CODA_ZAPFILE,
 			myprintf(("zapfile: fid = %s, refcnt = %d\n",
 			    coda_f2s(&cp->c_fid),
@@ -453,7 +452,6 @@ handleDownCall(struct coda_mntinfo *mnt, int opcode, union outputArgs *out)
 			vref(CTOV(cp));
 			cache_purge(CTOV(cp));
 			cp->c_flags &= ~(C_VATTR | C_ACCCACHE);
-			ASSERT_VOP_LOCKED(CTOV(cp), "coda HandleDownCall");
 			CODADEBUG(CODA_PURGEFID, myprintf(("purgefid: fid "
 			    "= %s, refcnt = %d\n",
 			    coda_f2s(&cp->c_fid),
