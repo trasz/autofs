@@ -70,53 +70,12 @@ __FBSDID("$FreeBSD$");
 #include <fs/coda/coda_subr.h>
 
 static int coda_active = 0;
-static int coda_reuse = 0;
-static int coda_new = 0;
 
-static struct cnode *coda_freelist = NULL;
 static struct cnode *coda_cache[CODA_CACHESIZE];
 
 #define	CNODE_NEXT(cp)	((cp)->c_next)
 #define	coda_hash(fid)	(coda_f2i(fid) & (CODA_CACHESIZE-1))
 #define	IS_DIR(cnode)	(cnode.opaque[2] & 0x1)
-
-/*
- * Allocate a cnode.
- */
-struct cnode *
-coda_alloc(void)
-{
-	struct cnode *cp;
-
-	if (coda_freelist != NULL) {
-		cp = coda_freelist;
-		coda_freelist = CNODE_NEXT(cp);
-		coda_reuse++;
-	} else {
-		CODA_ALLOC(cp, struct cnode *, sizeof(struct cnode));
-
-		/*
-		 * FreeBSD vnodes don't have any Pager info in them ('cause
-		 * there are no external pagers, duh!).
-		 */
-#define	VNODE_VM_INFO_INIT(vp)         /* MT */
-		VNODE_VM_INFO_INIT(CTOV(cp));
-		coda_new++;
-	}
-	bzero(cp, sizeof (struct cnode));
-	return (cp);
-}
-
-/*
- * Deallocate a cnode.
- */
-void
-coda_free(struct cnode *cp)
-{
-
-	CNODE_NEXT(cp) = coda_freelist;
-	coda_freelist = cp;
-}
 
 /*
  * Put a cnode in the hash table.
