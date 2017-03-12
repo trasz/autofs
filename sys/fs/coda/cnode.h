@@ -194,7 +194,6 @@ int	coda_vmflush(struct cnode *cp);
 /* cfs_vnodeops.h */
 struct cnode	*make_coda_node(struct CodaFid *fid, struct mount *vfsp,
 		 short type);
-int		 coda_vnodeopstats_init(void);
 
 /* sigh */
 #define	CODA_RDWR	((u_long) 31)

@@ -47,7 +47,6 @@ struct cfid {
 
 struct mbuf;
 struct mount;
-int	coda_vfsopstats_init(void);
 int	coda_fhtovp(struct mount *, struct fid *, struct mbuf *,
 	    struct vnode **, int *, struct ucred **);
 
