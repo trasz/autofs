@@ -59,6 +59,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/mutex.h>
 #include <sys/namei.h>
 #include <sys/proc.h>
+#include <sys/sysctl.h>
 #include <sys/uio.h>
 #include <sys/unistd.h>
 
@@ -80,6 +81,22 @@ __FBSDID("$FreeBSD$");
 static int coda_attr_cache = 1;		/* Set to cache attributes. */
 static int coda_symlink_cache = 1;	/* Set to cache symbolic links. */
 static int coda_access_cache = 1;	/* Set to cache some access checks. */
+
+SYSCTL_NODE(_vfs, OID_AUTO, coda, CTLFLAG_RD, 0, "CODA filesystem");
+SYSCTL_INT(_vfs_coda, OID_AUTO, attr_cache, CTLFLAG_RWTUN,
+    &coda_attr_cache, 1, "Enable attribute cache");
+SYSCTL_INT(_vfs_coda, OID_AUTO, symlink_cache, CTLFLAG_RWTUN,
+    &coda_symlink_cache, 1, "Enable symlink cache");
+SYSCTL_INT(_vfs_coda, OID_AUTO, access_cache, CTLFLAG_RWTUN,
+    &coda_access_cache, 1, "Enable access cache");
+SYSCTL_INT(_vfs_coda, OID_AUTO, debug, CTLFLAG_RWTUN,
+    &codadebug, 1, "Enable debugging");
+SYSCTL_INT(_vfs_coda, OID_AUTO, psdev_print_entry, CTLFLAG_RWTUN,
+    &coda_psdev_print_entry, 1, "Enable debugging psdev operations");
+SYSCTL_INT(_vfs_coda, OID_AUTO, vnop_print_entry, CTLFLAG_RWTUN,
+    &coda_vnop_print_entry, 1, "Enable debugging vnode operations");
+SYSCTL_INT(_vfs_coda, OID_AUTO, vfsop_print_entry, CTLFLAG_RWTUN,
+    &coda_vfsop_print_entry, 1, "Enable debugging VFS operations");
 
 /*
  * What we are delaying for in printf.
