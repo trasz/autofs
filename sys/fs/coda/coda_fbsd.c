@@ -44,6 +44,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/ucred.h>
 #include <sys/vnode.h>
 
+#include <vm/uma.h>
 #include <vm/vm.h>
 #include <vm/vnode_pager.h>
 
@@ -68,6 +69,8 @@ static eventhandler_tag clonetag;
 
 static LIST_HEAD(, coda_mntinfo) coda_mnttbl;
 
+uma_zone_t coda_cnode_zone;
+
 /*
  * For DEVFS, using bpf & tun drivers as examples.
  *
@@ -88,6 +91,9 @@ codadev_modevent(module_t mod, int type, void *data)
 		LIST_INIT(&coda_mnttbl);
 		clonetag = EVENTHANDLER_REGISTER(dev_clone, coda_fbsd_clone,
 		    0, 1000);
+		coda_cnode_zone = uma_zcreate("coda_cnode",
+		    sizeof(struct cnode), NULL, NULL, NULL, NULL,
+		    UMA_ALIGN_PTR, 0);
 		break;
 
 	case MOD_UNLOAD:
@@ -103,6 +109,7 @@ codadev_modevent(module_t mod, int type, void *data)
 			destroy_dev(mnt->dev);
 			free(mnt, M_CODA);
 		}
+		uma_zdestroy(coda_cnode_zone);
 		break;
 
 	default:

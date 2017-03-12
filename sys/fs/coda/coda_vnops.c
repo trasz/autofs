@@ -62,6 +62,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/uio.h>
 #include <sys/unistd.h>
 
+#include <vm/uma.h>
 #include <vm/vm.h>
 #include <vm/vm_object.h>
 #include <vm/vm_extern.h>
@@ -86,6 +87,8 @@ static int coda_access_cache = 1;	/* Set to cache some access checks. */
 int coda_printf_delay = 0;	/* In microseconds */
 int coda_vnop_print_entry = 0;
 static int coda_lockdebug = 0;
+
+extern uma_zone_t coda_cnode_zone;
 
 /*
  * Some FreeBSD details:
@@ -1668,7 +1671,7 @@ coda_reclaim(struct vop_reclaim_args *ap)
 #endif
 	}
 	cache_purge(vp);
-	coda_free(VTOC(vp));
+	uma_zfree(coda_cnode_zone, cp);
 	vp->v_data = NULL;
 	vp->v_object = NULL;
 	return (0);
@@ -1818,7 +1821,7 @@ make_coda_node(struct CodaFid *fid, struct mount *vfsp, short type)
 		vref(CTOV(cp));
 		return (cp);
 	}
-	cp = coda_alloc();
+	cp = uma_zalloc(coda_cnode_zone, M_WAITOK | M_ZERO);
 	cp->c_fid = *fid;
 	err = getnewvnode("coda", vfsp, &coda_vnodeops, &vp);
 	if (err)
