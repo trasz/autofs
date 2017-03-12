@@ -69,13 +69,13 @@ __FBSDID("$FreeBSD$");
 #include <fs/coda/cnode.h>
 #include <fs/coda/coda_subr.h>
 
+
 static int coda_active = 0;
 
 static struct cnode *coda_cache[CODA_CACHESIZE];
 
 #define	CNODE_NEXT(cp)	((cp)->c_next)
 #define	coda_hash(fid)	(coda_f2i(fid) & (CODA_CACHESIZE-1))
-#define	IS_DIR(cnode)	(cnode.opaque[2] & 0x1)
 
 /*
  * Put a cnode in the hash table.
@@ -494,46 +494,3 @@ handleDownCall(struct coda_mntinfo *mnt, int opcode, union outputArgs *out)
 		return (EINVAL);
 	}
 }
-
-/*
- * Kernel-internal debugging switches.
- */
-void
-coda_debugon(void)
-{
-
-	codadebug = -1;
-	coda_vnop_print_entry = 1;
-	coda_psdev_print_entry = 1;
-	coda_vfsop_print_entry = 1;
-}
-
-void
-coda_debugoff(void)
-{
-
-	codadebug = 0;
-	coda_vnop_print_entry = 0;
-	coda_psdev_print_entry = 0;
-	coda_vfsop_print_entry = 0;
-}
-
-/*-
- * Utilities used by both client and server
- * Standard levels:
- * 0) no debugging
- * 1) hard failures
- * 2) soft failures
- * 3) current test software
- * 4) main procedure entry points
- * 5) main procedure exit points
- * 6) utility procedure entry points
- * 7) utility procedure exit points
- * 8) obscure procedure entry points
- * 9) obscure procedure exit points
- * 10) random stuff
- * 11) all <= 1
- * 12) all <= 2
- * 13) all <= 3
- * ...
- */
