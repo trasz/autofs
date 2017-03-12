@@ -288,9 +288,6 @@ coda_flush(struct coda_mntinfo *mnt, enum dc_status dcstat)
 	int hash;
 	struct cnode *cp;
 
-	coda_clstat.ncalls++;
-	coda_clstat.reqs[CODA_FLUSH]++;
-
 	/*
 	 * venus(8) does this at startup, to "ping" the kernel side.
 	 */
@@ -458,9 +455,6 @@ handleDownCall(struct coda_mntinfo *mnt, int opcode, union outputArgs *out)
 	}
 
 	case CODA_PURGEUSER: {
-		coda_clstat.ncalls++;
-		coda_clstat.reqs[CODA_PURGEUSER]++;
-
 		/* XXX - need to prevent fsync's. */
 
 		/*
@@ -475,8 +469,6 @@ handleDownCall(struct coda_mntinfo *mnt, int opcode, union outputArgs *out)
 		struct cnode *cp;
 
 		error = 0;
-		coda_clstat.ncalls++;
-		coda_clstat.reqs[CODA_ZAPFILE]++;
 		cp = coda_find(&out->coda_zapfile.Fid);
 		if (cp != NULL) {
 			vref(CTOV(cp));
@@ -499,8 +491,6 @@ handleDownCall(struct coda_mntinfo *mnt, int opcode, union outputArgs *out)
       case CODA_ZAPDIR: {
 		struct cnode *cp;
 
-		coda_clstat.ncalls++;
-		coda_clstat.reqs[CODA_ZAPDIR]++;
 		cp = coda_find(&out->coda_zapdir.Fid);
 		if (cp != NULL) {
 			vref(CTOV(cp));
@@ -520,8 +510,6 @@ handleDownCall(struct coda_mntinfo *mnt, int opcode, union outputArgs *out)
 		struct cnode *cp;
 
 		error = 0;
-		coda_clstat.ncalls++;
-		coda_clstat.reqs[CODA_PURGEFID]++;
 		cp = coda_find(&out->coda_purgefid.Fid);
 		if (cp != NULL) {
 			vref(CTOV(cp));
@@ -545,8 +533,6 @@ handleDownCall(struct coda_mntinfo *mnt, int opcode, union outputArgs *out)
 	case CODA_REPLACE: {
 		struct cnode *cp = NULL;
 
-		coda_clstat.ncalls++;
-		coda_clstat.reqs[CODA_REPLACE]++;
 		cp = coda_find(&out->coda_replace.OldFid);
 		if (cp != NULL) {
 			/*
