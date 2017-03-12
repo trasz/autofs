@@ -33,8 +33,6 @@
 #ifndef _CODA_SUBR_H_
 #define	_CODA_SUBR_H_
 
-struct cnode	*coda_alloc(void);
-void		 coda_free(struct cnode *cp);
 struct cnode	*coda_find(struct CodaFid *fid);
 void		 coda_flush(struct coda_mntinfo *mnt, enum dc_status dcstat);
 void		 coda_testflush(void);
