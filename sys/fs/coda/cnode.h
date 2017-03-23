@@ -49,6 +49,7 @@
 
 #include <sys/vnode.h>
 #include <sys/lock.h>
+#include <sys/sx.h>
 
 MALLOC_DECLARE(M_CODA);
 
@@ -91,8 +92,11 @@ extern int coda_vfsop_print_entry;
 	printf args ;							\
 } while (0)
 
-#define	CODA_LOCK()	mtx_lock(&Giant)
-#define	CODA_UNLOCK()	mtx_unlock(&Giant)
+extern struct sx	coda_sx;
+
+#define	CODA_LOCK()		sx_xlock(&coda_sx)
+#define	CODA_UNLOCK()		sx_xunlock(&coda_sx)
+#define	CODA_LOCK_ASSERT()	sx_assert(&coda_sx, SA_XLOCKED)
 
 struct cnode {
 	struct vnode	*c_vnode;

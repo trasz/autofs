@@ -124,13 +124,17 @@ coda_mount(struct mount *vfsp)
 	/*
 	 * Initialize the mount record and link it to the vfs struct.
 	 */
+	CODA_LOCK();
 	mi = dev2coda_mntinfo(dev);
 	if (!mi) {
+		CODA_UNLOCK();
 		printf("Coda mount: %s is not a cfs device\n", from);
 		return (ENXIO);
 	}
-	if (!VC_OPEN(&mi->mi_vcomm))
+	if (!VC_OPEN(&mi->mi_vcomm)) {
+		CODA_UNLOCK();
 		return (ENODEV);
+	}
 
 	/*
 	 * No initialization (here) of mi_vcomm!
@@ -157,6 +161,7 @@ coda_mount(struct mount *vfsp)
 	mi->mi_vfsp = vfsp;
 	mi->mi_rootvp = rootvp;
 	vfs_mountedfrom(vfsp, from);
+	CODA_UNLOCK();
 
 	/*
 	 * Error is currently guaranteed to be zero, but in case some code
@@ -189,7 +194,9 @@ coda_unmount(struct mount *vfsp, int mntflags)
 		mi->mi_rootvp = NULL;
 		vrele(coda_ctlvp);
 		coda_ctlvp = NULL;
+		CODA_LOCK();
 		active = coda_kill(vfsp, NOT_DOWNCALL);
+		CODA_UNLOCK();
 		error = vflush(mi->mi_vfsp, 0, FORCECLOSE, curthread);
 #ifdef CODA_VERBOSE
 		printf("coda_unmount: active = %d, vflush active %d\n",
@@ -228,6 +235,7 @@ coda_root(struct mount *vfsp, int flags, struct vnode **vpp)
 	td = curthread;
 	p = td->td_proc;
 	ENTRY;
+	CODA_LOCK();
 	if (vfsp == mi->mi_vfsp) {
 		/*
 		 * Cache the root across calls.  We only need to pass the
@@ -247,6 +255,7 @@ coda_root(struct mount *vfsp, int flags, struct vnode **vpp)
 			 */
 			*vpp = mi->mi_rootvp;
 			mi->mi_started = 1;
+			CODA_UNLOCK();
 
 			/*
 			 * On Mach, this is vref.  On FreeBSD, vref +
@@ -289,16 +298,6 @@ coda_root(struct mount *vfsp, int flags, struct vnode **vpp)
 		CODADEBUG(CODA_ROOT, myprintf(("error %d in CODA_ROOT\n",
 		    error)););
 	}
-	return (error);
-}
-
-static int
-coda_root_g(struct mount *vfsp, int flags, struct vnode **vpp)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_root(vfsp, flags, vpp);
 	CODA_UNLOCK();
 	return (error);
 }
@@ -390,7 +389,7 @@ coda_fhtovp(struct mount *vfsp, struct fid *fhp, struct mbuf *nam,
 
 struct vfsops coda_vfsops = {
 	.vfs_mount =		coda_mount,
-	.vfs_root = 		coda_root_g,
+	.vfs_root = 		coda_root,
 	.vfs_statfs =		coda_statfs,
 	.vfs_sync = 		coda_sync,
 	.vfs_unmount =		coda_unmount,
