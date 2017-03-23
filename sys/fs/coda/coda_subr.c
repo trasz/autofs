@@ -84,6 +84,8 @@ void
 coda_save(struct cnode *cp)
 {
 
+	CODA_LOCK_ASSERT();
+
 	CNODE_NEXT(cp) = coda_cache[coda_hash(&cp->c_fid)];
 	coda_cache[coda_hash(&cp->c_fid)] = cp;
 }
@@ -96,6 +98,8 @@ coda_unsave(struct cnode *cp)
 {
 	struct cnode *ptr;
 	struct cnode *ptrprev = NULL;
+
+	CODA_LOCK_ASSERT();
 
 	ptr = coda_cache[coda_hash(&cp->c_fid)];
 	while (ptr != NULL) {
@@ -123,6 +127,8 @@ coda_find(struct CodaFid *fid)
 {
 	struct cnode *cp;
 
+	CODA_LOCK_ASSERT();
+
 	cp = coda_cache[coda_hash(fid)];
 	while (cp) {
 		if (coda_fid_eq(&(cp->c_fid), fid) && (!IS_UNMOUNTING(cp))) {
@@ -142,6 +148,8 @@ coda_acccache_purge(struct mount *mnt)
 {
 	struct cnode *cp;
 	int hash;
+
+	CODA_LOCK_ASSERT();
 
 	for (hash = 0; hash < CODA_CACHESIZE; hash++) {
 		for (cp = coda_cache[hash]; cp != NULL;
@@ -169,6 +177,8 @@ coda_acccache_purgeuser(struct mount *mnt, uid_t uid)
 {
 	struct cnode *cp;
 	int hash;
+
+	CODA_LOCK_ASSERT();
 
 	for (hash = 0; hash < CODA_CACHESIZE; hash++) {
 		for (cp = coda_cache[hash]; cp != NULL;
@@ -202,6 +212,8 @@ coda_kill(struct mount *whoIam, enum dc_status dcstat)
 {
 	int hash, count = 0;
 	struct cnode *cp;
+
+	CODA_LOCK_ASSERT();
 
 	/*-
 	 * Algorithm is as follows:
@@ -245,6 +257,8 @@ void
 coda_flush(struct coda_mntinfo *mnt, enum dc_status dcstat)
 {
 
+	CODA_LOCK_ASSERT();
+
 	/*
 	 * venus(8) does this at startup, to "ping" the kernel side.
 	 */
@@ -265,6 +279,8 @@ coda_testflush(void)
 	int hash;
 	struct cnode *cp;
 
+	CODA_LOCK_ASSERT();
+
 	for (hash = 0; hash < CODA_CACHESIZE; hash++) {
 		for (cp = coda_cache[hash]; cp != NULL;
 		    cp = CNODE_NEXT(cp))
@@ -282,6 +298,8 @@ coda_unmounting(struct mount *whoIam)
 {
 	int hash;
 	struct cnode *cp;
+
+	CODA_LOCK_ASSERT();
 
 	for (hash = 0; hash < CODA_CACHESIZE; hash++) {
 		for (cp = coda_cache[hash]; cp != NULL;
@@ -325,6 +343,8 @@ coda_cacheprint(struct mount *whoIam)
 	int hash;
 	struct cnode *cp;
 	int count = 0;
+
+	CODA_LOCK_ASSERT();
 
 	printf("coda_cacheprint: coda_ctlvp %p, cp %p", coda_ctlvp,
 	    VTOC(coda_ctlvp));
@@ -383,6 +403,8 @@ coda_cacheprint(struct mount *whoIam)
 int
 handleDownCall(struct coda_mntinfo *mnt, int opcode, union outputArgs *out)
 {
+
+	CODA_LOCK_ASSERT();
 
 	/*
 	 * Handle invalidate requests.

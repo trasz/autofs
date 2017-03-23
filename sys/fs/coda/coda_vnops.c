@@ -117,55 +117,33 @@ extern uma_zone_t coda_cnode_zone;
 		myprintf(("Entered %s\n", __func__));			\
 } while (0)
 
-int	coda_open_g(struct vop_open_args *ap);
-int	coda_close_g(struct vop_close_args *ap);
-int	coda_read_g(struct vop_read_args *ap);
-int	coda_write_g(struct vop_write_args *ap);
-int	coda_ioctl_g(struct vop_ioctl_args *ap);
-int	coda_getattr_g(struct vop_getattr_args *ap);
-int	coda_setattr_g(struct vop_setattr_args *ap);
-int	coda_access_g(struct vop_access_args *ap);
-int	coda_readlink_g(struct vop_readlink_args *ap);
-int	coda_fsync_g(struct vop_fsync_args *ap);
-int	coda_inactive_g(struct vop_inactive_args *ap);
-int	coda_lookup_g(struct vop_cachedlookup_args *ap);
-int	coda_create_g(struct vop_create_args *ap);
-int	coda_remove_g(struct vop_remove_args *ap);
-int	coda_link_g(struct vop_link_args *ap);
-int	coda_rename_g(struct vop_rename_args *ap);
-int	coda_mkdir_g(struct vop_mkdir_args *ap);
-int	coda_rmdir_g(struct vop_rmdir_args *ap);
-int	coda_symlink_g(struct vop_symlink_args *ap);
-int	coda_readdir_g(struct vop_readdir_args *ap);
-int	coda_reclaim_g(struct vop_reclaim_args *ap);
-
 /*
  * Definition of the vnode operation vector.
  */
 struct vop_vector coda_vnodeops = {
 	.vop_default = &default_vnodeops,
-	.vop_cachedlookup = coda_lookup_g,	/* uncached lookup */
+	.vop_cachedlookup = coda_lookup,	/* uncached lookup */
 	.vop_lookup = vfs_cache_lookup,		/* namecache lookup */
-	.vop_create = coda_create_g,		/* create */
-	.vop_open = coda_open_g,		/* open */
-	.vop_close = coda_close_g,		/* close */
-	.vop_access = coda_access_g,		/* access */
-	.vop_getattr = coda_getattr_g,		/* getattr */
-	.vop_setattr = coda_setattr_g,		/* setattr */
-	.vop_read = coda_read_g,		/* read */
-	.vop_write = coda_write_g,		/* write */
-	.vop_ioctl = coda_ioctl_g,		/* ioctl */
-	.vop_fsync = coda_fsync_g,		/* fsync */
-	.vop_remove = coda_remove_g,		/* remove */
-	.vop_link = coda_link_g,		/* link */
-	.vop_rename = coda_rename_g,		/* rename */
-	.vop_mkdir = coda_mkdir_g,		/* mkdir */
-	.vop_rmdir = coda_rmdir_g,		/* rmdir */
-	.vop_symlink = coda_symlink_g,		/* symlink */
-	.vop_readdir = coda_readdir_g,		/* readdir */
-	.vop_readlink = coda_readlink_g,	/* readlink */
-	.vop_inactive = coda_inactive_g,	/* inactive */
-	.vop_reclaim = coda_reclaim_g,		/* reclaim */
+	.vop_create = coda_create,		/* create */
+	.vop_open = coda_open,			/* open */
+	.vop_close = coda_close,		/* close */
+	.vop_access = coda_access,		/* access */
+	.vop_getattr = coda_getattr,		/* getattr */
+	.vop_setattr = coda_setattr,		/* setattr */
+	.vop_read = coda_read,			/* read */
+	.vop_write = coda_write,		/* write */
+	.vop_ioctl = coda_ioctl,		/* ioctl */
+	.vop_fsync = coda_fsync,		/* fsync */
+	.vop_remove = coda_remove,		/* remove */
+	.vop_link = coda_link,			/* link */
+	.vop_rename = coda_rename,		/* rename */
+	.vop_mkdir = coda_mkdir,		/* mkdir */
+	.vop_rmdir = coda_rmdir,		/* rmdir */
+	.vop_symlink = coda_symlink,		/* symlink */
+	.vop_readdir = coda_readdir,		/* readdir */
+	.vop_readlink = coda_readlink,		/* readlink */
+	.vop_inactive = coda_inactive,		/* inactive */
+	.vop_reclaim = coda_reclaim,		/* reclaim */
 	.vop_lock1 = coda_lock,			/* lock */
 	.vop_unlock = coda_unlock,		/* unlock */
 	.vop_bmap = VOP_EOPNOTSUPP,		/* bmap */
@@ -221,10 +199,13 @@ coda_open(struct vop_open_args *ap)
 			return (EACCES);
 		return (0);
 	}
+	CODA_LOCK();
 	error = venus_open(vtomi(vp), &cp->c_fid, flag, cred,
 	    td->td_proc, &newvp);
-	if (error)
+	if (error != 0) {
+		CODA_UNLOCK();
 		return (error);
+	}
 	CODADEBUG(CODA_OPEN, myprintf(("open: vp %p result %d\n", newvp,
 	    error)););
 
@@ -246,6 +227,7 @@ coda_open(struct vop_open_args *ap)
 		cp->c_owrite++;
 		cp->c_flags &= ~C_VATTR;
 	}
+	CODA_UNLOCK();
 
 	/*
 	 * Open the cache file.
@@ -260,17 +242,6 @@ coda_open(struct vop_open_args *ap)
 	vp->v_object = newvp->v_object;
 	VOP_UNLOCK(newvp, 0);
 	return (0);
-}
-
-int
-coda_open_g(struct vop_open_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_open(ap);
-	CODA_UNLOCK();
-	return (error);
 }
 
 /*
@@ -303,6 +274,7 @@ coda_close(struct vop_close_args *ap)
 	else
 		printf("coda_close: NO container vp %p/cp %p\n", vp, cp);
 #endif
+	CODA_LOCK();
 	if (--cp->c_ocount == 0)
 		cp->c_ovp = NULL;
 
@@ -317,16 +289,6 @@ coda_close(struct vop_close_args *ap)
 	else
 		error = ENODEV;
 	CODADEBUG(CODA_CLOSE, myprintf(("close: result %d\n",error)););
-	return (error);
-}
-
-int
-coda_close_g(struct vop_close_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_close(ap);
 	CODA_UNLOCK();
 	return (error);
 }
@@ -341,34 +303,12 @@ coda_read(struct vop_read_args *ap)
 }
 
 int
-coda_read_g(struct vop_read_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_read(ap);
-	CODA_UNLOCK();
-	return (error);
-}
-
-int
 coda_write(struct vop_write_args *ap)
 {
 
 	ENTRY;
 	return (coda_rdwr(ap->a_vp, ap->a_uio, UIO_WRITE, ap->a_ioflag,
 	    ap->a_cred, ap->a_uio->uio_td));
-}
-
-int
-coda_write_g(struct vop_write_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_write(ap);
-	CODA_UNLOCK();
-	return (error);
 }
 
 int
@@ -379,7 +319,7 @@ coda_rdwr(struct vnode *vp, struct uio *uiop, enum uio_rw rw, int ioflag,
 	/* NOTE: container file operation!!! */
 	/* locals */
 	struct cnode *cp = VTOC(vp);
-	struct vnode *cfvp = cp->c_ovp;
+	struct vnode *cfvp;
 	int opened_internally = 0;
 	int error = 0;
 
@@ -397,6 +337,8 @@ coda_rdwr(struct vnode *vp, struct uio *uiop, enum uio_rw rw, int ioflag,
 	 * If file is not already open this must be a page {read,write}
 	 * request and we should open it internally.
 	 */
+	CODA_LOCK();
+	cfvp = cp->c_ovp;
 	if (cfvp == NULL) {
 		opened_internally = 1;
 		error = VOP_OPEN(vp, (rw == UIO_READ ? FREAD : FWRITE), cred,
@@ -450,6 +392,7 @@ coda_rdwr(struct vnode *vp, struct uio *uiop, enum uio_rw rw, int ioflag,
 	 */
 	if (rw == UIO_WRITE)
 		cp->c_flags &= ~C_VATTR;
+	CODA_UNLOCK();
 	return (error);
 }
 
@@ -516,21 +459,12 @@ coda_ioctl(struct vop_ioctl_args *ap)
 		NDFREE(&ndp, 0);
 		return (EINVAL);
 	}
+	CODA_LOCK();
 	error = venus_ioctl(vtomi(tvp), &((VTOC(tvp))->c_fid), com, flag,
 	    data, cred, td->td_proc);
+	CODA_UNLOCK();
 	vrele(tvp);
 	NDFREE(&ndp, NDF_ONLY_PNBUF);
-	return (error);
-}
-
-int
-coda_ioctl_g(struct vop_ioctl_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_ioctl(ap);
-	CODA_UNLOCK();
 	return (error);
 }
 
@@ -567,12 +501,14 @@ coda_getattr(struct vop_getattr_args *ap)
 	/*
 	 * Check to see if the attributes have already been cached.
 	 */
+	CODA_LOCK();
 	if (VALID_VATTR(cp)) {
 		CODADEBUG(CODA_GETATTR, myprintf(("attr cache hit: %s\n",
 		    coda_f2s(&cp->c_fid))););
 		CODADEBUG(CODA_GETATTR, if (!(codadebug & ~CODA_GETATTR))
 		    coda_print_vattr(&cp->c_vattr););
 		*vap = cp->c_vattr;
+		CODA_UNLOCK();
 		return (0);
 	}
     	error = venus_getattr(vtomi(vp), &cp->c_fid, cred, vap);
@@ -599,16 +535,6 @@ coda_getattr(struct vop_getattr_args *ap)
 			cp->c_flags |= C_VATTR;
 		}
 	}
-	return (error);
-}
-
-int
-coda_getattr_g(struct vop_getattr_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_getattr(ap);
 	CODA_UNLOCK();
 	return (error);
 }
@@ -630,6 +556,7 @@ coda_setattr(struct vop_setattr_args *ap)
 	 */
 	if (IS_CTL_VP(vp))
 		return (ENOENT);
+	CODA_LOCK();
 	if (codadebug & CODADBGMSK(CODA_SETATTR))
 		coda_print_vattr(vap);
 	error = venus_setattr(vtomi(vp), &cp->c_fid, vap, cred);
@@ -648,16 +575,6 @@ coda_setattr(struct vop_setattr_args *ap)
 	if (size != VNOVAL && convp != NULL)
 		vnode_pager_setsize(convp, size);
 	CODADEBUG(CODA_SETATTR,	myprintf(("setattr %d\n", error)););
-	return (error);
-}
-
-int
-coda_setattr_g(struct vop_setattr_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_setattr(ap);
 	CODA_UNLOCK();
 	return (error);
 }
@@ -692,9 +609,11 @@ coda_access(struct vop_access_args *ap)
 	 * than one uid, but we don't yet.  Venus is responsible for
 	 * invalidating this cache as required.
 	 */
+	CODA_LOCK();
 	if (coda_access_cache && VALID_ACCCACHE(cp) &&
 	    (cred->cr_uid == cp->c_cached_uid) &&
 	    (accmode & cp->c_cached_mode) == accmode) {
+		CODA_UNLOCK();
 		return (0);
 	}
 	error = venus_access(vtomi(vp), &cp->c_fid, accmode, cred, td->td_proc);
@@ -720,16 +639,6 @@ coda_access(struct vop_access_args *ap)
 		} else
 			cp->c_cached_mode |= accmode;
 	}
-	return (error);
-}
-
-int
-coda_access_g(struct vop_access_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_access(ap);
 	CODA_UNLOCK();
 	return (error);
 }
@@ -753,12 +662,14 @@ coda_readlink(struct vop_readlink_args *ap)
 	 */
 	if (IS_CTL_VP(vp))
 		return (ENOENT);
+	CODA_LOCK();
 	if ((coda_symlink_cache) && (VALID_SYMLINK(cp))) {
 		/*
 		 * Symlink was cached.
 		 */
 		uiop->uio_rw = UIO_READ;
 		error = uiomove(cp->c_symlink, (int)cp->c_symlen, uiop);
+		CODA_UNLOCK();
 		return (error);
 	}
 	error = venus_readlink(vtomi(vp), &cp->c_fid, cred, td != NULL ?
@@ -775,16 +686,6 @@ coda_readlink(struct vop_readlink_args *ap)
 	}
 	CODADEBUG(CODA_READLINK, myprintf(("in readlink result %d\n",
 	    error)););
-	return (error);
-}
-
-int
-coda_readlink_g(struct vop_readlink_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_readlink(ap);
 	CODA_UNLOCK();
 	return (error);
 }
@@ -856,17 +757,6 @@ coda_fsync(struct vop_fsync_args *ap)
 }
 
 int
-coda_fsync_g(struct vop_fsync_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_fsync(ap);
-	CODA_UNLOCK();
-	return (error);
-}
-
-int
 coda_inactive(struct vop_inactive_args *ap)
 {
 	/*
@@ -888,6 +778,8 @@ coda_inactive(struct vop_inactive_args *ap)
 	    coda_f2s(&cp->c_fid), vp->v_mount)););
 	vp->v_object = NULL;
 
+	CODA_LOCK();
+
 	/*
 	 * If an array has been allocated to hold the symlink, deallocate it.
 	 */
@@ -908,6 +800,7 @@ coda_inactive(struct vop_inactive_args *ap)
 		    "wasn't dying\n", vp));
 		panic("badness in coda_inactive\n");
 	}
+	CODA_UNLOCK();
 	if (IS_UNMOUNTING(cp)) {
 #ifdef	DEBUG
 		printf("coda_inactive: IS_UNMOUNTING use %d: vp %p, cp %p\n",
@@ -916,20 +809,10 @@ coda_inactive(struct vop_inactive_args *ap)
 			printf("coda_inactive: cp->ovp != NULL use %d: vp "
 			    "%p, cp %p\n", vrefcnt(vp), vp, cp);
 #endif
-	} else
+	} else {
 		vgone(vp);
+	}
 	return (0);
-}
-
-int
-coda_inactive_g(struct vop_inactive_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_inactive(ap);
-	CODA_UNLOCK();
-	return (error);
 }
 
 /*
@@ -982,6 +865,7 @@ coda_lookup(struct vop_cachedlookup_args *ap)
 		goto exit;
 	}
 
+	CODA_LOCK();
 	error = venus_lookup(vtomi(dvp), &dcp->c_fid, nm, len, cred,
 	    td->td_proc, &VFid, &vtype);
 	if (error) {
@@ -1003,6 +887,7 @@ coda_lookup(struct vop_cachedlookup_args *ap)
 		if (!(vtype & CODA_NOCACHE) && (cnp->cn_flags & MAKEENTRY))
 			cache_enter(dvp, *vpp, cnp);
 	}
+	CODA_UNLOCK();
 exit:
 	/*
 	 * If we are creating, and this was the last name to be looked up,
@@ -1072,17 +957,6 @@ exit:
 	return (error);
 }
 
-int
-coda_lookup_g(struct vop_cachedlookup_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_lookup(ap);
-	CODA_UNLOCK();
-	return (error);
-}
-
 /*ARGSUSED*/
 int
 coda_create(struct vop_create_args *ap)
@@ -1116,6 +990,7 @@ coda_create(struct vop_create_args *ap)
 		*vpp = (struct vnode *)0;
 		return (EACCES);
 	}
+	CODA_LOCK();
 	error = venus_create(vtomi(dvp), &dcp->c_fid, nm, len, exclusive,
 	    mode, va, cred, td->td_proc, &VFid, &attr);
 	if (!error) {
@@ -1156,6 +1031,7 @@ coda_create(struct vop_create_args *ap)
 		CODADEBUG(CODA_CREATE, myprintf(("create error %d\n",
 		    error)););
 	}
+	CODA_UNLOCK();
 	if (!error) {
 		if (cnp->cn_flags & MAKEENTRY)
 			cache_enter(dvp, *vpp, cnp);
@@ -1171,17 +1047,6 @@ coda_create(struct vop_create_args *ap)
 		if (cnp->cn_flags & MAKEENTRY)
 			cache_enter(dvp, NULL, cnp);
 	}
-	return (error);
-}
-
-int
-coda_create_g(struct vop_create_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_create(ap);
-	CODA_UNLOCK();
 	return (error);
 }
 
@@ -1212,6 +1077,8 @@ coda_remove(struct vop_remove_args *ap)
 	if (IS_CTL_NAME(dvp, nm, len))
 		return (ENOENT);
 
+	CODA_LOCK();
+
 	/*
 	 * Invalidate the parent's attr cache, the modification time has
 	 * changed.  We don't yet know if the last reference to the file is
@@ -1222,19 +1089,9 @@ coda_remove(struct vop_remove_args *ap)
 	VTOC(vp)->c_flags &= ~(C_VATTR | C_ACCCACHE);
 	error = venus_remove(vtomi(dvp), &cp->c_fid, nm, len, cred,
 	    td->td_proc);
+	CODA_UNLOCK();
 	cache_purge(vp);
 	CODADEBUG(CODA_REMOVE, myprintf(("in remove result %d\n",error)););
-	return (error);
-}
-
-int
-coda_remove_g(struct vop_remove_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_remove(ap);
-	CODA_UNLOCK();
 	return (error);
 }
 
@@ -1269,6 +1126,7 @@ coda_link(struct vop_link_args *ap)
 	 */
 	if (IS_CTL_NAME(tdvp, nm, len) || IS_CTL_VP(vp))
 		return (EACCES);
+	CODA_LOCK();
 	error = venus_link(vtomi(vp), &cp->c_fid, &tdcp->c_fid, nm, len,
 	    cred, td->td_proc);
 
@@ -1278,18 +1136,8 @@ coda_link(struct vop_link_args *ap)
 	 */
 	VTOC(tdvp)->c_flags &= ~C_VATTR;
 	VTOC(vp)->c_flags &= ~C_VATTR;
-	CODADEBUG(CODA_LINK, myprintf(("in link result %d\n",error)););
-	return (error);
-}
-
-int
-coda_link_g(struct vop_link_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_link(ap);
 	CODA_UNLOCK();
+	CODADEBUG(CODA_LINK, myprintf(("in link result %d\n",error)););
 	return (error);
 }
 
@@ -1328,6 +1176,8 @@ coda_rename(struct vop_rename_args *ap)
 	cache_purge(odvp);
 	cache_purge(ndvp);
 
+	CODA_LOCK();
+
 	/*
 	 * Invalidate parent directories as modification times have changed.
 	 * Invalidate access cache on renamed file as rights may have
@@ -1348,6 +1198,7 @@ coda_rename(struct vop_rename_args *ap)
 	    flen, tnm, tlen, cred, td->td_proc);
 exit:
 	CODADEBUG(CODA_RENAME, myprintf(("in rename result %d\n",error)););
+	CODA_UNLOCK();
 
 	/*
 	 * Update namecache to reflect that the names of various objects may
@@ -1369,17 +1220,6 @@ exit:
 	} else
 		vput(ndvp);
 	vrele(fvp);
-	return (error);
-}
-
-int
-coda_rename_g(struct vop_rename_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_rename(ap);
-	CODA_UNLOCK();
 	return (error);
 }
 
@@ -1413,6 +1253,7 @@ coda_mkdir(struct vop_mkdir_args *ap)
 		*vpp = (struct vnode *)0;
 		return (EACCES);
 	}
+	CODA_LOCK();
 	error = venus_mkdir(vtomi(dvp), &dcp->c_fid, nm, len, va, cred,
 	    td->td_proc, &VFid, &ova);
 	if (!error) {
@@ -1440,24 +1281,15 @@ coda_mkdir(struct vop_mkdir_args *ap)
 		 * has changed.
 		 */
 		VTOC(dvp)->c_flags &= ~C_VATTR;
+		CODA_UNLOCK();
 		vn_lock(*vpp, LK_EXCLUSIVE | LK_RETRY);
 		CODADEBUG( CODA_MKDIR, myprintf(("mkdir: %s result %d\n",
 		    coda_f2s(&VFid), error)););
 	} else {
+		CODA_UNLOCK();
 		*vpp = NULL;
 		CODADEBUG(CODA_MKDIR, myprintf(("mkdir error %d\n",error)););
 	}
-	return (error);
-}
-
-int
-coda_mkdir_g(struct vop_mkdir_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_mkdir(ap);
-	CODA_UNLOCK();
 	return (error);
 }
 
@@ -1496,21 +1328,12 @@ coda_rmdir(struct vop_rmdir_args *ap)
 	 * Invalidate the parent's attr cache, the modification time has
 	 * changed.
 	 */
+	CODA_LOCK();
 	dcp->c_flags &= ~C_VATTR;
 	error = venus_rmdir(vtomi(dvp), &dcp->c_fid, nm, len, cred,
 	    td->td_proc);
-	CODADEBUG(CODA_RMDIR, myprintf(("in rmdir result %d\n", error)););
-	return (error);
-}
-
-int
-coda_rmdir_g(struct vop_rmdir_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_rmdir(ap);
 	CODA_UNLOCK();
+	CODADEBUG(CODA_RMDIR, myprintf(("in rmdir result %d\n", error)););
 	return (error);
 }
 
@@ -1560,6 +1383,7 @@ coda_symlink(struct vop_symlink_args *ap)
 		error = EINVAL;
 		goto exit;
 	}
+	CODA_LOCK();
 	error = venus_symlink(vtomi(tdvp), &tdcp->c_fid, path, plen, nm, len,
 	    tva, cred, td->td_proc);
 
@@ -1568,21 +1392,11 @@ coda_symlink(struct vop_symlink_args *ap)
 	 * changed.
 	 */
 	tdcp->c_flags &= ~C_VATTR;
+	CODA_UNLOCK();
 	if (error == 0)
 		error = VOP_LOOKUP(tdvp, vpp, cnp);
 exit:
 	CODADEBUG(CODA_SYMLINK, myprintf(("in symlink result %d\n",error)););
-	return (error);
-}
-
-int
-coda_symlink_g(struct vop_symlink_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_symlink(ap);
-	CODA_UNLOCK();
 	return (error);
 }
 
@@ -1653,17 +1467,6 @@ coda_readdir(struct vop_readdir_args *ap)
 }
 
 int
-coda_readdir_g(struct vop_readdir_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_readdir(ap);
-	CODA_UNLOCK();
-	return (error);
-}
-
-int
 coda_reclaim(struct vop_reclaim_args *ap)
 {
 	/* true args */
@@ -1677,6 +1480,7 @@ coda_reclaim(struct vop_reclaim_args *ap)
 	 * destroyed!
 	 */
 	ENTRY;
+	CODA_LOCK();
 
 	if (IS_UNMOUNTING(cp)) {
 #ifdef	DEBUG
@@ -1691,18 +1495,8 @@ coda_reclaim(struct vop_reclaim_args *ap)
 	uma_zfree(coda_cnode_zone, cp);
 	vp->v_data = NULL;
 	vp->v_object = NULL;
-	return (0);
-}
-
-int
-coda_reclaim_g(struct vop_reclaim_args *ap)
-{
-	int error;
-
-	CODA_LOCK();
-	error = coda_reclaim(ap);
 	CODA_UNLOCK();
-	return (error);
+	return (0);
 }
 
 int

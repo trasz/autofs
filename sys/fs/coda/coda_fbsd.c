@@ -70,6 +70,7 @@ static eventhandler_tag clonetag;
 static LIST_HEAD(, coda_mntinfo) coda_mnttbl;
 
 uma_zone_t coda_cnode_zone;
+struct sx coda_sx;
 
 /*
  * For DEVFS, using bpf & tun drivers as examples.
@@ -89,6 +90,7 @@ codadev_modevent(module_t mod, int type, void *data)
 	switch (type) {
 	case MOD_LOAD:
 		LIST_INIT(&coda_mnttbl);
+		sx_init(&coda_sx, "coda lock");
 		clonetag = EVENTHANDLER_REGISTER(dev_clone, coda_fbsd_clone,
 		    0, 1000);
 		coda_cnode_zone = uma_zcreate("coda_cnode",
@@ -104,11 +106,13 @@ codadev_modevent(module_t mod, int type, void *data)
 		 * like a sieve.
 		 */
 		EVENTHANDLER_DEREGISTER(dev_clone, clonetag);
+		CODA_LOCK();
 		while ((mnt = LIST_FIRST(&coda_mnttbl)) != NULL) {
 			LIST_REMOVE(mnt, mi_list);
 			destroy_dev(mnt->dev);
 			free(mnt, M_CODA);
 		}
+		CODA_UNLOCK();
 		uma_zdestroy(coda_cnode_zone);
 		break;
 
@@ -140,7 +144,9 @@ coda_fbsd_clone(void *arg, struct ucred *cred, char *name, int namelen,
 	    "cfs%d", u);
 	dev_ref(*dev);
 	mnt = malloc(sizeof(struct coda_mntinfo), M_CODA, M_WAITOK|M_ZERO);
+	CODA_LOCK();
 	LIST_INSERT_HEAD(&coda_mnttbl, mnt, mi_list);
+	CODA_UNLOCK();
 	mnt->dev = *dev;
 }
 
@@ -148,6 +154,8 @@ struct coda_mntinfo *
 dev2coda_mntinfo(struct cdev *dev)
 {
 	struct coda_mntinfo *mnt;
+
+	CODA_LOCK_ASSERT();
 
 	LIST_FOREACH(mnt, &coda_mnttbl, mi_list) {
 		if (mnt->dev == dev)
