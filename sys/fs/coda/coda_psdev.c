@@ -145,8 +145,8 @@ vc_open(struct cdev *dev, int flag, int mode, struct thread *td)
 	return (error);
 }
 
-static int
-vc_close_locked(struct cdev *dev, int flag, int mode, struct thread *td)
+int
+vc_close(struct cdev *dev, int flag, int mode, struct thread *td)
 {
 	struct vcomm *vcp;
 	struct vmsg *vmp, *nvmp = NULL;
@@ -154,6 +154,7 @@ vc_close_locked(struct cdev *dev, int flag, int mode, struct thread *td)
 	int err;
 
 	ENTRY;
+	CODA_LOCK();
 	mi = dev2coda_mntinfo(dev);
 	KASSERT(mi, ("Coda: closing unknown cfs device"));
 	vcp = &mi->mi_vcomm;
@@ -172,6 +173,7 @@ vc_close_locked(struct cdev *dev, int flag, int mode, struct thread *td)
 		 * Just a simple open/close with no mount.
 		 */
 		MARK_VC_CLOSED(vcp);
+		CODA_UNLOCK();
 		return (0);
 	}
 
@@ -209,7 +211,7 @@ vc_close_locked(struct cdev *dev, int flag, int mode, struct thread *td)
 		printf("presleep: outstanding_upcalls = %d\n",
 		    outstanding_upcalls);
 #endif
-    		(void) tsleep(&outstanding_upcalls, coda_call_sleep,
+		sx_sleep(&outstanding_upcalls, &coda_sx, coda_call_sleep,
 		    "coda_umount", 0);
 #ifdef CODA_VERBOSE
 		printf("postsleep: outstanding_upcalls = %d\n",
@@ -221,22 +223,12 @@ vc_close_locked(struct cdev *dev, int flag, int mode, struct thread *td)
 	 * 	happen otherwise.
 	 */
 	MNT_REF(mi->mi_vfsp);
+	CODA_UNLOCK();
 	err = dounmount(mi->mi_vfsp, flag, td);
 	if (err)
 		myprintf(("Error %d unmounting vfs in vcclose(%s)\n", err,
 		    devtoname(dev)));
 	return (0);
-}
-
-int
-vc_close(struct cdev *dev, int flag, int mode, struct thread *td)
-{
-	int error;
-
-	CODA_LOCK();
-	error = vc_close_locked(dev, flag, mode, td);
-	CODA_UNLOCK();
-	return (error);
 }
 
 static int
@@ -526,7 +518,7 @@ vc_poll(struct cdev *dev, int events, struct thread *td)
 /*
  * Key question: whether to sleep interuptably or uninteruptably when waiting
  * for Venus.  The former seems better (cause you can ^C a job), but then
- * GNU-EMACS completion breaks.  Use tsleep with no timeout, and no longjmp
+ * GNU-EMACS completion breaks.  Use sleep with no timeout, and no longjmp
  * happens.  But, when sleeping "uninterruptibly", we don't get told if it
  * returns abnormally (e.g. kill -9).
  */
@@ -544,6 +536,8 @@ coda_call(struct coda_mntinfo *mntinfo, int inSize, int *outSize,
 	sigset_t tempset;
 	int i;
 #endif
+
+	CODA_LOCK_ASSERT();
 
 	/*
 	 * Unlikely, but could be a race condition with a dying warden.
@@ -593,7 +587,7 @@ coda_call(struct coda_mntinfo *mntinfo, int inSize, int *outSize,
 	 */
 #ifdef CTL_C
 	/*
-	 * This is work in progress.  Setting coda_pcatch lets tsleep
+	 * This is work in progress.  Setting coda_pcatch lets sleep
 	 * reawaken on a ^c or ^z.  The problem is that emacs sets certain
 	 * interrupts as SA_RESTART.  This means that we should exit sleep
 	 * handle the "signal" and then go to sleep again.  Mostly this is
@@ -610,7 +604,7 @@ coda_call(struct coda_mntinfo *mntinfo, int inSize, int *outSize,
 			break;
 		else if (error == EWOULDBLOCK) {
 #ifdef CODA_VERBOSE
-			printf("coda_call: tsleep TIMEOUT %d sec\n", 2+2*i);
+			printf("coda_call: sleep TIMEOUT %d sec\n", 2+2*i);
 #endif
 		}
 		else {
@@ -619,7 +613,7 @@ coda_call(struct coda_mntinfo *mntinfo, int inSize, int *outSize,
 			if (SIGSETEQ(td->td_siglist, tempset)) {
 				SIGADDSET(td->td_sigmask, SIGIO);
 #ifdef CODA_VERBOSE
-				printf("coda_call: tsleep returns %d SIGIO, "
+				printf("coda_call: sleep returns %d SIGIO, "
 				    "cnt %d\n", error, i);
 #endif
 			} else {
@@ -628,12 +622,12 @@ coda_call(struct coda_mntinfo *mntinfo, int inSize, int *outSize,
 				if (SIGSETEQ(td->td_siglist, tempset)) {
 					SIGADDSET(td->td_sigmask, SIGALRM);
 #ifdef CODA_VERBOSE
-					printf("coda_call: tsleep returns "
+					printf("coda_call: sleep returns "
 					    "%d SIGALRM, cnt %d\n", error, i);
 #endif
 				} else {
 #ifdef CODA_VERBOSE
-					printf("coda_call: tsleep returns "
+					printf("coda_call: sleep returns "
 					    "%d, cnt %d\n", error, i);
 #endif
 
@@ -661,7 +655,7 @@ coda_call(struct coda_mntinfo *mntinfo, int inSize, int *outSize,
 	signotify(td);
 	PROC_UNLOCK(p);
 #else
-	(void)tsleep(&vmp->vm_sleep, coda_call_sleep, "coda_call", 0);
+	sx_sleep(&vmp->vm_sleep, &coda_sx, coda_call_sleep, "coda_call", 0);
 #endif
 	if (VC_OPEN(vcp)) {
 		/*

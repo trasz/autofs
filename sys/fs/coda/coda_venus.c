@@ -241,6 +241,7 @@ venus_ioctl(void *mdp, struct CodaFid *fid, int com, int flag, caddr_t data,
 	struct PioctlData *iap = (struct PioctlData *)data;
 	int tmp;
 
+	CODA_LOCK_ASSERT();
 	coda_ioctl_size = VC_MAXMSGSIZE;
 	ALLOC(coda_ioctl);			/* sets inp & outp */
 
