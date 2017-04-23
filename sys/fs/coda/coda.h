@@ -167,11 +167,11 @@ struct CodaFid {
 
 static __inline__ ino_t  coda_f2i(struct CodaFid *fid)
 {
-    if ( ! fid ) 
-	return 0; 
+    if ( ! fid )
+	return 0;
     return (fid->opaque[3] ^ (fid->opaque[2]<<10) ^ (fid->opaque[1]<<20) ^ fid->opaque[0]);
 }
-	
+
 static __inline__ char * coda_f2s(struct CodaFid *fid)
  {
      static char fid_str [35];
@@ -214,7 +214,7 @@ struct coda_vattr {
 	u_quad_t	va_filerev;	/* file modification number */
 };
 
-#endif 
+#endif
 
 /* structure used by CODA_STATFS for getting cache information from venus */
 struct coda_statfs {
@@ -267,10 +267,10 @@ struct coda_statfs {
 
 #define VC_MAXDATASIZE	    8192
 #define VC_MAXMSGSIZE      sizeof(union inputArgs)+sizeof(union outputArgs) +\
-                            VC_MAXDATASIZE  
+                            VC_MAXDATASIZE
 
 #define CIOC_KERNEL_VERSION _IOWR('c', 10, int)
-#define CODA_KERNEL_VERSION 3 
+#define CODA_KERNEL_VERSION 3
 
 /*
  *        Venus <-> Coda  RPC arguments
@@ -286,7 +286,7 @@ struct coda_in_hdr {
 /* Really important that opcode and unique are 1st two fields! */
 struct coda_out_hdr {
     u_int32_t opcode;
-    u_int32_t unique;	
+    u_int32_t unique;
     u_int32_t result;
 };
 
@@ -561,14 +561,14 @@ struct coda_purgeuser_out {
 
 /* coda_zapfile: */
 /* CODA_ZAPFILE is a venus->kernel call */
-struct coda_zapfile_out {  
+struct coda_zapfile_out {
     struct coda_out_hdr oh;
     struct CodaFid Fid;
 };
 
 /* coda_zapdir: */
-/* CODA_ZAPDIR is a venus->kernel call */	
-struct coda_zapdir_out {	  
+/* CODA_ZAPDIR is a venus->kernel call */
+struct coda_zapdir_out {
     struct coda_out_hdr oh;
     struct CodaFid Fid;
 };
@@ -581,14 +581,14 @@ struct coda_zapvnode_out {
 };
 
 /* coda_purgefid: */
-/* CODA_PURGEFID is a venus->kernel call */	
+/* CODA_PURGEFID is a venus->kernel call */
 struct coda_purgefid_out { 
     struct coda_out_hdr oh;
     struct CodaFid Fid;
 };
 
 /* coda_replace: */
-/* CODA_REPLACE is a venus->kernel call */	
+/* CODA_REPLACE is a venus->kernel call */
 struct coda_replace_out { /* coda_replace is a venus->kernel call */
      struct coda_out_hdr oh;
     struct CodaFid NewFid;
@@ -633,7 +633,7 @@ struct coda_statfs_out {
     struct coda_statfs stat;
 };
 
-/* 
+/*
  * Occasionally, we don't cache the fid returned by CODA_LOOKUP. 
  * For instance, if the fid is inconsistent. 
  * This case is handled by setting the top bit of the type result parameter.
@@ -686,7 +686,7 @@ union outputArgs {
     struct coda_open_by_fd_out coda_open_by_fd;
     struct coda_open_by_path_out coda_open_by_path;
     struct coda_statfs_out coda_statfs;
-};    
+};
 
 union coda_downcalls {
     /* CODA_INVALIDATE is a venus->kernel call */

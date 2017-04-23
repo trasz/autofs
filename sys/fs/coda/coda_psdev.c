@@ -464,7 +464,7 @@ vc_ioctl_locked(struct cdev *dev, u_long cmd, caddr_t addr, int flag,
 			if (coda_kernel_version != *(u_int *)addr)
 				return (ENOENT);
 			else
-			    	return (0);
+				return (0);
 
 		default:
 			return (ENOENT);

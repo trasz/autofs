@@ -236,7 +236,7 @@ coda_open(struct vop_open_args *ap)
 	error = VOP_OPEN(newvp, flag, cred, td, NULL);
 	if (error) {
 		VOP_UNLOCK(newvp, 0);
-    		printf("coda_open: VOP_OPEN on container failed %d\n", error);
+		printf("coda_open: VOP_OPEN on container failed %d\n", error);
 		return (error);
 	}
 	vp->v_object = newvp->v_object;
@@ -486,7 +486,7 @@ coda_getattr(struct vop_getattr_args *ap)
 	struct vattr *vap = ap->a_vap;
 	struct ucred *cred = ap->a_cred;
 	/* locals */
-    	struct vnode *convp;
+	struct vnode *convp;
 	int error, size;
 
 	if (IS_UNMOUNTING(cp))
@@ -523,7 +523,7 @@ coda_getattr(struct vop_getattr_args *ap)
 		 * probably unnecessary.
 		 */
 		size = vap->va_size;
-    		convp = cp->c_ovp;
+		convp = cp->c_ovp;
 		if (convp != NULL)
 			vnode_pager_setsize(convp, size);
 
@@ -548,7 +548,7 @@ coda_setattr(struct vop_setattr_args *ap)
 	struct vattr *vap = ap->a_vap;
 	struct ucred *cred = ap->a_cred;
 	/* locals */
-    	struct vnode *convp;
+	struct vnode *convp;
 	int error, size;
 
 	/*
@@ -571,7 +571,7 @@ coda_setattr(struct vop_setattr_args *ap)
 	 * valid after venus_setattr()?
 	 */
 	size = vap->va_size;
-    	convp = cp->c_ovp;
+	convp = cp->c_ovp;
 	if (size != VNOVAL && convp != NULL)
 		vnode_pager_setsize(convp, size);
 	CODADEBUG(CODA_SETATTR,	myprintf(("setattr %d\n", error)););
@@ -876,9 +876,9 @@ coda_lookup(struct vop_cachedlookup_args *ap)
 		CODADEBUG(CODA_LOOKUP, myprintf(("lookup: %s type %o "
 		    "result %d\n", coda_f2s(&VFid), vtype, error)););
 		cp = make_coda_node(&VFid, dvp->v_mount, vtype);
-    		*vpp = CTOV(cp);
+		*vpp = CTOV(cp);
 
-    		/*
+		/*
 		 * Enter the new vnode in the namecache only if the top bit
 		 * isn't set.
 		 *
@@ -1001,7 +1001,7 @@ coda_create(struct vop_create_args *ap)
 		 * Venus should have detected the file and reported EEXIST.
 		 */
 		if ((exclusive == 1) && (coda_find(&VFid) != NULL))
-	  	  	panic("cnode existed for newly created file!");
+			panic("cnode existed for newly created file!");
 		cp = make_coda_node(&VFid, dvp->v_mount, attr.va_type);
 		*vpp = CTOV(cp);
 
