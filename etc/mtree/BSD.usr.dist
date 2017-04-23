@@ -11,7 +11,13 @@
         private
             bsdstat
             ..
+            event
+            ..
+            sqlite3
+            ..
             ucl
+            ..
+            zstd
             ..
         ..
     ..
@@ -19,7 +25,7 @@
         aout
         ..
         clang
-            3.8.0
+            4.0.0
                 include
                     sanitizer
                     ..
@@ -183,8 +189,6 @@
             ..
             atf
             ..
-            atm
-            ..
             legal
             ..
             llvm
@@ -227,8 +231,6 @@
                 06.Clang
                 ..
                 12.make
-                ..
-                13.rcs
                 ..
                 15.yacc
                 ..
@@ -505,8 +507,6 @@
                 UTF
                 ..
             ..
-        ..
-        info
         ..
         keys
             pkg
@@ -1385,11 +1385,7 @@
             ..
             zh_CN.eucCN
             ..
-            zh_HK.Big5HKSCS
-            ..
             zh_HK.UTF-8
-            ..
-            zh_TW.Big5
             ..
             zh_TW.UTF-8
             ..

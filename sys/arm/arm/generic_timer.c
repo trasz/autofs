@@ -62,7 +62,6 @@ __FBSDID("$FreeBSD$");
 #endif
 
 #ifdef FDT
-#include <dev/fdt/fdt_common.h>
 #include <dev/ofw/openfirm.h>
 #include <dev/ofw/ofw_bus.h>
 #include <dev/ofw/ofw_bus_subr.h>
@@ -259,7 +258,7 @@ arm_tmr_stop(struct eventtimer *et)
 	sc = (struct arm_tmr_softc *)et->et_priv;
 
 	ctrl = get_ctrl(sc->physical);
-	ctrl &= GT_CTRL_ENABLE;
+	ctrl &= ~GT_CTRL_ENABLE;
 	set_ctrl(ctrl, sc->physical);
 
 	return (0);

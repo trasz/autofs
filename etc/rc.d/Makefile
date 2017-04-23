@@ -119,14 +119,17 @@ FILES=	DAEMON \
 	ugidfw \
 	${_utx} \
 	var \
-	watchdogd \
-	ypbind \
+	watchdogd
+
+.if ${MK_NIS} != "no"
+FILES+=	ypbind \
 	ypldap \
 	yppasswdd \
 	ypserv \
 	ypset \
 	ypupdated \
 	ypxfrd
+.endif
 
 .if ${MK_ACCT} != "no"
 FILESGROUPS+=	ACCT
@@ -155,14 +158,6 @@ FILESGROUPS+=	APM
 APM+=		apm
 APM+=		apmd
 APMPACKAGE=	apm
-.endif
-
-.if ${MK_ATM} != "no"
-FILESGROUPS+=	ATM
-ATM+=		atm1
-ATM+=		atm2
-ATM+=		atm3
-ATMPACKAGE=	atm
 .endif
 
 .if ${MK_AUTOFS} != "no"
@@ -315,6 +310,7 @@ FILES+=		wpa_supplicant
 .if ${MK_ZFS} != "no"
 FILESGROUPS+=	ZFS
 ZFS+=		zfs
+ZFS+=		zfsbe
 ZFS+=		zfsd
 ZFS+=		zvol
 ZFSPACKAGE=	zfs

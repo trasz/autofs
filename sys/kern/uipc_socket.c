@@ -13,7 +13,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -159,15 +159,10 @@ static void	filt_sordetach(struct knote *kn);
 static int	filt_soread(struct knote *kn, long hint);
 static void	filt_sowdetach(struct knote *kn);
 static int	filt_sowrite(struct knote *kn, long hint);
-static int	filt_solisten(struct knote *kn, long hint);
 static int inline hhook_run_socket(struct socket *so, void *hctx, int32_t h_id);
+static int	filt_soempty(struct knote *kn, long hint);
 fo_kqfilter_t	soo_kqfilter;
 
-static struct filterops solisten_filtops = {
-	.f_isfd = 1,
-	.f_detach = filt_sordetach,
-	.f_event = filt_solisten,
-};
 static struct filterops soread_filtops = {
 	.f_isfd = 1,
 	.f_detach = filt_sordetach,
@@ -177,6 +172,11 @@ static struct filterops sowrite_filtops = {
 	.f_isfd = 1,
 	.f_detach = filt_sowdetach,
 	.f_event = filt_sowrite,
+};
+static struct filterops soempty_filtops = {
+	.f_isfd = 1,
+	.f_detach = filt_sowdetach,
+	.f_event = filt_soempty,
 };
 
 so_gen_t	so_gencnt;	/* generation count for sockets */
@@ -1182,6 +1182,7 @@ sosend_dgram(struct socket *so, struct sockaddr *addr, struct uio *uio,
 	     (resid <= 0)) ?
 		PRUS_EOF :
 		/* If there is more to send set PRUS_MORETOCOME */
+		(flags & MSG_MORETOCOME) ||
 		(resid > 0 && space > 0) ? PRUS_MORETOCOME : 0,
 		top, addr, control, td);
 	if (dontroute) {
@@ -1368,6 +1369,7 @@ restart:
 			     (resid <= 0)) ?
 				PRUS_EOF :
 			/* If there is more to send set PRUS_MORETOCOME. */
+			    (flags & MSG_MORETOCOME) ||
 			    (resid > 0 && space > 0) ? PRUS_MORETOCOME : 0,
 			    top, addr, control, td);
 			if (dontroute) {
@@ -1640,7 +1642,8 @@ dontblock:
 		do {
 			if (flags & MSG_PEEK) {
 				if (controlp != NULL) {
-					*controlp = m_copy(m, 0, m->m_len);
+					*controlp = m_copym(m, 0, m->m_len,
+					    M_NOWAIT);
 					controlp = &(*controlp)->m_next;
 				}
 				m = m->m_next;
@@ -1763,7 +1766,7 @@ dontblock:
 				 * requires MT_SONAME mbufs at the head of
 				 * each record.
 				 */
-				if (m && pr->pr_flags & PR_ATOMIC &&
+				if (pr->pr_flags & PR_ATOMIC &&
 				    ((flags & MSG_PEEK) == 0))
 					(void)sbdroprecord_locked(&so->so_rcv);
 				SOCKBUF_UNLOCK(&so->so_rcv);
@@ -2340,13 +2343,27 @@ int
 soshutdown(struct socket *so, int how)
 {
 	struct protosw *pr = so->so_proto;
-	int error;
+	int error, soerror_enotconn;
 
 	if (!(how == SHUT_RD || how == SHUT_WR || how == SHUT_RDWR))
 		return (EINVAL);
+
+	soerror_enotconn = 0;
 	if ((so->so_state &
-	    (SS_ISCONNECTED | SS_ISCONNECTING | SS_ISDISCONNECTING)) == 0)
-		return (ENOTCONN);
+	    (SS_ISCONNECTED | SS_ISCONNECTING | SS_ISDISCONNECTING)) == 0) {
+		/*
+		 * POSIX mandates us to return ENOTCONN when shutdown(2) is
+		 * invoked on a datagram sockets, however historically we would
+		 * actually tear socket down. This is known to be leveraged by
+		 * some applications to unblock process waiting in recvXXX(2)
+		 * by other process that it shares that socket with. Try to meet
+		 * both backward-compatibility and POSIX requirements by forcing
+		 * ENOTCONN but still asking protocol to perform pru_shutdown().
+		 */
+		if (so->so_type != SOCK_DGRAM)
+			return (ENOTCONN);
+		soerror_enotconn = 1;
+	}
 
 	CURVNET_SET(so->so_vnet);
 	if (pr->pr_usrreqs->pru_flush != NULL)
@@ -2357,11 +2374,12 @@ soshutdown(struct socket *so, int how)
 		error = (*pr->pr_usrreqs->pru_shutdown)(so);
 		wakeup(&so->so_timeo);
 		CURVNET_RESTORE();
-		return (error);
+		return ((error == 0 && soerror_enotconn) ? ENOTCONN : error);
 	}
 	wakeup(&so->so_timeo);
 	CURVNET_RESTORE();
-	return (0);
+
+	return (soerror_enotconn ? ENOTCONN : 0);
 }
 
 void
@@ -2678,6 +2696,26 @@ sosetopt(struct socket *so, struct sockopt *sopt)
 #endif
 			break;
 
+		case SO_TS_CLOCK:
+			error = sooptcopyin(sopt, &optval, sizeof optval,
+			    sizeof optval);
+			if (error)
+				goto bad;
+			if (optval < 0 || optval > SO_TS_CLOCK_MAX) {
+				error = EINVAL;
+				goto bad;
+			}
+			so->so_ts_clock = optval;
+			break;
+
+		case SO_MAX_PACING_RATE:
+			error = sooptcopyin(sopt, &val32, sizeof(val32),
+			    sizeof(val32));
+			if (error)
+				goto bad;
+			so->so_max_pacing_rate = val32;
+			break;
+
 		default:
 			if (V_socket_hhh[HHOOK_SOCKET_OPT]->hhh_nhooks > 0)
 				error = hhook_run_socket(so, sopt,
@@ -2863,6 +2901,14 @@ integer:
 
 		case SO_LISTENINCQLEN:
 			optval = so->so_incqlen;
+			goto integer;
+
+		case SO_TS_CLOCK:
+			optval = so->so_ts_clock;
+			goto integer;
+
+		case SO_MAX_PACING_RATE:
+			optval = so->so_max_pacing_rate;
 			goto integer;
 
 		default:
@@ -3070,14 +3116,15 @@ soo_kqfilter(struct file *fp, struct knote *kn)
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		if (so->so_options & SO_ACCEPTCONN)
-			kn->kn_fop = &solisten_filtops;
-		else
-			kn->kn_fop = &soread_filtops;
+		kn->kn_fop = &soread_filtops;
 		sb = &so->so_rcv;
 		break;
 	case EVFILT_WRITE:
 		kn->kn_fop = &sowrite_filtops;
+		sb = &so->so_snd;
+		break;
+	case EVFILT_EMPTY:
+		kn->kn_fop = &soempty_filtops;
 		sb = &so->so_snd;
 		break;
 	default:
@@ -3280,6 +3327,11 @@ filt_soread(struct knote *kn, long hint)
 	struct socket *so;
 
 	so = kn->kn_fp->f_data;
+	if (so->so_options & SO_ACCEPTCONN) {
+		kn->kn_data = so->so_qlen;
+		return (!TAILQ_EMPTY(&so->so_comp));
+
+	}
 	SOCKBUF_LOCK_ASSERT(&so->so_rcv);
 
 	kn->kn_data = sbavail(&so->so_rcv) - so->so_rcv.sb_ctl;
@@ -3292,11 +3344,9 @@ filt_soread(struct knote *kn, long hint)
 
 	if (kn->kn_sfflags & NOTE_LOWAT) {
 		if (kn->kn_data >= kn->kn_sdata)
-			return 1;
-	} else {
-		if (sbavail(&so->so_rcv) >= so->so_rcv.sb_lowat)
-			return 1;
-	}
+			return (1);
+	} else if (sbavail(&so->so_rcv) >= so->so_rcv.sb_lowat)
+		return (1);
 
 	/* This hook returning non-zero indicates an event, not error */
 	return (hhook_run_socket(so, NULL, HHOOK_FILT_SOREAD));
@@ -3341,14 +3391,19 @@ filt_sowrite(struct knote *kn, long hint)
 		return (kn->kn_data >= so->so_snd.sb_lowat);
 }
 
-/*ARGSUSED*/
 static int
-filt_solisten(struct knote *kn, long hint)
+filt_soempty(struct knote *kn, long hint)
 {
-	struct socket *so = kn->kn_fp->f_data;
+	struct socket *so;
 
-	kn->kn_data = so->so_qlen;
-	return (!TAILQ_EMPTY(&so->so_comp));
+	so = kn->kn_fp->f_data;
+	SOCKBUF_LOCK_ASSERT(&so->so_snd);
+	kn->kn_data = sbused(&so->so_snd);
+
+	if (kn->kn_data == 0)
+		return (1);
+	else
+		return (0);
 }
 
 int

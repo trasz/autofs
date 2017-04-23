@@ -18,6 +18,8 @@
 # in NOTES.
 #
 # $FreeBSD$
+#
+#NO_UNIVERSE
 
 ident		ALLWINNER
 
@@ -52,6 +54,9 @@ device		phy
 device		hwreset
 device		regulator
 
+# CPU frequency control
+device		cpufreq
+
 # Interrupt controller
 device		gic
 
@@ -81,6 +86,7 @@ device		twsi
 device		rsb
 device		axp209			# AXP209 Power Management Unit
 device		axp81x			# AXP813/818 Power Management Unit
+device		sy8106a			# SY8106A Buck Regulator
 
 # GPIO
 device		gpio

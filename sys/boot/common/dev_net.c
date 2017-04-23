@@ -58,6 +58,7 @@ __FBSDID("$FreeBSD$");
 #include <netinet/in_systm.h>
 
 #include <stand.h>
+#include <stddef.h>
 #include <string.h>
 #include <net.h>
 #include <netif.h>
@@ -79,8 +80,8 @@ static int	net_init(void);
 static int	net_open(struct open_file *, ...);
 static int	net_close(struct open_file *);
 static void	net_cleanup(void);
-static int	net_strategy();
-static void	net_print(int);
+static int	net_strategy(void *, int, daddr_t, size_t, char *, size_t *);
+static int	net_print(int);
 
 static int net_getparams(int sock);
 
@@ -120,11 +121,9 @@ net_open(struct open_file *f, ...)
 	devname = va_arg(args, char*);
 	va_end(args);
 
-#ifdef	NETIF_OPEN_CLOSE_ONCE
 	/* Before opening another interface, close the previous one first. */
 	if (netdev_sock >= 0 && strcmp(devname, netdev_name) != 0)
 		net_cleanup();
-#endif
 
 	/* On first open, do netif open, mount, etc. */
 	if (netdev_opens == 0) {
@@ -167,16 +166,17 @@ net_open(struct open_file *f, ...)
 		setenv("boot.netif.ip", inet_ntoa(myip), 1);
 		setenv("boot.netif.netmask", intoa(netmask), 1);
 		setenv("boot.netif.gateway", inet_ntoa(gateip), 1);
-#ifdef LOADER_TFTP_SUPPORT
-		setenv("boot.tftproot.server", inet_ntoa(rootip), 1);
-		setenv("boot.tftproot.path", rootpath, 1);
-#else
-		setenv("boot.nfsroot.server", inet_ntoa(rootip), 1);
-		setenv("boot.nfsroot.path", rootpath, 1);
-#endif
+		setenv("boot.netif.server", inet_ntoa(rootip), 1);
+		if (netproto == NET_TFTP) {
+			setenv("boot.tftproot.server", inet_ntoa(rootip), 1);
+			setenv("boot.tftproot.path", rootpath, 1);
+		} else if (netproto == NET_NFS) {
+			setenv("boot.nfsroot.server", inet_ntoa(rootip), 1);
+			setenv("boot.nfsroot.path", rootpath, 1);
+		}
 		if (intf_mtu != 0) {
 			char mtu[16];
-			sprintf(mtu, "%u", intf_mtu);
+			snprintf(mtu, sizeof(mtu), "%u", intf_mtu);
 			setenv("boot.netif.mtu", mtu, 1);
 		}
 
@@ -197,21 +197,6 @@ net_close(struct open_file *f)
 
 	f->f_devdata = NULL;
 
-#ifndef	NETIF_OPEN_CLOSE_ONCE
-	/* Extra close call? */
-	if (netdev_opens <= 0)
-		return (0);
-	netdev_opens--;
-	/* Not last close? */
-	if (netdev_opens > 0)
-		return (0);
-	/* On last close, do netif close, etc. */
-#ifdef	NETIF_DEBUG
-	if (debug)
-		printf("net_close: calling net_cleanup()\n");
-#endif
-	net_cleanup();
-#endif
 	return (0);
 }
 
@@ -232,7 +217,8 @@ net_cleanup(void)
 }
 
 static int
-net_strategy()
+net_strategy(void *devdata, int rw, daddr_t blk, size_t size, char *buf,
+    size_t *rsize)
 {
 
 	return (EIO);
@@ -262,6 +248,8 @@ net_getparams(int sock)
 {
 	char buf[MAXHOSTNAMELEN];
 	n_long rootaddr, smask;
+	struct iodesc *d = socktodesc(sock);
+	extern struct in_addr servip;
 
 #ifdef	SUPPORT_BOOTP
 	/*
@@ -270,8 +258,26 @@ net_getparams(int sock)
 	 * be initialized.  If any remain uninitialized, we will
 	 * use RARP and RPC/bootparam (the Sun way) to get them.
 	 */
-	if (try_bootp)
-		bootp(sock, BOOTP_NONE);
+	if (try_bootp) {
+		int rc = -1;
+		if (bootp_response != NULL) {
+			rc = dhcp_try_rfc1048(bootp_response->bp_vend,
+			    bootp_response_size -
+			    offsetof(struct bootp, bp_vend));
+
+			if (servip.s_addr == 0)
+				servip = bootp_response->bp_siaddr;
+			if (rootip.s_addr == 0)
+				rootip = bootp_response->bp_siaddr;
+			if (gateip.s_addr == 0)
+				gateip = bootp_response->bp_giaddr;
+			if (myip.s_addr == 0)
+				myip = bootp_response->bp_yiaddr;
+			d->myip = myip;
+		}
+		if (rc < 0)
+			bootp(sock, BOOTP_NONE);
+	}
 	if (myip.s_addr != 0)
 		goto exit;
 #ifdef	NETIF_DEBUG
@@ -328,8 +334,11 @@ net_getparams(int sock)
 		return (EIO);
 	}
 exit:
-	if ((rootaddr = net_parse_rootpath()) != INADDR_NONE)
+	netproto = NET_TFTP;
+	if ((rootaddr = net_parse_rootpath()) != INADDR_NONE) {
+		netproto = NET_NFS;
 		rootip.s_addr = rootaddr;
+	}
 
 #ifdef	NETIF_DEBUG
 	if (debug) {
@@ -341,23 +350,34 @@ exit:
 	return (0);
 }
 
-static void
+static int
 net_print(int verbose)
 {
 	struct netif_driver *drv;
 	int i, d, cnt;
+	int ret = 0;
+
+	if (netif_drivers[0] == NULL)
+		return (ret);
+
+	printf("%s devices:", netdev.dv_name);
+	if ((ret = pager_output("\n")) != 0)
+		return (ret);
 
 	cnt = 0;
 	for (d = 0; netif_drivers[d]; d++) {
 		drv = netif_drivers[d];
 		for (i = 0; i < drv->netif_nifs; i++) {
-			printf("\t%s%d:", "net", cnt++);
-			if (verbose)
+			printf("\t%s%d:", netdev.dv_name, cnt++);
+			if (verbose) {
 				printf(" (%s%d)", drv->netif_bname,
 				    drv->netif_ifs[i].dif_unit);
+			}
+			if ((ret = pager_output("\n")) != 0)
+				return (ret);
 		}
 	}
-	printf("\n");
+	return (ret);
 }
 
 /*
@@ -378,5 +398,6 @@ net_parse_rootpath()
 		addr = inet_addr(&rootpath[0]);
 		bcopy(&rootpath[i], rootpath, strlen(&rootpath[i])+1);
 	}
+
 	return (addr);
 }

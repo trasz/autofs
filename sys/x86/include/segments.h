@@ -14,7 +14,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -249,7 +249,6 @@ union descriptor {
 #define	LSYS5SIGR_SEL	1
 #define	L43BSDCALLS_SEL	2	/* notyet */
 #define	LUCODE_SEL	3
-#define	LSOL26CALLS_SEL	4	/* Solaris >= 2.6 system call gate */
 #define	LUDATA_SEL	5
 /* separate stack, es,fs,gs sels ? */
 /* #define	LPOSIXCALLS_SEL	5*/	/* notyet */

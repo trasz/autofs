@@ -2,13 +2,13 @@
 
 .include <src.opts.mk>
 
-MDOCMLDIR=	${.CURDIR}/../../contrib/mdocml
+MDOCMLDIR=	${SRCTOP}/contrib/mdocml
 .PATH: ${MDOCMLDIR}
 
 PROG=	mandoc
 MAN=	mandoc.1 eqn.7 mandoc_char.7 tbl.7 man.7 mdoc.7 # roff.7
 MLINKS=	mandoc.1 mdocml.1
-.if ${MK_MANDOCDB} != no && ${MK_MAN_UTILS} != no
+.if ${MK_MAN_UTILS} != no
 MAN+=	apropos.1 makewhatis.8
 MLINKS+=	apropos.1 whatis.1
 LINKS=	${BINDIR}/mandoc ${BINDIR}/whatis \
@@ -65,26 +65,31 @@ TERM_SRCS=	eqn_term.c \
 		term_ps.c \
 		tbl_term.c
 
-DB_SRCS=	mandocdb.c \
-		mansearch.c \
-		mansearch_const.c \
-		tag.c \
-		manpath.c
+DBM_SRCS=	dbm.c \
+		dbm_map.c \
+		mansearch.c
+
+DBA_SRCS=	dba.c \
+		dba_array.c \
+		dba_read.c \
+		dba_write.c \
+		mandocdb.c
 
 SRCS=		${LIB_SRCS} \
 		${HTML_SRCS} \
 		${MAN_SRCS} \
 		${TERM_SRCS} \
+		${DBM_SRCS} \
+		${DBA_SRCS} \
 		main.c \
+		manpath.c \
 		out.c \
+		tag.c \
 		tree.c
 
-SRCS+=	${DB_SRCS}
-
-WARNS?=	2
+WARNS?=	3
 CFLAGS+= -DHAVE_CONFIG_H \
-	 -I${.CURDIR}/../../lib/libopenbsd/ \
-	 -I${.CURDIR}/../../contrib/sqlite3
-LIBADD=	openbsd sqlite3 z
+	 -I${SRCTOP}/lib/libopenbsd/
+LIBADD=	openbsd z
 
 .include <bsd.prog.mk>

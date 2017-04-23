@@ -8,6 +8,8 @@ PROG=		${LOADER}.sym
 MAN=	
 INTERNALPROG=
 NEWVERSWHAT?=	"bootstrap loader" x86
+VERSION_FILE=	${.CURDIR}/../loader/version
+LOADER_NET_SUPPORT?=	yes
 
 # architecture-specific loader code
 SRCS=		main.c conf.c vers.c
@@ -22,6 +24,10 @@ LIBFIREWIRE=	${.OBJDIR}/../libfirewire/libfirewire.a
 .if defined(LOADER_ZFS_SUPPORT)
 CFLAGS+=	-DLOADER_ZFS_SUPPORT
 LIBZFSBOOT=	${.OBJDIR}/../../zfs/libzfsboot.a
+.endif
+
+.if defined(LOADER_NET_SUPPORT)
+CFLAGS+=	-I${.CURDIR}/../../../../lib/libstand
 .endif
 
 # Enable PXE TFTP or NFS support, not both.
@@ -60,6 +66,7 @@ CFLAGS+=	-DLOADER_NANDFS_SUPPORT
 .endif
 .if !defined(LOADER_NO_GELI_SUPPORT)
 CFLAGS+=	-DLOADER_GELI_SUPPORT
+CFLAGS+=	-I${.CURDIR}/../../geli
 LIBGELIBOOT=	${.OBJDIR}/../../geli/libgeliboot.a
 .PATH:		${.CURDIR}/../../../opencrypto
 SRCS+=		xform_aes_xts.c
@@ -72,7 +79,7 @@ CFLAGS+=	-I${.CURDIR}/../../.. -D_STAND
 CFLAGS+=	-I${.CURDIR}/../../common
 CFLAGS+=	-I.
 
-CLEANFILES=	vers.c ${LOADER} ${LOADER}.bin loader.help
+CLEANFILES=	${LOADER} ${LOADER}.bin loader.help
 
 CFLAGS+=	-Wall
 LDFLAGS=	-static -Ttext 0x0
@@ -93,17 +100,12 @@ CFLAGS+=	-I${.CURDIR}/../btx/lib
 # Pick up ../Makefile.inc early.
 .include <bsd.init.mk>
 
-vers.c:	${.CURDIR}/../../common/newvers.sh ${.CURDIR}/../loader/version
-	sh ${.CURDIR}/../../common/newvers.sh ${.CURDIR}/../loader/version \
-		${NEWVERSWHAT}
-
 ${LOADER}: ${LOADER}.bin ${BTXLDR} ${BTXKERN}
 	btxld -v -f aout -e ${LOADER_ADDRESS} -o ${.TARGET} -l ${BTXLDR} \
 		-b ${BTXKERN} ${LOADER}.bin
 
 ${LOADER}.bin: ${LOADER}.sym
-	cp ${.ALLSRC} ${.TARGET}
-	strip -R .comment -R .note ${.TARGET}
+	strip -R .comment -R .note -o ${.TARGET} ${.ALLSRC}
 
 loader.help: help.common help.i386
 	cat ${.ALLSRC} | awk -f ${.CURDIR}/../../common/merge_help.awk > ${.TARGET}
@@ -123,8 +125,8 @@ FILES+=	loader.rc menu.rc
 # XXX crt0.o needs to be first for pxeboot(8) to work
 OBJS=	${BTXCRT}
 
-DPADD=	${LIBFICL} ${LIBFIREWIRE} ${LIBZFSBOOT} ${LIBI386} ${LIBSTAND} ${LIBGELIBOOT}
-LDADD=	${LIBFICL} ${LIBFIREWIRE} ${LIBZFSBOOT} ${LIBI386} ${LIBSTAND} ${LIBGELIBOOT}
+DPADD=	${LIBFICL} ${LIBFIREWIRE} ${LIBZFSBOOT} ${LIBI386} ${LIBGELIBOOT} ${LIBSTAND}
+LDADD=	${LIBFICL} ${LIBFIREWIRE} ${LIBZFSBOOT} ${LIBI386} ${LIBGELIBOOT} ${LIBSTAND}
 
 .include <bsd.prog.mk>
 

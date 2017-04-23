@@ -1,6 +1,8 @@
 $FreeBSD$
+.appveyor.yml
 .autom4te.cfg
 .git*
+.travis.yml
 FREEBSD-*
 INSTALL
 Makefile*
@@ -47,6 +49,7 @@ include/msvc_compat/
 install-sh
 jemalloc.pc*
 msvc/
+scripts/
 src/valgrind.c
 src/zone.c
 test/

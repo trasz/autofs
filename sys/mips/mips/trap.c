@@ -17,7 +17,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -276,11 +276,6 @@ char *trap_type[] = {
 
 #if !defined(SMP) && (defined(DDB) || defined(DEBUG))
 struct trapdebug trapdebug[TRAPSIZE], *trp = trapdebug;
-#endif
-
-#if defined(DDB) || defined(DEBUG)
-void stacktrace(struct trapframe *);
-void logstacktrace(struct trapframe *);
 #endif
 
 #define	KERNLAND(x)	((vm_offset_t)(x) >= VM_MIN_KERNEL_ADDRESS && (vm_offset_t)(x) < VM_MAX_KERNEL_ADDRESS)
@@ -590,7 +585,8 @@ trap(struct trapframe *trapframe)
 			break;
 		}
 		if ((last_badvaddr == this_badvaddr) &&
-		    ((type & ~T_USER) != T_SYSCALL)) {
+		    ((type & ~T_USER) != T_SYSCALL) &&
+		    ((type & ~T_USER) != T_COP_UNUSABLE)) {
 			if (++count == 3) {
 				trap_frame_dump(trapframe);
 				panic("too many faults at %p\n", (void *)last_badvaddr);
@@ -741,8 +737,11 @@ dofault:
 				}
 				goto err;
 			}
-			ucode = ftype;
-			i = ((rv == KERN_PROTECTION_FAILURE) ? SIGBUS : SIGSEGV);
+			i = SIGSEGV;
+			if (rv == KERN_PROTECTION_FAILURE)
+				ucode = SEGV_ACCERR;
+			else
+				ucode = SEGV_MAPERR;
 			addr = trapframe->pc;
 
 			msg = "BAD_PAGE_FAULT";
@@ -909,12 +908,7 @@ dofault:
 					if (inst.RType.rd == 29) {
 						frame_regs = &(trapframe->zero);
 						frame_regs[inst.RType.rt] = (register_t)(intptr_t)td->td_md.md_tls;
-#if defined(__mips_n64) && defined(COMPAT_FREEBSD32)
-						if (SV_PROC_FLAG(td->td_proc, SV_ILP32))
-							frame_regs[inst.RType.rt] += TLS_TP_OFFSET + TLS_TCB_SIZE32;
-						else
-#endif
-						frame_regs[inst.RType.rt] += TLS_TP_OFFSET + TLS_TCB_SIZE;
+						frame_regs[inst.RType.rt] += td->td_md.md_tls_tcb_offset;
 						trapframe->pc += sizeof(int);
 						goto out;
 					}
@@ -982,7 +976,11 @@ dofault:
 			addr = trapframe->pc;
 			MipsSwitchFPState(PCPU_GET(fpcurthread), td->td_frame);
 			PCPU_SET(fpcurthread, td);
+#if defined(__mips_n64)
+			td->td_frame->sr |= MIPS_SR_COP_1_BIT | MIPS_SR_FR;
+#else
 			td->td_frame->sr |= MIPS_SR_COP_1_BIT;
+#endif
 			td->td_md.md_flags |= MDTD_FPUSED;
 			goto out;
 #endif
@@ -1030,7 +1028,7 @@ dofault:
 
 	case T_FPE + T_USER:
 		if (!emulate_fp) {
-			i = SIGILL;
+			i = SIGFPE;
 			addr = trapframe->pc;
 			break;
 		}
@@ -1079,7 +1077,6 @@ dofault:
 err:
 
 #if !defined(SMP) && defined(DEBUG)
-		stacktrace(!usermode ? trapframe : td->td_frame);
 		trapDump("trap");
 #endif
 #ifdef SMP
@@ -1299,18 +1296,6 @@ MipsEmulateBranch(struct trapframe *framePtr, uintptr_t instPC, int fpcCSR,
 	return (retAddr);
 }
 
-
-#if defined(DDB) || defined(DEBUG)
-/*
- * Print a stack backtrace.
- */
-void
-stacktrace(struct trapframe *regs)
-{
-	stacktrace_subr(regs->pc, regs->sp, regs->ra, printf);
-}
-#endif
-
 static void
 log_frame_dump(struct trapframe *frame)
 {
@@ -1349,13 +1334,8 @@ log_frame_dump(struct trapframe *frame)
 	log(LOG_ERR, "\tsr: %#jx\tmullo: %#jx\tmulhi: %#jx\tbadvaddr: %#jx\n",
 	    (intmax_t)frame->sr, (intmax_t)frame->mullo, (intmax_t)frame->mulhi, (intmax_t)frame->badvaddr);
 
-#ifdef IC_REG
-	log(LOG_ERR, "\tcause: %#jx\tpc: %#jx\tic: %#jx\n",
-	    (intmax_t)frame->cause, (intmax_t)frame->pc, (intmax_t)frame->ic);
-#else
 	log(LOG_ERR, "\tcause: %#jx\tpc: %#jx\n",
 	    (intmax_t)frame->cause, (intmax_t)frame->pc);
-#endif
 }
 
 #ifdef TRAP_DEBUG
@@ -1396,13 +1376,8 @@ trap_frame_dump(struct trapframe *frame)
 	printf("\tsr: %#jx\tmullo: %#jx\tmulhi: %#jx\tbadvaddr: %#jx\n",
 	    (intmax_t)frame->sr, (intmax_t)frame->mullo, (intmax_t)frame->mulhi, (intmax_t)frame->badvaddr);
 
-#ifdef IC_REG
-	printf("\tcause: %#jx\tpc: %#jx\tic: %#jx\n",
-	    (intmax_t)frame->cause, (intmax_t)frame->pc, (intmax_t)frame->ic);
-#else
 	printf("\tcause: %#jx\tpc: %#jx\n",
 	    (intmax_t)frame->cause, (intmax_t)frame->pc);
-#endif
 }
 
 #endif

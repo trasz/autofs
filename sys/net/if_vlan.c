@@ -46,6 +46,7 @@ __FBSDID("$FreeBSD$");
 
 #include "opt_inet.h"
 #include "opt_vlan.h"
+#include "opt_ratelimit.h"
 
 #include <sys/param.h>
 #include <sys/eventhandler.h>
@@ -112,6 +113,7 @@ struct	ifvlan {
 #define	PARENT(ifv)	((ifv)->ifv_trunk->parent)
 	void	*ifv_cookie;
 	int	ifv_pflags;	/* special flags we have set on parent */
+	int	ifv_capenable;
 	struct	ifv_linkmib {
 		int	ifvm_encaplen;	/* encapsulation length */
 		int	ifvm_mtufudge;	/* MTU fudged by this much */
@@ -212,6 +214,10 @@ static	void trunk_destroy(struct ifvlantrunk *trunk);
 static	void vlan_init(void *foo);
 static	void vlan_input(struct ifnet *ifp, struct mbuf *m);
 static	int vlan_ioctl(struct ifnet *ifp, u_long cmd, caddr_t addr);
+#ifdef RATELIMIT
+static	int vlan_snd_tag_alloc(struct ifnet *,
+    union if_snd_tag_alloc_params *, struct m_snd_tag **);
+#endif
 static	void vlan_qflush(struct ifnet *ifp);
 static	int vlan_setflag(struct ifnet *ifp, int flag, int status,
     int (*func)(struct ifnet *, int));
@@ -971,6 +977,9 @@ vlan_clone_create(struct if_clone *ifc, char *name, size_t len, caddr_t params)
 	ifp->if_transmit = vlan_transmit;
 	ifp->if_qflush = vlan_qflush;
 	ifp->if_ioctl = vlan_ioctl;
+#ifdef RATELIMIT
+	ifp->if_snd_tag_alloc = vlan_snd_tag_alloc;
+#endif
 	ifp->if_flags = VLAN_IFFLAGS;
 	ether_ifattach(ifp, eaddr);
 	/* Now undo some of the damage... */
@@ -1286,6 +1295,7 @@ exists:
 	ifv->ifv_encaplen = ETHER_VLAN_ENCAP_LEN;
 	ifv->ifv_mintu = ETHERMIN;
 	ifv->ifv_pflags = 0;
+	ifv->ifv_capenable = -1;
 
 	/*
 	 * If the parent supports the VLAN_MTU capability,
@@ -1537,8 +1547,13 @@ vlan_capabilities(struct ifvlan *ifv)
 	struct ifnet *p = PARENT(ifv);
 	struct ifnet *ifp = ifv->ifv_ifp;
 	struct ifnet_hw_tsomax hw_tsomax;
+	int cap = 0, ena = 0, mena;
+	u_long hwa = 0;
 
 	TRUNK_LOCK_ASSERT(TRUNK(ifv));
+
+	/* Mask parent interface enabled capabilities disabled by user. */
+	mena = p->if_capenable & ifv->ifv_capenable;
 
 	/*
 	 * If the parent interface can do checksum offloading
@@ -1547,17 +1562,18 @@ vlan_capabilities(struct ifvlan *ifv)
 	 * offloading requires hardware VLAN tagging.
 	 */
 	if (p->if_capabilities & IFCAP_VLAN_HWCSUM)
-		ifp->if_capabilities = p->if_capabilities & IFCAP_HWCSUM;
-
+		cap |= p->if_capabilities & (IFCAP_HWCSUM | IFCAP_HWCSUM_IPV6);
 	if (p->if_capenable & IFCAP_VLAN_HWCSUM &&
 	    p->if_capenable & IFCAP_VLAN_HWTAGGING) {
-		ifp->if_capenable = p->if_capenable & IFCAP_HWCSUM;
-		ifp->if_hwassist = p->if_hwassist & (CSUM_IP | CSUM_TCP |
-		    CSUM_UDP | CSUM_SCTP);
-	} else {
-		ifp->if_capenable = 0;
-		ifp->if_hwassist = 0;
+		ena |= mena & (IFCAP_HWCSUM | IFCAP_HWCSUM_IPV6);
+		if (ena & IFCAP_TXCSUM)
+			hwa |= p->if_hwassist & (CSUM_IP | CSUM_TCP |
+			    CSUM_UDP | CSUM_SCTP);
+		if (ena & IFCAP_TXCSUM_IPV6)
+			hwa |= p->if_hwassist & (CSUM_TCP_IPV6 |
+			    CSUM_UDP_IPV6 | CSUM_SCTP_IPV6);
 	}
+
 	/*
 	 * If the parent interface can do TSO on VLANs then
 	 * propagate the hardware-assisted flag. TSO on VLANs
@@ -1567,14 +1583,22 @@ vlan_capabilities(struct ifvlan *ifv)
 	if_hw_tsomax_common(p, &hw_tsomax);
 	if_hw_tsomax_update(ifp, &hw_tsomax);
 	if (p->if_capabilities & IFCAP_VLAN_HWTSO)
-		ifp->if_capabilities |= p->if_capabilities & IFCAP_TSO;
+		cap |= p->if_capabilities & IFCAP_TSO;
 	if (p->if_capenable & IFCAP_VLAN_HWTSO) {
-		ifp->if_capenable |= p->if_capenable & IFCAP_TSO;
-		ifp->if_hwassist |= p->if_hwassist & CSUM_TSO;
-	} else {
-		ifp->if_capenable &= ~(p->if_capenable & IFCAP_TSO);
-		ifp->if_hwassist &= ~(p->if_hwassist & CSUM_TSO);
+		ena |= mena & IFCAP_TSO;
+		if (ena & IFCAP_TSO)
+			hwa |= p->if_hwassist & CSUM_TSO;
 	}
+
+	/*
+	 * If the parent interface can do LRO and checksum offloading on
+	 * VLANs, then guess it may do LRO on VLANs.  False positive here
+	 * cost nothing, while false negative may lead to some confusions.
+	 */
+	if (p->if_capabilities & IFCAP_VLAN_HWCSUM)
+		cap |= p->if_capabilities & IFCAP_LRO;
+	if (p->if_capenable & IFCAP_VLAN_HWCSUM)
+		ena |= p->if_capenable & IFCAP_LRO;
 
 	/*
 	 * If the parent interface can offload TCP connections over VLANs then
@@ -1586,11 +1610,31 @@ vlan_capabilities(struct ifvlan *ifv)
 	 */
 #define	IFCAP_VLAN_TOE IFCAP_TOE
 	if (p->if_capabilities & IFCAP_VLAN_TOE)
-		ifp->if_capabilities |= p->if_capabilities & IFCAP_TOE;
+		cap |= p->if_capabilities & IFCAP_TOE;
 	if (p->if_capenable & IFCAP_VLAN_TOE) {
 		TOEDEV(ifp) = TOEDEV(p);
-		ifp->if_capenable |= p->if_capenable & IFCAP_TOE;
+		ena |= mena & IFCAP_TOE;
 	}
+
+	/*
+	 * If the parent interface supports dynamic link state, so does the
+	 * VLAN interface.
+	 */
+	cap |= (p->if_capabilities & IFCAP_LINKSTATE);
+	ena |= (mena & IFCAP_LINKSTATE);
+
+#ifdef RATELIMIT
+	/*
+	 * If the parent interface supports ratelimiting, so does the
+	 * VLAN interface.
+	 */
+	cap |= (p->if_capabilities & IFCAP_TXRTLMT);
+	ena |= (mena & IFCAP_TXRTLMT);
+#endif
+
+	ifp->if_capabilities = cap;
+	ifp->if_capenable = ena;
+	ifp->if_hwassist = hwa;
 }
 
 static void
@@ -1794,6 +1838,18 @@ vlan_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 		vlan_tag_recalculate(ifv);
 		break;
 
+	case SIOCSIFCAP:
+		VLAN_LOCK();
+		ifv->ifv_capenable = ifr->ifr_reqcap;
+		trunk = TRUNK(ifv);
+		if (trunk != NULL) {
+			TRUNK_LOCK(trunk);
+			vlan_capabilities(ifv);
+			TRUNK_UNLOCK(trunk);
+		}
+		VLAN_UNLOCK();
+		break;
+
 	default:
 		error = EINVAL;
 		break;
@@ -1801,3 +1857,19 @@ vlan_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 
 	return (error);
 }
+
+#ifdef RATELIMIT
+static int
+vlan_snd_tag_alloc(struct ifnet *ifp,
+    union if_snd_tag_alloc_params *params,
+    struct m_snd_tag **ppmt)
+{
+
+	/* get trunk device */
+	ifp = vlan_trunkdev(ifp);
+	if (ifp == NULL || (ifp->if_capenable & IFCAP_TXRTLMT) == 0)
+		return (EOPNOTSUPP);
+	/* forward allocation request */
+	return (ifp->if_snd_tag_alloc(ifp, params, ppmt));
+}
+#endif

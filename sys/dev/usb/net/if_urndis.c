@@ -292,8 +292,8 @@ urndis_attach(device_t dev)
 	memcpy(&sc->sc_ue.ue_eaddr, buf, ETHER_ADDR_LEN);
 
 	/* Initialize packet filter */
-	sc->sc_filter = RNDIS_PACKET_TYPE_BROADCAST |
-	    RNDIS_PACKET_TYPE_ALL_MULTICAST;
+	sc->sc_filter = NDIS_PACKET_TYPE_BROADCAST |
+	    NDIS_PACKET_TYPE_ALL_MULTICAST;
 	msg.ibuf.filter = htole32(sc->sc_filter);
 	URNDIS_LOCK(sc);
 	error = urndis_ctrl_set(sc, OID_GEN_CURRENT_PACKET_FILTER,
@@ -658,7 +658,7 @@ urndis_ctrl_init(struct urndis_softc *sc)
 	msg.rm_type = htole32(REMOTE_NDIS_INITIALIZE_MSG);
 	msg.rm_len = htole32(sizeof(msg));
 	msg.rm_rid = 0;
-	msg.rm_ver_major = htole32(1);
+	msg.rm_ver_major = htole32(RNDIS_VERSION_MAJOR);
 	msg.rm_ver_minor = htole32(1);
 	msg.rm_max_xfersz = htole32(RNDIS_RX_MAXLEN);
 

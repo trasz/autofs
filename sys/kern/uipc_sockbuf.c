@@ -10,7 +10,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -794,8 +794,20 @@ sbappendaddr_locked_internal(struct sockbuf *sb, const struct sockaddr *asa,
 		return (0);
 	m->m_len = asa->sa_len;
 	bcopy(asa, mtod(m, caddr_t), asa->sa_len);
-	if (m0)
+	if (m0) {
 		m_clrprotoflags(m0);
+		m_tag_delete_chain(m0, NULL);
+		/*
+		 * Clear some persistent info from pkthdr.
+		 * We don't use m_demote(), because some netgraph consumers
+		 * expect M_PKTHDR presence.
+		 */
+		m0->m_pkthdr.rcvif = NULL;
+		m0->m_pkthdr.flowid = 0;
+		m0->m_pkthdr.csum_flags = 0;
+		m0->m_pkthdr.fibnum = 0;
+		m0->m_pkthdr.rsstype = 0;
+	}
 	if (ctrl_last)
 		ctrl_last->m_next = m0;	/* concatenate data to control */
 	else
@@ -1042,6 +1054,11 @@ static struct mbuf *
 sbcut_internal(struct sockbuf *sb, int len)
 {
 	struct mbuf *m, *next, *mfree;
+
+	KASSERT(len >= 0, ("%s: len is %d but it is supposed to be >= 0",
+	    __func__, len));
+	KASSERT(len <= sb->sb_ccc, ("%s: len: %d is > ccc: %u",
+	    __func__, len, sb->sb_ccc));
 
 	next = (m = sb->sb_mb) ? m->m_nextpkt : 0;
 	mfree = NULL;
