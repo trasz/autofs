@@ -107,7 +107,7 @@ coda_unsave(struct cnode *cp)
 			if (ptrprev == NULL)
 				coda_cache[coda_hash(&cp->c_fid)] =
 				    CNODE_NEXT(ptr);
-	    		else
+			else
 				CNODE_NEXT(ptrprev) = CNODE_NEXT(ptr);
 			CNODE_NEXT(cp) = (struct cnode *)NULL;
 			return;
@@ -506,7 +506,7 @@ handleDownCall(struct coda_mntinfo *mnt, int opcode, union outputArgs *out)
 			    coda_f2s(&out->coda_replace.OldFid),
 			    coda_f2s(&cp->c_fid), cp)););
 			vrele(CTOV(cp));
-	  	}
+		}
 		return (0);
 	}
 	default:
