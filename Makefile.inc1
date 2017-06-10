@@ -1632,11 +1632,6 @@ ${_bt}-usr.sbin/nmtree: ${_bt}-lib/libnetbsd
 _cat=		bin/cat
 .endif
 
-# r264059 support for status=
-.if ${BOOTSTRAPPING} < 1100017
-_dd=		bin/dd
-.endif
-
 # r277259 crunchide: Correct 64-bit section header offset
 # r281674 crunchide: always include both 32- and 64-bit ELF support
 .if ${BOOTSTRAPPING} < 1100078
@@ -1719,7 +1714,6 @@ bootstrap-tools: .PHONY
     ${_groff} \
     ${_dtc} \
     ${_cat} \
-    ${_dd} \
     ${_kbdcontrol} \
     usr.bin/lorder \
     ${_libopenbsd} \
@@ -2055,13 +2049,17 @@ _prebuild_libs=	${_kerberos5_lib_libasn1} \
 		${_cddl_lib_libctf} \
 		lib/libutil lib/libpjdlog ${_lib_libypclnt} lib/libz lib/msun \
 		${_secure_lib_libcrypto} ${_lib_libldns} \
-		${_secure_lib_libssh} ${_secure_lib_libssl} \
-		gnu/lib/libdialog
+		${_secure_lib_libssh} ${_secure_lib_libssl}
 
 .if ${MK_GNUCXX} != "no"
 _prebuild_libs+= gnu/lib/libstdc++ gnu/lib/libsupc++
 gnu/lib/libstdc++__L: lib/msun__L
 gnu/lib/libsupc++__L: gnu/lib/libstdc++__L
+.endif
+
+.if ${MK_DIALOG} != "no"
+_prebuild_libs+= gnu/lib/libdialog
+gnu/lib/libdialog__L: lib/msun__L lib/ncurses/ncursesw__L
 .endif
 
 .if ${MK_LIBCPLUSPLUS} != "no"
@@ -2209,8 +2207,6 @@ lib/libproc__L: lib/libcxxrt__L
 lib/libproc__L: gnu/lib/libsupc++__L
 .endif
 .endif
-
-gnu/lib/libdialog__L: lib/msun__L lib/ncurses/ncursesw__L
 
 .for _lib in ${_prereq_libs}
 ${_lib}__PL: .PHONY .MAKE

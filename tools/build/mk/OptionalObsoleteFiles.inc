@@ -1581,6 +1581,25 @@ OLD_FILES+=usr/bin/g++
 OLD_FILES+=usr/libexec/cc1plus
 .endif
 
+.if ${MK_DIALOG} == no
+OLD_FILES+=usr/bin/dialog
+OLD_FILES+=usr/bin/dpv
+OLD_FILES+=usr/lib/libdialog.a
+OLD_FILES+=usr/lib/libdialog.so
+OLD_FILES+=usr/lib/libdialog.so.8
+OLD_FILES+=usr/lib/libdialog_p.a
+OLD_FILES+=usr/lib/libdpv.a
+OLD_FILES+=usr/lib/libdpv.so
+OLD_FILES+=usr/lib/libdpv.so.1
+OLD_FILES+=usr/lib/libdpv_p.a
+OLD_FILES+=usr/sbin/bsdconfig
+OLD_FILES+=usr/share/man/man1/dialog.1.gz
+OLD_FILES+=usr/share/man/man1/dpv.1.gz
+OLD_FILES+=usr/share/man/man3/dialog.3.gz
+OLD_FILES+=usr/share/man/man3/dpv.3.gz
+OLD_FILES+=usr/share/man/man8/bsdconfig.8.gz
+.endif
+
 .if ${MK_FMTREE} == no
 OLD_FILES+=usr/sbin/fmtree
 OLD_FILES+=usr/share/man/man8/fmtree.8.gz
@@ -8329,6 +8348,13 @@ OLD_FILES+=usr/share/man/man1/colcrt.1.gz
 OLD_FILES+=usr/share/man/man1/ul.1.gz
 .endif
 
+.if ${MK_TFTP} == no
+OLD_FILES+=usr/bin/tftp
+OLD_FILES+=usr/libexec/tftpd
+OLD_FILES+=usr/share/man/man1/tftp.1.gz
+OLD_FILES+=usr/share/man/man8/tftpd.8.gz
+.endif
+
 .if ${MK_TIMED} == no
 OLD_FILES+=usr/sbin/timed
 OLD_FILES+=usr/sbin/timedc
@@ -9026,8 +9052,6 @@ OLD_FILES+=usr/share/man/man4/ucom.4.gz
 OLD_FILES+=usr/share/man/man4/ucycom.4.gz
 OLD_FILES+=usr/share/man/man4/udav.4.gz
 OLD_FILES+=usr/share/man/man4/udbp.4.gz
-OLD_FILES+=usr/share/man/man4/udp.4.gz
-OLD_FILES+=usr/share/man/man4/udplite.4.gz
 OLD_FILES+=usr/share/man/man4/uep.4.gz
 OLD_FILES+=usr/share/man/man4/ufm.4.gz
 OLD_FILES+=usr/share/man/man4/ufoma.4.gz

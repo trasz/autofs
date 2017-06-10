@@ -178,7 +178,7 @@ char *cpustatenames[] = {
 
 int memory_stats[7];
 char *memorynames[] = {
-	"K Active, ", "K Inact, ", "K Wired, ", "K Cache, ", "K Buf, ",
+	"K Active, ", "K Inact, ", "K Laundry, ", "K Wired, ", "K Buf, ",
 	"K Free", NULL
 };
 
@@ -188,9 +188,9 @@ char *arcnames[] = {
 	NULL
 };
 
-int carc_stats[5];
+int carc_stats[4];
 char *carcnames[] = {
-	"K Compressed, ", "K Uncompressed, ", ":1 Ratio, ", "K Overhead",
+	"K Compressed, ", "K Uncompressed, ", ":1 Ratio, ",
 	NULL
 };
 
@@ -521,8 +521,8 @@ get_system_info(struct system_info *si)
 		GETSYSCTL("vfs.bufspace", bufspace);
 		GETSYSCTL("vm.stats.vm.v_active_count", memory_stats[0]);
 		GETSYSCTL("vm.stats.vm.v_inactive_count", memory_stats[1]);
-		GETSYSCTL("vm.stats.vm.v_wire_count", memory_stats[2]);
-		GETSYSCTL("vm.stats.vm.v_cache_count", memory_stats[3]);
+		GETSYSCTL("vm.stats.vm.v_laundry_count", memory_stats[2]);
+		GETSYSCTL("vm.stats.vm.v_wire_count", memory_stats[3]);
 		GETSYSCTL("vm.stats.vm.v_free_count", memory_stats[5]);
 		GETSYSCTL("vm.stats.vm.v_swappgsin", nspgsin);
 		GETSYSCTL("vm.stats.vm.v_swappgsout", nspgsout);
@@ -580,11 +580,9 @@ get_system_info(struct system_info *si)
 	if (carc_enabled) {
 		GETSYSCTL("kstat.zfs.misc.arcstats.compressed_size", arc_stat);
 		carc_stats[0] = arc_stat >> 10;
+		carc_stats[2] = arc_stat >> 10; /* For ratio */
 		GETSYSCTL("kstat.zfs.misc.arcstats.uncompressed_size", arc_stat);
 		carc_stats[1] = arc_stat >> 10;
-		carc_stats[2] = arc_stats[0]; /* ARC Total */
-		GETSYSCTL("kstat.zfs.misc.arcstats.overhead_size", arc_stat);
-		carc_stats[3] = arc_stat >> 10;
 		si->carc = carc_stats;
 	}
 

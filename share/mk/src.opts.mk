@@ -76,12 +76,14 @@ __DEFAULT_YES_OPTIONS = \
     CTM \
     CUSE \
     CXX \
+    DIALOG \
     DICT \
     DMAGENT \
     DYNAMICROOT \
     ED_CRYPTO \
     EE \
     ELFCOPY_AS_OBJCOPY \
+    EFI \
     ELFTOOLCHAIN_BOOTSTRAP \
     EXAMPLES \
     FDT \
@@ -188,6 +190,7 @@ __DEFAULT_NO_OPTIONS = \
     OFED \
     OPENLDAP \
     REPRODUCIBLE_BUILD \
+    RPCBIND_WARMSTART_SUPPORT \
     SHARED_TOOLCHAIN \
     SORT_THREADS \
     SVN \
@@ -264,6 +267,16 @@ BROKEN_OPTIONS+=LLDB
 .if ${__T} != "armv6"
 BROKEN_OPTIONS+=LIBSOFT
 .endif
+.if ${__T:Mmips*} || ${__T:Mpowerpc*} || ${__T:Msparc64} || ${__T:Mriscv*}
+BROKEN_OPTIONS+=EFI
+.endif
+
+.if ${__T} == "aarch64" || ${__T} == "amd64" || ${__T} == "i386" || \
+    ${__T} == "powerpc64" || ${__T} == "sparc64"
+__DEFAULT_YES_OPTIONS+=CXGBETOOL
+.else
+__DEFAULT_NO_OPTIONS+=CXGBETOOL
+.endif
 
 .include <bsd.mkopt.mk>
 
@@ -326,6 +339,10 @@ MK_KERBEROS:=	no
 MK_CLANG:=	no
 MK_GROFF:=	no
 MK_GNUCXX:=	no
+.endif
+
+.if ${MK_DIALOG} == "no"
+MK_BSDINSTALL:=	no
 .endif
 
 .if ${MK_MAIL} == "no"
