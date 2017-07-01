@@ -1205,7 +1205,8 @@ exit:
 	 * have changed (or gone away entirely).
 	 */
 	cache_purge(fvp);
-	cache_purge(tvp);
+	if (tvp != NULL)
+		cache_purge(tvp);
 
 	/*
 	 * Release parents first, then children.
