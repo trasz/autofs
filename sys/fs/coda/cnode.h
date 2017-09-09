@@ -62,9 +62,6 @@ MALLOC_DECLARE(M_CODA);
 
 #define	CODA_ALLOC(ptr, cast, size) do {				\
 	ptr = (cast)malloc((unsigned long) size, M_CODA, M_WAITOK);	\
-	if (ptr == NULL)						\
-		panic("kernel malloc returns 0 at %s:%d\n", __FILE__,	\
-		    __LINE__);						\
 } while (0)
 
 #define	CODA_FREE(ptr, size)	free((ptr), M_CODA)
