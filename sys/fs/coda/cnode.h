@@ -60,8 +60,8 @@ MALLOC_DECLARE(M_CODA);
  */
 #define	CODA_CACHESIZE	512
 
-#define	CODA_ALLOC(ptr, cast, size) do {				\
-	ptr = (cast)malloc((unsigned long) size, M_CODA, M_WAITOK);	\
+#define	CODA_ALLOC(ptr, cast, size) do {					\
+	ptr = (cast)malloc((unsigned long) size, M_CODA, M_WAITOK | M_ZERO);	\
 } while (0)
 
 #define	CODA_FREE(ptr, size)	free((ptr), M_CODA)
