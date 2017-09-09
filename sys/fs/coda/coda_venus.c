@@ -28,8 +28,6 @@
  * 	@(#) src/sys/cfs/coda_venus.c,v 1.1.1.1 1998/08/29 21:14:52 rvb Exp $
  */
 
-#pragma clang optimize off
-
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
