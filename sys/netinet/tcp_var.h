@@ -272,8 +272,9 @@ struct tcp_function_block {
 };
 
 struct tcp_function {
-	TAILQ_ENTRY(tcp_function) tf_next;
-	struct tcp_function_block *tf_fb;
+	TAILQ_ENTRY(tcp_function)	tf_next;
+	char				tf_name[TCP_FUNCTION_NAME_LEN_MAX];
+	struct tcp_function_block	*tf_fb;
 };
 
 TAILQ_HEAD(tcp_funchead, tcp_function);
@@ -579,6 +580,11 @@ struct	tcpstat {
 	uint64_t tcps_sig_err_sigopt;	/* No signature expected by socket */
 	uint64_t tcps_sig_err_nosigopt;	/* No signature provided by segment */
 
+	/* Path MTU Discovery Black Hole Detection related stats */
+	uint64_t tcps_pmtud_blackhole_activated;	 /* Black Hole Count */
+	uint64_t tcps_pmtud_blackhole_activated_min_mss; /* BH at min MSS Count */
+	uint64_t tcps_pmtud_blackhole_failed;		 /* Black Hole Failure Count */
+
 	uint64_t _pad[12];		/* 6 UTO, 6 TBD */
 };
 
@@ -649,7 +655,7 @@ struct tcp_hhook_data {
 struct xtcpcb {
 	size_t		xt_len;		/* length of this structure */
 	struct xinpcb	xt_inp;
-	char		xt_stack[TCP_FUNCTION_NAME_LEN_MAX];	/* (n) */
+	char		xt_stack[TCP_FUNCTION_NAME_LEN_MAX];	/* (s) */
 	int64_t		spare64[8];
 	int32_t		t_state;		/* (s,p) */
 	uint32_t	t_flags;		/* (s,p) */
@@ -785,6 +791,10 @@ void	 tcp_do_segment(struct mbuf *, struct tcphdr *,
 			int);
 
 int register_tcp_functions(struct tcp_function_block *blk, int wait);
+int register_tcp_functions_as_names(struct tcp_function_block *blk,
+    int wait, const char *names[], int *num_names);
+int register_tcp_functions_as_name(struct tcp_function_block *blk,
+    const char *name, int wait);
 int deregister_tcp_functions(struct tcp_function_block *blk);
 struct tcp_function_block *find_and_ref_tcp_functions(struct tcp_function_set *fs);
 struct tcp_function_block *find_and_ref_tcp_fb(struct tcp_function_block *blk);

@@ -1052,6 +1052,15 @@ vtterm_param(struct terminal *tm, int cmd, unsigned int arg)
 	struct vt_window *vw = tm->tm_softc;
 
 	switch (cmd) {
+	case TP_SETLOCALCURSOR:
+		/*
+		 * 0 means normal (usually block), 1 means hidden, and
+		 * 2 means blinking (always block) for compatibility with
+		 * syscons.  We don't support any changes except hiding,
+		 * so must map 2 to 0.
+		 */
+		arg = (arg == 1) ? 0 : 1;
+		/* FALLTHROUGH */
 	case TP_SHOWCURSOR:
 		vtbuf_cursor_visibility(&vw->vw_buf, arg);
 		vt_resume_flush_timer(vw->vw_device, 0);
@@ -2610,10 +2619,17 @@ vt_upgrade(struct vt_device *vd)
 		/* Init 25 Hz timer. */
 		callout_init_mtx(&vd->vd_timer, &vd->vd_lock, 0);
 
-		/* Start timer when everything ready. */
+		/*
+		 * Start timer when everything ready.
+		 * Note that the operations here are purposefully ordered.
+		 * We need to ensure vd_timer_armed is non-zero before we set
+		 * the VDF_ASYNC flag. That prevents this function from
+		 * racing with vt_resume_flush_timer() to update the
+		 * callout structure.
+		 */
+		atomic_add_acq_int(&vd->vd_timer_armed, 1);
 		vd->vd_flags |= VDF_ASYNC;
 		callout_reset(&vd->vd_timer, hz / VT_TIMERFREQ, vt_timer, vd);
-		vd->vd_timer_armed = 1;
 		register_handlers = 1;
 	}
 

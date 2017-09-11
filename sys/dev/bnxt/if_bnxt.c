@@ -176,6 +176,7 @@ static int bnxt_media_change(if_ctx_t ctx);
 static int bnxt_promisc_set(if_ctx_t ctx, int flags);
 static uint64_t	bnxt_get_counter(if_ctx_t, ift_counter);
 static void bnxt_update_admin_status(if_ctx_t ctx);
+static void bnxt_if_timer(if_ctx_t ctx, uint16_t qid);
 
 /* Interrupt enable / disable */
 static void bnxt_intr_enable(if_ctx_t ctx);
@@ -260,6 +261,7 @@ static device_method_t bnxt_iflib_methods[] = {
 	DEVMETHOD(ifdi_promisc_set, bnxt_promisc_set),
 	DEVMETHOD(ifdi_get_counter, bnxt_get_counter),
 	DEVMETHOD(ifdi_update_admin_status, bnxt_update_admin_status),
+	DEVMETHOD(ifdi_timer, bnxt_if_timer),
 
 	DEVMETHOD(ifdi_intr_enable, bnxt_intr_enable),
 	DEVMETHOD(ifdi_tx_queue_intr_enable, bnxt_tx_queue_intr_enable),
@@ -287,7 +289,7 @@ static driver_t bnxt_iflib_driver = {
  * iflib shared context
  */
 
-#define BNXT_DRIVER_VERSION	"1.0.0.0"
+#define BNXT_DRIVER_VERSION	"1.0.0.2"
 char bnxt_driver_version[] = BNXT_DRIVER_VERSION;
 extern struct if_txrx bnxt_txrx;
 static struct if_shared_ctx bnxt_sctx_init = {
@@ -424,6 +426,8 @@ bnxt_queues_free(if_ctx_t ctx)
 
 	// Free RX queues
 	iflib_dma_free(&softc->rx_stats);
+	iflib_dma_free(&softc->hw_tx_port_stats);
+	iflib_dma_free(&softc->hw_rx_port_stats);
 	free(softc->grp_info, M_DEVBUF);
 	free(softc->ag_rings, M_DEVBUF);
 	free(softc->rx_rings, M_DEVBUF);
@@ -480,6 +484,33 @@ bnxt_rx_queues_alloc(if_ctx_t ctx, caddr_t *vaddrs,
 	bus_dmamap_sync(softc->rx_stats.idi_tag, softc->rx_stats.idi_map,
 	    BUS_DMASYNC_PREREAD);
 
+/* 
+ * Additional 512 bytes for future expansion.
+ * To prevent corruption when loaded with newer firmwares with added counters.
+ * This can be deleted when there will be no further additions of counters.
+ */
+#define BNXT_PORT_STAT_PADDING  512
+
+	rc = iflib_dma_alloc(ctx, sizeof(struct rx_port_stats) + BNXT_PORT_STAT_PADDING,
+	    &softc->hw_rx_port_stats, 0);
+	if (rc)
+		goto hw_port_rx_stats_alloc_fail;
+
+	bus_dmamap_sync(softc->hw_rx_port_stats.idi_tag, 
+            softc->hw_rx_port_stats.idi_map, BUS_DMASYNC_PREREAD);
+
+	rc = iflib_dma_alloc(ctx, sizeof(struct tx_port_stats) + BNXT_PORT_STAT_PADDING,
+	    &softc->hw_tx_port_stats, 0);
+
+	if (rc)
+		goto hw_port_tx_stats_alloc_fail;
+
+	bus_dmamap_sync(softc->hw_tx_port_stats.idi_tag, 
+            softc->hw_tx_port_stats.idi_map, BUS_DMASYNC_PREREAD);
+
+	softc->rx_port_stats = (void *) softc->hw_rx_port_stats.idi_vaddr;
+	softc->tx_port_stats = (void *) softc->hw_tx_port_stats.idi_vaddr;
+
 	for (i = 0; i < nrxqsets; i++) {
 		/* Allocation the completion ring */
 		softc->rx_cp_rings[i].stats_ctx_id = HWRM_NA_SIGNATURE;
@@ -506,6 +537,17 @@ bnxt_rx_queues_alloc(if_ctx_t ctx, caddr_t *vaddrs,
 		softc->rx_rings[i].vaddr = vaddrs[i * nrxqs + 1];
 		softc->rx_rings[i].paddr = paddrs[i * nrxqs + 1];
 
+		/* Allocate the TPA start buffer */
+		softc->rx_rings[i].tpa_start = malloc(sizeof(struct bnxt_full_tpa_start) *
+	    		(RX_TPA_START_CMPL_AGG_ID_MASK >> RX_TPA_START_CMPL_AGG_ID_SFT),
+	    		M_DEVBUF, M_NOWAIT | M_ZERO);
+		if (softc->rx_rings[i].tpa_start == NULL) {
+			rc = -ENOMEM;
+			device_printf(softc->dev,
+					"Unable to allocate space for TPA\n");
+			goto tpa_alloc_fail;
+		}
+
 		/* Allocate the AG ring */
 		softc->ag_rings[i].phys_id = (uint16_t)HWRM_NA_SIGNATURE;
 		softc->ag_rings[i].softc = softc;
@@ -526,6 +568,13 @@ bnxt_rx_queues_alloc(if_ctx_t ctx, caddr_t *vaddrs,
 
 		bnxt_create_rx_sysctls(softc, i);
 	}
+
+	/*
+	 * When SR-IOV is enabled, avoid each VF sending PORT_QSTATS
+         * HWRM every sec with which firmware timeouts can happen
+         */
+	if (BNXT_PF(softc))
+        	bnxt_create_port_stats_sysctls(softc);
 
 	/* And finally, the VNIC */
 	softc->vnic_info.id = (uint16_t)HWRM_NA_SIGNATURE;
@@ -571,7 +620,14 @@ rss_grp_alloc_fail:
 	iflib_dma_free(&softc->vnic_info.rss_hash_key_tbl);
 rss_hash_alloc_fail:
 	iflib_dma_free(&softc->vnic_info.mc_list);
+tpa_alloc_fail:
 mc_list_alloc_fail:
+	for (i = i - 1; i >= 0; i--)
+		free(softc->rx_rings[i].tpa_start, M_DEVBUF);
+	iflib_dma_free(&softc->hw_tx_port_stats);
+hw_port_tx_stats_alloc_fail:
+	iflib_dma_free(&softc->hw_rx_port_stats);
+hw_port_rx_stats_alloc_fail:
 	iflib_dma_free(&softc->rx_stats);
 hw_stats_alloc_fail:
 	free(softc->grp_info, M_DEVBUF);
@@ -635,16 +691,6 @@ bnxt_attach_pre(if_ctx_t ctx)
 	if (rc)
 		goto dma_fail;
 
-	/* Allocate the TPA start buffer */
-	softc->tpa_start = malloc(sizeof(struct bnxt_full_tpa_start) *
-	    (RX_TPA_START_CMPL_AGG_ID_MASK >> RX_TPA_START_CMPL_AGG_ID_SFT),
-	    M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (softc->tpa_start == NULL) {
-		rc = ENOMEM;
-		device_printf(softc->dev,
-		    "Unable to allocate space for TPA\n");
-		goto tpa_failed;
-	}
 
 	/* Get firmware version and compare with driver */
 	softc->ver_info = malloc(sizeof(struct bnxt_ver_info),
@@ -687,10 +733,23 @@ bnxt_attach_pre(if_ctx_t ctx)
 		goto drv_rgtr_fail;
 	}
 
+        rc = bnxt_hwrm_func_rgtr_async_events(softc, NULL, 0);
+	if (rc) {
+		device_printf(softc->dev, "attach: hwrm rgtr async evts failed\n");
+		goto drv_rgtr_fail;
+	}
+
 	/* Get the HW capabilities */
 	rc = bnxt_hwrm_func_qcaps(softc);
 	if (rc)
 		goto failed;
+
+	/* Get the current configuration of this function */
+	rc = bnxt_hwrm_func_qcfg(softc);
+	if (rc) {
+		device_printf(softc->dev, "attach: hwrm func qcfg failed\n");
+		goto failed;
+	}
 
 	iflib_set_mac(ctx, softc->func.mac_addr);
 
@@ -751,12 +810,16 @@ bnxt_attach_pre(if_ctx_t ctx)
 	    scctx->isc_nrxd[1];
 	scctx->isc_rxqsizes[2] = sizeof(struct rx_prod_pkt_bd) *
 	    scctx->isc_nrxd[2];
-	scctx->isc_max_rxqsets = min(pci_msix_count(softc->dev)-1,
-	    softc->func.max_cp_rings - 1);
-	scctx->isc_max_rxqsets = min(scctx->isc_max_rxqsets,
-	    softc->func.max_rx_rings);
-	scctx->isc_max_txqsets = min(softc->func.max_rx_rings,
-	    softc->func.max_cp_rings - scctx->isc_max_rxqsets - 1);
+
+	scctx->isc_nrxqsets_max = min(pci_msix_count(softc->dev)-1,
+	    softc->fn_qcfg.alloc_completion_rings - 1);
+	scctx->isc_nrxqsets_max = min(scctx->isc_nrxqsets_max,
+	    softc->fn_qcfg.alloc_rx_rings);
+	scctx->isc_nrxqsets_max = min(scctx->isc_nrxqsets_max,
+	    softc->fn_qcfg.alloc_vnics);
+	scctx->isc_ntxqsets_max = min(softc->fn_qcfg.alloc_tx_rings,
+	    softc->fn_qcfg.alloc_completion_rings - scctx->isc_nrxqsets_max - 1);
+
 	scctx->isc_rss_table_size = HW_HASH_INDEX_SIZE;
 	scctx->isc_rss_table_mask = scctx->isc_rss_table_size - 1;
 
@@ -814,8 +877,6 @@ nvm_alloc_fail:
 ver_fail:
 	free(softc->ver_info, M_DEVBUF);
 ver_alloc_fail:
-	free(softc->tpa_start, M_DEVBUF);
-tpa_failed:
 	bnxt_free_hwrm_dma_mem(softc);
 dma_fail:
 	BNXT_HWRM_LOCK_DESTROY(softc);
@@ -877,7 +938,8 @@ bnxt_detach(if_ctx_t ctx)
 	SLIST_FOREACH_SAFE(tag, &softc->vnic_info.vlan_tags, next, tmp)
 		free(tag, M_DEVBUF);
 	iflib_dma_free(&softc->def_cp_ring_mem);
-	free(softc->tpa_start, M_DEVBUF);
+	for (i = 0; i < softc->nrxqsets; i++)
+		free(softc->rx_rings[i].tpa_start, M_DEVBUF);
 	free(softc->ver_info, M_DEVBUF);
 	free(softc->nvm_info, M_DEVBUF);
 
@@ -910,7 +972,7 @@ bnxt_init(if_ctx_t ctx)
 	softc->def_cp_ring.v_bit = 1;
 	bnxt_mark_cpr_invalid(&softc->def_cp_ring);
 	rc = bnxt_hwrm_ring_alloc(softc,
-	    HWRM_RING_ALLOC_INPUT_RING_TYPE_CMPL,
+	    HWRM_RING_ALLOC_INPUT_RING_TYPE_L2_CMPL,
 	    &softc->def_cp_ring.ring,
 	    (uint16_t)HWRM_NA_SIGNATURE,
 	    HWRM_NA_SIGNATURE, true);
@@ -936,7 +998,7 @@ bnxt_init(if_ctx_t ctx)
 		softc->rx_cp_rings[i].last_idx = UINT32_MAX;
 		bnxt_mark_cpr_invalid(&softc->rx_cp_rings[i]);
 		rc = bnxt_hwrm_ring_alloc(softc,
-		    HWRM_RING_ALLOC_INPUT_RING_TYPE_CMPL,
+		    HWRM_RING_ALLOC_INPUT_RING_TYPE_L2_CMPL,
 		    &softc->rx_cp_rings[i].ring, (uint16_t)HWRM_NA_SIGNATURE,
 		    HWRM_NA_SIGNATURE, true);
 		if (rc)
@@ -1009,14 +1071,17 @@ bnxt_init(if_ctx_t ctx)
 	if (rc)
 		goto fail;
 
-#ifdef notyet
-	/* Enable LRO/TPA/GRO */
+	/* 
+         * Enable LRO/TPA/GRO 
+         * TBD: 
+         *      Enable / Disable HW_LRO based on
+         *      ifconfig lro / ifconfig -lro setting
+         */
 	rc = bnxt_hwrm_vnic_tpa_cfg(softc, &softc->vnic_info,
 	    (if_getcapenable(iflib_get_ifp(ctx)) & IFCAP_LRO) ?
 	    HWRM_VNIC_TPA_CFG_INPUT_FLAGS_TPA : 0);
 	if (rc)
 		goto fail;
-#endif
 
 	for (i = 0; i < softc->ntxqsets; i++) {
 		/* Allocate the statistics context */
@@ -1031,7 +1096,7 @@ bnxt_init(if_ctx_t ctx)
 		softc->tx_cp_rings[i].v_bit = 1;
 		bnxt_mark_cpr_invalid(&softc->tx_cp_rings[i]);
 		rc = bnxt_hwrm_ring_alloc(softc,
-		    HWRM_RING_ALLOC_INPUT_RING_TYPE_CMPL,
+		    HWRM_RING_ALLOC_INPUT_RING_TYPE_L2_CMPL,
 		    &softc->tx_cp_rings[i].ring, (uint16_t)HWRM_NA_SIGNATURE,
 		    HWRM_NA_SIGNATURE, false);
 		if (rc)
@@ -1131,7 +1196,7 @@ bnxt_media_status(if_ctx_t ctx, struct ifmediareq * ifmr)
 	else
 		ifmr->ifm_status &= ~IFM_ACTIVE;
 
-	if (link_info->duplex == HWRM_PORT_PHY_QCFG_OUTPUT_DUPLEX_FULL)
+	if (link_info->duplex == HWRM_PORT_PHY_QCFG_OUTPUT_DUPLEX_CFG_FULL)
 		ifmr->ifm_active |= IFM_FDX;
 	else
 		ifmr->ifm_active |= IFM_HDX;
@@ -1152,7 +1217,12 @@ bnxt_media_status(if_ctx_t ctx, struct ifmediareq * ifmr)
 			ifmr->ifm_active |= IFM_1000_SGMII;
 			break;
 		default:
-			ifmr->ifm_active |= IFM_UNKNOWN;
+                        /*
+                         * Workaround: 
+                         *    Don't return IFM_UNKNOWN until 
+                         *    Stratus return proper media_type 
+                         */  
+			ifmr->ifm_active |= IFM_1000_KX;
 			break;
 		}
 	break;
@@ -1192,7 +1262,12 @@ bnxt_media_status(if_ctx_t ctx, struct ifmediareq * ifmr)
 			ifmr->ifm_active |= IFM_10G_T;
 			break;
 		default:
-			ifmr->ifm_active |= IFM_UNKNOWN;
+                        /*
+                         * Workaround: 
+                         *    Don't return IFM_UNKNOWN until 
+                         *    Stratus return proper media_type 
+                         */  
+			ifmr->ifm_active |= IFM_10G_CR1;
 			break;
 		}
 		break;
@@ -1213,7 +1288,12 @@ bnxt_media_status(if_ctx_t ctx, struct ifmediareq * ifmr)
 			ifmr->ifm_active |= IFM_25G_SR;
 			break;
 		default:
-			ifmr->ifm_active |= IFM_UNKNOWN;
+                        /*
+                         * Workaround: 
+                         *    Don't return IFM_UNKNOWN until 
+                         *    Stratus return proper media_type 
+                         */  
+			ifmr->ifm_active |= IFM_25G_CR;
 			break;
 		}
 		break;
@@ -1249,7 +1329,12 @@ bnxt_media_status(if_ctx_t ctx, struct ifmediareq * ifmr)
 			ifmr->ifm_active |= IFM_50G_KR2;
 			break;
 		default:
-			ifmr->ifm_active |= IFM_UNKNOWN;
+                        /*
+                         * Workaround: 
+                         *    Don't return IFM_UNKNOWN until 
+                         *    Stratus return proper media_type 
+                         */  
+			ifmr->ifm_active |= IFM_50G_CR2;
 			break;
 		}
 		break;
@@ -1270,7 +1355,12 @@ bnxt_media_status(if_ctx_t ctx, struct ifmediareq * ifmr)
 			ifmr->ifm_active |= IFM_100G_SR4;
 			break;
 		default:
-			ifmr->ifm_active |= IFM_UNKNOWN;
+                        /*
+                         * Workaround: 
+                         *    Don't return IFM_UNKNOWN until 
+                         *    Stratus return proper media_type 
+                         */  
+			ifmr->ifm_active |= IFM_100G_CR4;
 			break;
 		}
 	default:
@@ -1419,7 +1509,32 @@ bnxt_get_counter(if_ctx_t ctx, ift_counter cnt)
 static void
 bnxt_update_admin_status(if_ctx_t ctx)
 {
-	/* TODO: do we need to do anything here? */
+	struct bnxt_softc *softc = iflib_get_softc(ctx);
+
+	/*
+	 * When SR-IOV is enabled, avoid each VF sending this HWRM 
+         * request every sec with which firmware timeouts can happen
+         */
+	if (BNXT_PF(softc)) {
+		bnxt_hwrm_port_qstats(softc);
+	}	
+
+	return;
+}
+
+static void
+bnxt_if_timer(if_ctx_t ctx, uint16_t qid)
+{
+
+	struct bnxt_softc *softc = iflib_get_softc(ctx);
+	uint64_t ticks_now = ticks; 
+
+        /* Schedule bnxt_update_admin_status() once per sec */
+        if (ticks_now - softc->admin_ticks >= hz) {
+		softc->admin_ticks = ticks_now;
+		iflib_admin_intr_deferred(ctx);
+	}
+
 	return;
 }
 
@@ -1500,6 +1615,7 @@ bnxt_msix_intr_assign(if_ctx_t ctx, int msix)
 	struct bnxt_softc *softc = iflib_get_softc(ctx);
 	int rc;
 	int i;
+	char irq_name[16];
 
 	rc = iflib_irq_alloc_generic(ctx, &softc->def_cp_ring.irq,
 	    softc->def_cp_ring.ring.id + 1, IFLIB_INTR_ADMIN,
@@ -1511,9 +1627,10 @@ bnxt_msix_intr_assign(if_ctx_t ctx, int msix)
 	}
 
 	for (i=0; i<softc->scctx->isc_nrxqsets; i++) {
+		snprintf(irq_name, sizeof(irq_name), "rxq%d", i);
 		rc = iflib_irq_alloc_generic(ctx, &softc->rx_cp_rings[i].irq,
 		    softc->rx_cp_rings[i].ring.id + 1, IFLIB_INTR_RX,
-		    bnxt_handle_rx_cp, &softc->rx_cp_rings[i], i, "rx_cp");
+		    bnxt_handle_rx_cp, &softc->rx_cp_rings[i], i, irq_name);
 		if (rc) {
 			device_printf(iflib_get_dev(ctx),
 			    "Failed to register RX completion ring handler\n");
@@ -2023,9 +2140,6 @@ bnxt_add_media_types(struct bnxt_softc *softc)
 			ifmedia_add(softc->media, IFM_ETHER | IFM_10G_CR1, 0,
 			    NULL);
 		break;
-	case HWRM_PORT_PHY_QCFG_OUTPUT_PHY_TYPE_UNKNOWN:
-		/* Auto only */
-		break;
 	case HWRM_PORT_PHY_QCFG_OUTPUT_PHY_TYPE_BASEKR4:
 	case HWRM_PORT_PHY_QCFG_OUTPUT_PHY_TYPE_BASEKR2:
 	case HWRM_PORT_PHY_QCFG_OUTPUT_PHY_TYPE_BASEKR:
@@ -2106,6 +2220,32 @@ bnxt_add_media_types(struct bnxt_softc *softc)
 		if (supported & HWRM_PORT_PHY_QCFG_OUTPUT_SUPPORT_SPEEDS_1GB)
 			ifmedia_add(softc->media, IFM_ETHER | IFM_1000_SGMII, 0,
 			    NULL);
+		break;
+	case HWRM_PORT_PHY_QCFG_OUTPUT_PHY_TYPE_UNKNOWN:
+        default:
+                /*
+                 * Workaround for Cumulus & Stratus 
+                 *  For Stratus: 
+                 *      media_type is being returned as 0x0
+                 *      Return support speeds as 10G, 25G, 50G & 100G
+                 *
+                 *  For Cumulus: 
+                 *      phy_type is being returned as 0x14 (PHY_TYPE_40G_BASECR4)
+                 *      Return support speeds as 1G, 10G, 25G & 50G
+                 */
+		if (pci_get_device(softc->dev) == BCM57454) {
+                        /* For Stratus: 10G, 25G, 50G & 100G */
+			ifmedia_add(softc->media, IFM_ETHER | IFM_100G_CR4, 0, NULL);
+			ifmedia_add(softc->media, IFM_ETHER | IFM_50G_CR2, 0, NULL);
+			ifmedia_add(softc->media, IFM_ETHER | IFM_25G_CR, 0, NULL);
+			ifmedia_add(softc->media, IFM_ETHER | IFM_10G_CR1, 0, NULL);
+		} else if (pci_get_device(softc->dev) == BCM57414) {
+                        /* For Cumulus: 1G, 10G, 25G & 50G */
+			ifmedia_add(softc->media, IFM_ETHER | IFM_50G_CR2, 0, NULL);
+			ifmedia_add(softc->media, IFM_ETHER | IFM_25G_CR, 0, NULL);
+			ifmedia_add(softc->media, IFM_ETHER | IFM_10G_CR1, 0, NULL);
+			ifmedia_add(softc->media, IFM_ETHER | IFM_1000_T, 0, NULL);
+                } 
 		break;
 	}
 
@@ -2215,7 +2355,7 @@ bnxt_report_link(struct bnxt_softc *softc)
 
 	if (softc->link_info.link_up) {
 		if (softc->link_info.duplex ==
-		    HWRM_PORT_PHY_QCFG_OUTPUT_DUPLEX_FULL)
+		    HWRM_PORT_PHY_QCFG_OUTPUT_DUPLEX_CFG_FULL)
 			duplex = "full duplex";
 		else
 			duplex = "half duplex";
@@ -2230,11 +2370,11 @@ bnxt_report_link(struct bnxt_softc *softc)
 		    HWRM_PORT_PHY_QCFG_OUTPUT_PAUSE_RX)
 			flow_ctrl = "FC - receive";
 		else
-			flow_ctrl = "none";
+			flow_ctrl = "FC - none";
 		iflib_link_state_change(softc->ctx, LINK_STATE_UP,
 		    IF_Gbps(100));
-		device_printf(softc->dev, "Link is UP %s, %s\n", duplex,
-		    flow_ctrl);
+		device_printf(softc->dev, "Link is UP %s, %s - %d Mbps \n", duplex,
+		    flow_ctrl, (softc->link_info.link_speed * 100));
 	} else {
 		iflib_link_state_change(softc->ctx, LINK_STATE_DOWN,
 		    bnxt_get_baudrate(&softc->link_info));

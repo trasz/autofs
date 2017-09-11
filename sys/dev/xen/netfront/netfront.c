@@ -74,8 +74,8 @@ __FBSDID("$FreeBSD$");
 /* Features supported by all backends.  TSO and LRO can be negotiated */
 #define XN_CSUM_FEATURES	(CSUM_TCP | CSUM_UDP)
 
-#define NET_TX_RING_SIZE __RING_SIZE((netif_tx_sring_t *)0, PAGE_SIZE)
-#define NET_RX_RING_SIZE __RING_SIZE((netif_rx_sring_t *)0, PAGE_SIZE)
+#define NET_TX_RING_SIZE __CONST_RING_SIZE(netif_tx, PAGE_SIZE)
+#define NET_RX_RING_SIZE __CONST_RING_SIZE(netif_rx, PAGE_SIZE)
 
 #define NET_RX_SLOTS_MIN (XEN_NETIF_NR_SLOTS_MIN + 1)
 
@@ -1224,7 +1224,6 @@ xn_rxeof(struct netfront_rxq *rxq)
 		RING_FINAL_CHECK_FOR_RESPONSES(&rxq->ring, work_to_do);
 	} while (work_to_do);
 
-	XN_RX_UNLOCK(rxq);
 	mbufq_drain(&mbufq_errq);
 	/*
 	 * Process all the mbufs after the remapping is complete.
@@ -1253,7 +1252,6 @@ xn_rxeof(struct netfront_rxq *rxq)
 	 */
 	tcp_lro_flush_all(lro);
 #endif
-	XN_RX_LOCK(rxq);
 }
 
 static void
@@ -1769,6 +1767,9 @@ xn_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 #endif
 		break;
 	case SIOCSIFMTU:
+		if (ifp->if_mtu == ifr->ifr_mtu)
+			break;
+
 		ifp->if_mtu = ifr->ifr_mtu;
 		ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
 		xn_ifinit(sc);

@@ -2185,6 +2185,8 @@ init386(int first)
 	else
 		init_static_kenv(NULL, 0);
 
+	identify_hypervisor();
+
 	/* Init basic tunables, hz etc */
 	init_param1();
 
@@ -2445,10 +2447,6 @@ init386(int first)
 	gdp->gd_dpl = SEL_UPL;
 	gdp->gd_p = 1;
 	gdp->gd_hioffset = x >> 16;
-
-	/* XXX does this work? */
-	/* XXX yes! */
-	ldt[LBSDICALLS_SEL] = ldt[LSYS5CALLS_SEL];
 
 	/* transfer to user mode */
 

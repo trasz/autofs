@@ -339,6 +339,9 @@ proc_objname(struct proc_handle *p, uintptr_t addr, char *objname,
 	prmap_t *map;
 	size_t i;
 
+	if (p->nmappings == 0)
+		if (proc_rdagent(p) == NULL)
+			return (NULL);
 	for (i = 0; i < p->nmappings; i++) {
 		map = &p->mappings[i].map;
 		if (addr >= map->pr_vaddr &&
@@ -508,7 +511,8 @@ _proc_name2map(struct proc_handle *p, const char *name)
 			return (&p->mappings[i]);
 	}
 	if (strcmp(name, "a.out") == 0)
-		return (_proc_addr2map(p, p->exec_map->pr_vaddr));
+		return (_proc_addr2map(p,
+		    p->mappings[p->exec_map].map.pr_vaddr));
 	return (NULL);
 }
 

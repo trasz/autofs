@@ -832,6 +832,7 @@ dovmstat(unsigned int interval, int reps)
 			xo_emit(" ");
 			xo_emit("{:free-memory/%7d}",
 			        vmstat_pgtok(total.t_free));
+			xo_emit(" ");
 		}
 		xo_emit("{:total-page-faults/%5lu} ",
 		        (unsigned long)rate(sum.v_vm_faults -
@@ -1642,6 +1643,9 @@ display_object(struct kinfo_vmobject *kvo)
 		break;
 	case KVME_TYPE_SG:
 		str = "sg";
+		break;
+	case KVME_TYPE_MGTDEVICE:
+		str = "md";
 		break;
 	case KVME_TYPE_UNKNOWN:
 	default:

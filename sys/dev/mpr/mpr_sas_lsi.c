@@ -139,7 +139,7 @@ mprsas_evt_handler(struct mpr_softc *sc, uintptr_t data,
 	u16 sz;
 
 	mpr_dprint(sc, MPR_TRACE, "%s\n", __func__);
-	mpr_print_evt_sas(sc, event);
+	MPR_DPRINT_EVENT(sc, sas, event);
 	mprsas_record_event(sc, event);
 
 	fw_event = malloc(sizeof(struct mpr_fw_event_work), M_MPR,
@@ -223,8 +223,9 @@ mprsas_fw_work(struct mpr_softc *sc, struct mpr_fw_event_work *fw_event)
 				if (mprsas_add_device(sc,
 				    le16toh(phy->AttachedDevHandle),
 				    phy->LinkRate)) {
-					printf("%s: failed to add device with "
-					    "handle 0x%x\n", __func__,
+					mpr_dprint(sc, MPR_ERROR, "%s: "
+					    "failed to add device with handle "
+					    "0x%x\n", __func__,
 					    le16toh(phy->AttachedDevHandle));
 					mprsas_prepare_remove(sassc, le16toh(
 					    phy->AttachedDevHandle));
@@ -289,7 +290,7 @@ mprsas_fw_work(struct mpr_softc *sc, struct mpr_fw_event_work *fw_event)
 
 		element =
 		    (Mpi2EventIrConfigElement_t *)&event_data->ConfigElement[0];
-		id = mpr_mapping_get_raid_id_from_handle(sc,
+		id = mpr_mapping_get_raid_tid_from_handle(sc,
 		    element->VolDevHandle);
 
 		mpr_mapping_ir_config_change_event(sc, event_data);
@@ -323,7 +324,7 @@ mprsas_fw_work(struct mpr_softc *sc, struct mpr_fw_event_work *fw_event)
 			{
 				// build RAID Action message
 				Mpi2RaidActionRequest_t	*action;
-				Mpi2RaidActionReply_t *reply;
+				Mpi2RaidActionReply_t *reply = NULL;
 				struct mpr_command *cm;
 				int error = 0;
 				if ((cm = mpr_alloc_command(sc)) == NULL) {
@@ -343,8 +344,10 @@ mprsas_fw_work(struct mpr_softc *sc, struct mpr_fw_event_work *fw_event)
 				action->PhysDiskNum = element->PhysDiskNum;
 				cm->cm_desc.Default.RequestFlags =
 				    MPI2_REQ_DESCRIPT_FLAGS_DEFAULT_TYPE;
-				error = mpr_request_polled(sc, cm);
-				reply = (Mpi2RaidActionReply_t *)cm->cm_reply;
+				error = mpr_request_polled(sc, &cm);
+				if (cm != NULL)
+					reply = (Mpi2RaidActionReply_t *)
+					    cm->cm_reply;
 				if (error || (reply == NULL)) {
 					/* FIXME */
 					/*
@@ -795,7 +798,8 @@ mprsas_add_device(struct mpr_softc *sc, u16 handle, u8 linkrate)
 		if ((mpr_config_get_sas_device_pg0(sc, &tmp_mpi_reply,
 		     &parent_config_page, MPI2_SAS_DEVICE_PGAD_FORM_HANDLE,
 		     le16toh(config_page.ParentDevHandle)))) {
-			printf("%s: error reading SAS device %#x page0\n",
+			mpr_dprint(sc, MPR_MAPPING|MPR_FAULT,
+			   "%s: error reading SAS device %#x page0\n",
 			    __func__, le16toh(config_page.ParentDevHandle));
 		} else {
 			parent_sas_address = parent_config_page.SASAddress.High;
@@ -807,8 +811,8 @@ mprsas_add_device(struct mpr_softc *sc, u16 handle, u8 linkrate)
 	/* TODO Check proper endianness */
 	sas_address = config_page.SASAddress.High;
 	sas_address = (sas_address << 32) | config_page.SASAddress.Low;
-	mpr_dprint(sc, MPR_INFO, "SAS Address from SAS device page0 = %jx\n",
-	    sas_address);
+	mpr_dprint(sc, MPR_MAPPING, "Handle 0x%04x SAS Address from SAS device "
+	    "page0 = %jx\n", handle, sas_address);
 
 	/*
 	 * Always get SATA Identify information because this is used to
@@ -819,12 +823,13 @@ mprsas_add_device(struct mpr_softc *sc, u16 handle, u8 linkrate)
 		ret = mprsas_get_sas_address_for_sata_disk(sc, &sas_address,
 		    handle, device_info, &is_SATA_SSD);
 		if (ret) {
-			mpr_dprint(sc, MPR_ERROR, "%s: failed to get disk type "
-			    "(SSD or HDD) for SATA device with handle 0x%04x\n",
+			mpr_dprint(sc, MPR_MAPPING|MPR_ERROR,
+			    "%s: failed to get disk type (SSD or HDD) for SATA "
+			    "device with handle 0x%04x\n",
 			    __func__, handle);
 		} else {
-			mpr_dprint(sc, MPR_INFO, "SAS Address from SATA "
-			    "device = %jx\n", sas_address);
+			mpr_dprint(sc, MPR_MAPPING, "Handle 0x%04x SAS Address "
+			    "from SATA device = %jx\n", handle, sas_address);
 		}
 	}
 
@@ -833,10 +838,17 @@ mprsas_add_device(struct mpr_softc *sc, u16 handle, u8 linkrate)
 	 *  1 - use the PhyNum field as a fallback to the mapping logic
 	 *  0 - never use the PhyNum field
 	 * -1 - only use the PhyNum field
+	 *
+	 * Note that using the Phy number to map a device can cause device adds
+	 * to fail if multiple enclosures/expanders are in the topology. For
+	 * example, if two devices are in the same slot number in two different
+	 * enclosures within the topology, only one of those devices will be
+	 * added. PhyNum mapping should not be used if multiple enclosures are
+	 * in the topology.
 	 */
 	id = MPR_MAP_BAD_ID;
 	if (sc->use_phynum != -1) 
-		id = mpr_mapping_get_sas_id(sc, sas_address, handle);
+		id = mpr_mapping_get_tid(sc, sas_address, handle);
 	if (id == MPR_MAP_BAD_ID) {
 		if ((sc->use_phynum == 0) ||
 		    ((id = config_page.PhyNum) > sassc->maxtargets)) {
@@ -847,23 +859,33 @@ mprsas_add_device(struct mpr_softc *sc, u16 handle, u8 linkrate)
 			goto out;
 		}
 	}
+	mpr_dprint(sc, MPR_MAPPING, "%s: Target ID for added device is %d.\n",
+	    __func__, id);
 
-	if (mprsas_check_id(sassc, id) != 0) {
-		device_printf(sc->mpr_dev, "Excluding target id %d\n", id);
-		error = ENXIO;
-		goto out;
-	}
-
+	/*
+	 * Only do the ID check and reuse check if the target is not from a
+	 * RAID Component. For Physical Disks of a Volume, the ID will be reused
+	 * when a volume is deleted because the mapping entry for the PD will
+	 * still be in the mapping table. The ID check should not be done here
+	 * either since this PD is already being used.
+	 */
 	targ = &sassc->targets[id];
-	if (targ->handle != 0x0) {
-		mpr_dprint(sc, MPR_MAPPING, "Attempting to reuse target id "
-		    "%d handle 0x%04x\n", id, targ->handle);
-		error = ENXIO;
-		goto out;
+	if (!(targ->flags & MPR_TARGET_FLAGS_RAID_COMPONENT)) {
+		if (mprsas_check_id(sassc, id) != 0) {
+			mpr_dprint(sc, MPR_MAPPING|MPR_INFO,
+			    "Excluding target id %d\n", id);
+			error = ENXIO;
+			goto out;
+		}
+
+		if (targ->handle != 0x0) {
+			mpr_dprint(sc, MPR_MAPPING, "Attempting to reuse "
+			    "target id %d handle 0x%04x\n", id, targ->handle);
+			error = ENXIO;
+			goto out;
+		}
 	}
 
-	mpr_dprint(sc, MPR_MAPPING, "SAS Address from SAS device page0 = %jx\n",
-	    sas_address);
 	targ->devinfo = device_info;
 	targ->devname = le32toh(config_page.DeviceName.High);
 	targ->devname = (targ->devname << 32) | 
@@ -1112,12 +1134,14 @@ mprsas_get_sata_identify(struct mpr_softc *sc, u16 handle,
 	    "command\n", __func__);
 	callout_reset(&cm->cm_callout, MPR_ATA_ID_TIMEOUT * hz,
 	    mprsas_ata_id_timeout, cm);
-	error = mpr_wait_command(sc, cm, 60, CAN_SLEEP);
+	error = mpr_wait_command(sc, &cm, 60, CAN_SLEEP);
 	mpr_dprint(sc, MPR_XINFO, "%s stop timeout counter for SATA ID "
 	    "command\n", __func__);
+	/* XXX KDM need to fix the case where this command is destroyed */
 	callout_stop(&cm->cm_callout);
 
-	reply = (Mpi2SataPassthroughReply_t *)cm->cm_reply;
+	if (cm != NULL)
+		reply = (Mpi2SataPassthroughReply_t *)cm->cm_reply;
 	if (error || (reply == NULL)) {
 		/* FIXME */
 		/*
@@ -1256,17 +1280,20 @@ mprsas_add_pcie_device(struct mpr_softc *sc, u16 handle, u8 linkrate)
 		goto out;
 	}
 
-	id = mpr_mapping_get_sas_id(sc, pcie_wwid, handle);
+	id = mpr_mapping_get_tid(sc, pcie_wwid, handle);
 	if (id == MPR_MAP_BAD_ID) {
-		printf("failure at %s:%d/%s()! Could not get ID for device "
-		    "with handle 0x%04x\n", __FILE__, __LINE__, __func__,
-		    handle);
+		mpr_dprint(sc, MPR_ERROR | MPR_INFO, "failure at %s:%d/%s()! "
+		    "Could not get ID for device with handle 0x%04x\n",
+		    __FILE__, __LINE__, __func__, handle);
 		error = ENXIO;
 		goto out;
 	}
+	mpr_dprint(sc, MPR_MAPPING, "%s: Target ID for added device is %d.\n",
+	    __func__, id);
 
 	if (mprsas_check_id(sassc, id) != 0) {
-		device_printf(sc->mpr_dev, "Excluding target id %d\n", id);
+		mpr_dprint(sc, MPR_MAPPING|MPR_INFO,
+		    "Excluding target id %d\n", id);
 		error = ENXIO;
 		goto out;
 	}
@@ -1356,7 +1383,7 @@ mprsas_volume_add(struct mpr_softc *sc, u16 handle)
 		goto out;
 	}
 
-	id = mpr_mapping_get_raid_id(sc, wwid, handle);
+	id = mpr_mapping_get_raid_tid(sc, wwid, handle);
 	if (id == MPR_MAP_BAD_ID) {
 		printf("%s: could not get ID for volume with handle 0x%04x and "
 		    "WWID 0x%016llx\n", __func__, handle,
@@ -1418,7 +1445,7 @@ mprsas_SSU_to_SATA_devices(struct mpr_softc *sc)
 	 */
 	sc->SSU_started = TRUE;
 	sc->SSU_refcount = 0;
-	for (targetid = 0; targetid < sc->facts->MaxTargets; targetid++) {
+	for (targetid = 0; targetid < sc->max_devices; targetid++) {
 		target = &sassc->targets[targetid];
 		if (target->handle == 0x0) {
 			continue;
@@ -1581,7 +1608,7 @@ mprsas_ir_shutdown(struct mpr_softc *sc)
 	action->Action = MPI2_RAID_ACTION_SYSTEM_SHUTDOWN_INITIATED;
 	cm->cm_desc.Default.RequestFlags = MPI2_REQ_DESCRIPT_FLAGS_DEFAULT_TYPE;
 	mpr_lock(sc);
-	mpr_wait_command(sc, cm, 5, CAN_SLEEP);
+	mpr_wait_command(sc, &cm, 5, CAN_SLEEP);
 	mpr_unlock(sc);
 
 	/*
@@ -1602,7 +1629,7 @@ out:
 	 * 3: enable to SSD and HDD
 	 * anything else will default to 1.
 	 */
-	for (targetid = 0; targetid < sc->facts->MaxTargets; targetid++) {
+	for (targetid = 0; targetid < sc->max_devices; targetid++) {
 		target = &sc->sassc->targets[targetid];
 		if (target->handle == 0x0) {
 			continue;

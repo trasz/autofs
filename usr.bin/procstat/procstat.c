@@ -50,11 +50,23 @@ static void
 usage(void)
 {
 
-	xo_error("usage: procstat [-CHhn] [-M core] [-N system] "
-	    "[-w interval]\n"
-	    "                [-b | -c | -e | -f | -i | -j | -k | "
-	    "-l | -r | -s | -S | -t | -v | -x]\n"
-	    "                [-a | pid | core ...]\n");
+	xo_error(
+	    "usage: procstat [--libxo] [-Hhn] [-M core] "
+	    "[-N system] [-w interval]\n"
+	    "                [-S | -b | -c | -e | -i | -j | -k | -kk | "
+	    "-l | -r | -s | \n"
+	    "                 -t | -v | -x]\n"
+	    "                [-a | pid ... | core ...]\n"
+	    "       procstat [--libxo] -Cf [-hn] [-M core] "
+	    "[-N system] [-a | pid ... | core ...]\n"
+	    "                [-S | -b | -c | -e | -i | -j | -k | -kk | "
+	    "-l | -r | -s | \n"
+	    "       procstat [--libxo] -L [-hn] [-M core] "
+	    "[-N system] [-w interval]\n"
+	    "                [-S | -b | -c | -e | -i | -j | -k | -kk | "
+	    "-l | -r | -s | \n"
+	    "                 -t | -v | -x]\n"
+	    "                [core ...]\n");
 	xo_finish();
 	exit(EX_USAGE);
 }
@@ -164,7 +176,7 @@ main(int argc, char *argv[])
 	argc = xo_parse_args(argc, argv);
 	xocontainer = "basic";
 
-	while ((ch = getopt(argc, argv, "CHN:M:abcefijklLhrsStvw:x")) != -1) {
+	while ((ch = getopt(argc, argv, "abCcefHhijkLlM:N:nrSstvw:x")) != -1) {
 		switch (ch) {
 		case 'C':
 			Cflag++;

@@ -124,7 +124,6 @@ struct zilog {
 	list_t		zl_lwb_list;	/* in-flight log write list */
 	kmutex_t	zl_vdev_lock;	/* protects zl_vdev_tree */
 	avl_tree_t	zl_vdev_tree;	/* vdevs to flush in zil_commit() */
-	taskq_t		*zl_clean_taskq; /* runs lwb and itx clean tasks */
 	avl_tree_t	zl_bp_tree;	/* track bps during log parse */
 	clock_t		zl_replay_time;	/* lbolt of when replay started */
 	uint64_t	zl_replay_blks;	/* number of log blocks replayed */
@@ -139,10 +138,27 @@ typedef struct zil_bp_node {
 	avl_node_t	zn_node;
 } zil_bp_node_t;
 
+/*
+ * Maximum amount of write data that can be put into single log block.
+ */
 #define	ZIL_MAX_LOG_DATA (SPA_OLD_MAXBLOCKSIZE - sizeof (zil_chain_t) - \
     sizeof (lr_write_t))
 #define	ZIL_MAX_COPIED_DATA \
     ((SPA_OLD_MAXBLOCKSIZE - sizeof (zil_chain_t)) / 2 - sizeof (lr_write_t))
+
+/*
+ * Maximum amount of log space we agree to waste to reduce number of
+ * WR_NEED_COPY chunks to reduce zl_get_data() overhead (~12%).
+ */
+#define	ZIL_MAX_WASTE_SPACE (ZIL_MAX_LOG_DATA / 8)
+
+/*
+ * Maximum amount of write data for WR_COPIED.  Fall back to WR_NEED_COPY
+ * as more space efficient if we can't fit at least two log records into
+ * maximum sized log block.
+ */
+#define	ZIL_MAX_COPIED_DATA ((SPA_OLD_MAXBLOCKSIZE - \
+    sizeof (zil_chain_t)) / 2 - sizeof (lr_write_t))
 
 #ifdef	__cplusplus
 }

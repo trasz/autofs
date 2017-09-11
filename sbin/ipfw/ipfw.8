@@ -2499,7 +2499,7 @@ The following parameters can be configured for a pipe:
 .It Cm bw Ar bandwidth | device
 Bandwidth, measured in
 .Sm off
-.Op Cm K | M
+.Op Cm K | M | G
 .Brq Cm bit/s | Byte/s .
 .Sm on
 .Pp
@@ -2896,6 +2896,11 @@ the packets are dropped.
 .Nm
 support in-kernel NAT using the kernel version of
 .Xr libalias 3 .
+The kernel module
+.Cm ipfw_nat
+should be loaded or kernel should have
+.Cm options IPFIREWALL_NAT
+to be able use NAT.
 .Pp
 The nat configuration command is the following:
 .Bd -ragged -offset indent

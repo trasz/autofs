@@ -73,7 +73,7 @@ static uint16_t unix2winchr(const u_char **, size_t *, int, struct msdosfsmount 
  * 2 - character ('.' and ' ') should be skipped in DOS file name,
  *     and generation number inserted.
  */
-static u_char
+static const u_char
 unix2dos[256] = {
 /* iso8859-1 -> cp850 */
 	0,    0,    0,    0,    0,    0,    0,    0,	/* 00-07 */
@@ -110,7 +110,7 @@ unix2dos[256] = {
 	0x9d, 0xeb, 0xe9, 0xea, 0x9a, 0xed, 0xe8, 0x98,	/* f8-ff */
 };
 
-static u_char
+static const u_char
 dos2unix[256] = {
 /* cp850 -> iso8859-1 */
 	0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f,	/* 00-07 */
@@ -147,7 +147,7 @@ dos2unix[256] = {
 	0xb0, 0xa8, 0xb7, 0xb9, 0xb3, 0xb2, 0x3f, 0x3f,	/* f8-ff */
 };
 
-static u_char
+static const u_char
 u2l[256] = {
 /* tolower */
 	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, /* 00-07 */
@@ -184,7 +184,7 @@ u2l[256] = {
 	0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff, /* f8-ff */
 };
 
-static u_char
+static const u_char
 l2u[256] = {
 /* toupper */
 	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, /* 00-07 */
@@ -536,7 +536,7 @@ unix2winfn(const u_char *un, size_t unlen, struct winentry *wep, int cnt,
 	/*
 	 * Initialize winentry to some useful default
 	 */
-	for (wcp = (uint8_t *)wep, i = sizeof(*wep); --i >= 0; *wcp++ = 0xff);
+	memset(wep, 0xff, sizeof(*wep));
 	wep->weCnt = cnt;
 	wep->weAttributes = ATTR_WIN95;
 	wep->weReserved1 = 0;
@@ -1043,11 +1043,11 @@ mbnambuf_write(struct mbnambuf *nbp, char *name, int id)
 		    sizeof(nbp->nb_buf))
 			return (ENAMETOOLONG);
 
-		bcopy(slot + WIN_CHARS, slot + count, nbp->nb_len);
+		memmove(slot + count, slot + WIN_CHARS, nbp->nb_len);
 	}
 
 	/* Copy in the substring to its slot and update length so far. */
-	bcopy(name, slot, count);
+	memcpy(slot, name, count);
 	nbp->nb_len = newlen;
 	nbp->nb_last_id = id;
 
@@ -1069,7 +1069,7 @@ mbnambuf_flush(struct mbnambuf *nbp, struct dirent *dp)
 		mbnambuf_init(nbp);
 		return (NULL);
 	}
-	bcopy(&nbp->nb_buf[0], dp->d_name, nbp->nb_len);
+	memcpy(dp->d_name, &nbp->nb_buf[0], nbp->nb_len);
 	dp->d_name[nbp->nb_len] = '\0';
 	dp->d_namlen = nbp->nb_len;
 

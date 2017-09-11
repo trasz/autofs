@@ -120,6 +120,7 @@ static void objlist_push_head(Objlist *, Obj_Entry *);
 static void objlist_push_tail(Objlist *, Obj_Entry *);
 static void objlist_put_after(Objlist *, Obj_Entry *, Obj_Entry *);
 static void objlist_remove(Objlist *, Obj_Entry *);
+static int open_binary_fd(const char *argv0, bool search_in_path);
 static int parse_args(char* argv[], int argc, bool *use_pathp, int *fdp);
 static int parse_integer(const char *);
 static void *path_enumerate(const char *, path_enum_proc, void *);
@@ -439,12 +440,7 @@ _rtld(Elf_Addr *sp, func_ptr_type *exit_proc, Obj_Entry **objp)
 		argv0 = argv[rtld_argc];
 		explicit_fd = (fd != -1);
 		if (!explicit_fd)
-		    fd = open(argv0, O_RDONLY | O_CLOEXEC | O_VERIFY);
-		if (fd == -1) {
-		    rtld_printf("Opening %s: %s\n", argv0,
-		      rtld_strerror(errno));
-		    rtld_die();
-		}
+		    fd = open_binary_fd(argv0, search_in_path);
 		if (fstat(fd, &st) == -1) {
 		    _rtld_error("failed to fstat FD %d (%s): %s", fd,
 		      explicit_fd ? "user-provided descriptor" : argv0,
@@ -575,7 +571,7 @@ _rtld(Elf_Addr *sp, func_ptr_type *exit_proc, Obj_Entry **objp)
 	close(fd);
 	if (obj_main == NULL)
 	    rtld_die();
-	max_stack_flags = obj->stack_flags;
+	max_stack_flags = obj_main->stack_flags;
     } else {				/* Main program already loaded. */
 	dbg("processing main program's program header");
 	assert(aux_info[AT_PHDR] != NULL);
@@ -1261,6 +1257,12 @@ digest_dynamic1(Obj_Entry *obj, int early, const Elf_Dyn **dyn_rpath,
 	case DT_MIPS_RLD_MAP:
 		*((Elf_Addr *)(dynp->d_un.d_ptr)) = (Elf_Addr) &r_debug;
 		break;
+
+	case DT_MIPS_PLTGOT:
+		obj->mips_pltgot = (Elf_Addr *) (obj->relocbase +
+		    dynp->d_un.d_ptr);
+		break;
+		
 #endif
 
 #ifdef __powerpc64__
@@ -1594,19 +1596,20 @@ find_library(const char *xname, const Obj_Entry *refobj, int *fdp)
     bool nodeflib, objgiven;
 
     objgiven = refobj != NULL;
-    if (strchr(xname, '/') != NULL) {	/* Hard coded pathname */
-	if (xname[0] != '/' && !trust) {
-	    _rtld_error("Absolute pathname required for shared object \"%s\"",
-	      xname);
-	    return NULL;
-	}
-	return (origin_subst(__DECONST(Obj_Entry *, refobj),
-	  __DECONST(char *, xname)));
-    }
 
     if (libmap_disable || !objgiven ||
-	(name = lm_find(refobj->path, xname)) == NULL)
+      (name = lm_find(refobj->path, xname)) == NULL)
 	name = (char *)xname;
+
+    if (strchr(name, '/') != NULL) {	/* Hard coded pathname */
+	if (name[0] != '/' && !trust) {
+	    _rtld_error("Absolute pathname required for shared object \"%s\"",
+	      name);
+	    return (NULL);
+	}
+	return (origin_subst(__DECONST(Obj_Entry *, refobj),
+	  __DECONST(char *, name)));
+    }
 
     dbg(" Searching for \"%s\"", name);
 
@@ -1663,6 +1666,7 @@ find_symdef(unsigned long symnum, const Obj_Entry *refobj,
     const Elf_Sym *ref;
     const Elf_Sym *def;
     const Obj_Entry *defobj;
+    const Ver_Entry *ve;
     SymLook req;
     const char *name;
     int res;
@@ -1682,6 +1686,7 @@ find_symdef(unsigned long symnum, const Obj_Entry *refobj,
     name = refobj->strtab + ref->st_name;
     def = NULL;
     defobj = NULL;
+    ve = NULL;
 
     /*
      * We don't have to do a full scale lookup if the symbol is local.
@@ -1698,7 +1703,7 @@ find_symdef(unsigned long symnum, const Obj_Entry *refobj,
 	}
 	symlook_init(&req, name);
 	req.flags = flags;
-	req.ventry = fetch_ventry(refobj, symnum);
+	ve = req.ventry = fetch_ventry(refobj, symnum);
 	req.lockstate = lockstate;
 	res = symlook_default(&req, refobj);
 	if (res == 0) {
@@ -1728,7 +1733,8 @@ find_symdef(unsigned long symnum, const Obj_Entry *refobj,
 	}
     } else {
 	if (refobj != &obj_rtld)
-	    _rtld_error("%s: Undefined symbol \"%s\"", refobj->path, name);
+	    _rtld_error("%s: Undefined symbol \"%s%s%s\"", refobj->path, name,
+	      ve != NULL ? "@" : "", ve != NULL ? ve->name : "");
     }
     return def;
 }
@@ -3493,7 +3499,8 @@ do_dlsym(void *handle, const char *name, void *retaddr, const Ver_Entry *ve,
 	return (sym);
     }
 
-    _rtld_error("Undefined symbol \"%s\"", name);
+    _rtld_error("Undefined symbol \"%s%s%s\"", name, ve != NULL ? "@" : "",
+      ve != NULL ? ve->name : "");
     lock_release(rtld_bind_lock, &lockstate);
     LD_UTRACE(UTRACE_DLSYM_STOP, handle, NULL, 0, 0, name);
     return NULL;
@@ -4661,7 +4668,7 @@ tls_get_addr_common(Elf_Addr **dtvp, int index, size_t offset)
 }
 
 #if defined(__aarch64__) || defined(__arm__) || defined(__mips__) || \
-    defined(__powerpc__) || defined(__riscv__)
+    defined(__powerpc__) || defined(__riscv)
 
 /*
  * Allocate Static TLS using the Variant I method.
@@ -5280,6 +5287,52 @@ symlook_init_from_req(SymLook *dst, const SymLook *src)
 	dst->lockstate = src->lockstate;
 }
 
+static int
+open_binary_fd(const char *argv0, bool search_in_path)
+{
+	char *pathenv, *pe, binpath[PATH_MAX];
+	int fd;
+
+	if (search_in_path && strchr(argv0, '/') == NULL) {
+		pathenv = getenv("PATH");
+		if (pathenv == NULL) {
+			rtld_printf("-p and no PATH environment variable\n");
+			rtld_die();
+		}
+		pathenv = strdup(pathenv);
+		if (pathenv == NULL) {
+			rtld_printf("Cannot allocate memory\n");
+			rtld_die();
+		}
+		fd = -1;
+		errno = ENOENT;
+		while ((pe = strsep(&pathenv, ":")) != NULL) {
+			if (strlcpy(binpath, pe, sizeof(binpath)) >=
+			    sizeof(binpath))
+				continue;
+			if (binpath[0] != '\0' &&
+			    strlcat(binpath, "/", sizeof(binpath)) >=
+			    sizeof(binpath))
+				continue;
+			if (strlcat(binpath, argv0, sizeof(binpath)) >=
+			    sizeof(binpath))
+				continue;
+			fd = open(binpath, O_RDONLY | O_CLOEXEC | O_VERIFY);
+			if (fd != -1 || errno != ENOENT)
+				break;
+		}
+		free(pathenv);
+	} else {
+		fd = open(argv0, O_RDONLY | O_CLOEXEC | O_VERIFY);
+	}
+
+	if (fd == -1) {
+		rtld_printf("Opening %s: %s\n", argv0,
+		    rtld_strerror(errno));
+		rtld_die();
+	}
+	return (fd);
+}
 
 /*
  * Parse a set of command-line arguments.
@@ -5341,10 +5394,8 @@ parse_args(char* argv[], int argc, bool *use_pathp, int *fdp)
 			}
 			*fdp = fd;
 			break;
-			/* TODO:
 			} else if (opt == 'p') {
 				*use_pathp = true;
-			*/
 			} else {
 				rtld_printf("invalid argument: '%s'\n", arg);
 				print_usage(argv[0]);
@@ -5391,7 +5442,7 @@ print_usage(const char *argv0)
 		"\n"
 		"Options:\n"
 		"  -h        Display this help message\n"
-		/* TODO: "  -p        Search in PATH for named binary\n" */
+		"  -p        Search in PATH for named binary\n"
 		"  -f <FD>   Execute <FD> instead of searching for <binary>\n"
 		"  --        End of RTLD options\n"
 		"  <binary>  Name of process to execute\n"

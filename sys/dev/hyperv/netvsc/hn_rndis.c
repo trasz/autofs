@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2009-2012,2016 Microsoft Corp.
+ * Copyright (c) 2009-2012,2016-2017 Microsoft Corp.
  * Copyright (c) 2010-2012 Citrix Inc.
  * Copyright (c) 2012 NetApp Inc.
  * All rights reserved.
@@ -497,6 +497,8 @@ hn_rndis_query_rsscaps(struct hn_softc *sc, int *rxr_cnt0)
 		    caps.ndis_caps);
 		return (EOPNOTSUPP);
 	}
+	if (bootverbose)
+		if_printf(sc->hn_ifp, "RSS caps %#x\n", caps.ndis_caps);
 
 	/* Commit! */
 	sc->hn_rss_ind_size = indsz;
