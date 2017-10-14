@@ -103,7 +103,7 @@ extern const struct usb_temp_device_desc usb_template_cdce;
 extern const struct usb_temp_device_desc usb_template_kbd;
 extern const struct usb_temp_device_desc usb_template_modem;
 extern const struct usb_temp_device_desc usb_template_mouse;
-extern const struct usb_temp_device_desc usb_template_msc;
+extern struct usb_temp_device_desc usb_template_msc;
 extern const struct usb_temp_device_desc usb_template_mtp;
 extern const struct usb_temp_device_desc usb_template_phone;
 extern const struct usb_temp_device_desc usb_template_serialnet;

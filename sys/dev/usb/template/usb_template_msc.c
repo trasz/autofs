@@ -58,6 +58,9 @@
 #include <dev/usb/template/usb_template.h>
 #endif			/* USB_GLOBAL_INCLUDE_FILE */
 
+SYSCTL_NODE(_hw_usb, OID_AUTO, template_msc, CTLFLAG_RW, 0,
+    "USB Mass Storage device side template");
+
 enum {
 	STRING_LANG_INDEX,
 	STRING_MSC_DATA_INDEX,
@@ -152,7 +155,7 @@ static const struct usb_temp_config_desc *msc_configs[] = {
 	NULL,
 };
 
-const struct usb_temp_device_desc usb_template_msc = {
+struct usb_temp_device_desc usb_template_msc = {
 	.getStringDesc = &msc_get_string_desc,
 	.ppConfigDesc = msc_configs,
 	.idVendor = USB_TEMPLATE_VENDOR,
@@ -165,6 +168,11 @@ const struct usb_temp_device_desc usb_template_msc = {
 	.iProduct = STRING_MSC_PRODUCT_INDEX,
 	.iSerialNumber = STRING_MSC_SERIAL_INDEX,
 };
+
+SYSCTL_U16(_hw_usb_template_msc, OID_AUTO, vendor_id, CTLFLAG_RWTUN,
+    &usb_template_msc.idVendor, 1, "Vendor ID");
+SYSCTL_U16(_hw_usb_template_msc, OID_AUTO, product_id, CTLFLAG_RWTUN,
+    &usb_template_msc.idProduct, 1, "Product ID");
 
 /*------------------------------------------------------------------------*
  *	msc_get_string_desc
