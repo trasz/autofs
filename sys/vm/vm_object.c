@@ -715,6 +715,7 @@ vm_object_terminate_pages(vm_object_t object)
 	vm_page_t p, p_next;
 	struct mtx *mtx, *mtx1;
 	struct vm_pagequeue *pq, *pq1;
+	int dequeued;
 
 	VM_OBJECT_ASSERT_WLOCKED(object);
 
@@ -739,6 +740,7 @@ vm_object_terminate_pages(vm_object_t object)
 				if (mtx != NULL)
 					mtx_unlock(mtx);
 				if (pq != NULL) {
+					vm_pagequeue_cnt_add(pq, dequeued);
 					vm_pagequeue_unlock(pq);
 					pq = NULL;
 				}
@@ -756,19 +758,27 @@ vm_object_terminate_pages(vm_object_t object)
 			    "page %p is not queued", p));
 			pq1 = vm_page_pagequeue(p);
 			if (pq != pq1) {
-				if (pq != NULL)
+				if (pq != NULL) {
+					vm_pagequeue_cnt_add(pq, dequeued);
 					vm_pagequeue_unlock(pq);
+				}
 				pq = pq1;
 				vm_pagequeue_lock(pq);
+				dequeued = 0;
 			}
+			p->queue = PQ_NONE;
+			TAILQ_REMOVE(&pq->pq_pl, p, plinks.q);
+			dequeued--;
 		}
 		if (vm_page_free_prep(p, true))
 			continue;
 unlist:
 		TAILQ_REMOVE(&object->memq, p, listq);
 	}
-	if (pq != NULL)
+	if (pq != NULL) {
+		vm_pagequeue_cnt_add(pq, dequeued);
 		vm_pagequeue_unlock(pq);
+	}
 	if (mtx != NULL)
 		mtx_unlock(mtx);
 
@@ -1083,8 +1093,8 @@ vm_object_sync(vm_object_t object, vm_ooffset_t offset, vm_size_t size,
 	 * I/O.
 	 */
 	if (object->type == OBJT_VNODE &&
-	    (object->flags & OBJ_MIGHTBEDIRTY) != 0) {
-		vp = object->handle;
+	    (object->flags & OBJ_MIGHTBEDIRTY) != 0 &&
+	    ((vp = object->handle)->v_vflag & VV_NOSYNC) == 0) {
 		VM_OBJECT_WUNLOCK(object);
 		(void) vn_start_write(vp, &mp, V_WAIT);
 		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
@@ -1990,7 +2000,8 @@ again:
 			goto again;
 		}
 		if (p->wire_count != 0) {
-			if ((options & OBJPR_NOTMAPPED) == 0)
+			if ((options & OBJPR_NOTMAPPED) == 0 &&
+			    object->ref_count != 0)
 				pmap_remove_all(p);
 			if ((options & OBJPR_CLEANONLY) == 0) {
 				p->valid = 0;
@@ -2007,12 +2018,13 @@ again:
 		KASSERT((p->flags & PG_FICTITIOUS) == 0,
 		    ("vm_object_page_remove: page %p is fictitious", p));
 		if ((options & OBJPR_CLEANONLY) != 0 && p->valid != 0) {
-			if ((options & OBJPR_NOTMAPPED) == 0)
+			if ((options & OBJPR_NOTMAPPED) == 0 &&
+			    object->ref_count != 0)
 				pmap_remove_write(p);
-			if (p->dirty)
+			if (p->dirty != 0)
 				continue;
 		}
-		if ((options & OBJPR_NOTMAPPED) == 0)
+		if ((options & OBJPR_NOTMAPPED) == 0 && object->ref_count != 0)
 			pmap_remove_all(p);
 		p->flags &= ~PG_ZERO;
 		if (vm_page_free_prep(p, false))

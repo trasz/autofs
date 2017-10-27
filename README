@@ -15,4 +15,3 @@ usr.sbin/hsmq/		Display requests queue
 usr.bin/hsm/		User utility
 
 Questions?  Mail me at <trasz@FreeBSD.org>.
-

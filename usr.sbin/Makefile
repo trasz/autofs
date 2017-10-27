@@ -63,7 +63,6 @@ SUBDIR=	adduser \
 	pciconf \
 	periodic \
 	powerd \
-	procctl \
 	prometheus_sysctl_exporter \
 	pstat \
 	pw \
