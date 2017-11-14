@@ -54,6 +54,7 @@
 #include <dev/usb/usb.h>
 #include <dev/usb/usbdi.h>
 #include <dev/usb/usb_core.h>
+#include <dev/usb/usb_util.h>
 
 #include <dev/usb/template/usb_template.h>
 #endif			/* USB_GLOBAL_INCLUDE_FILE */
@@ -71,29 +72,17 @@ enum {
 	STRING_MSC_MAX,
 };
 
-#define	STRING_MSC_DATA	\
-  "U\0S\0B\0 \0M\0a\0s\0s\0 \0S\0t\0o\0r\0a\0g\0e\0 " \
-  "\0I\0n\0t\0e\0r\0f\0a\0c\0e"
+#define	MSC_DEFAULT_INTERFACE		"USB Mass Storage Interface"
+#define	MSC_DEFAULT_CONFIG		"Default Config"
+#define	MSC_DEFAULT_MANUFACTURER	"FreeBSD foundation"
+#define	MSC_DEFAULT_PRODUCT		"USB Memory Stick"
+#define	MSC_DEFAULT_SERIAL_NUMBER	"March 2008"
 
-#define	STRING_MSC_CONFIG \
-  "D\0e\0f\0a\0u\0l\0t\0 \0c\0o\0n\0f\0i\0g"
-
-#define	STRING_MSC_VENDOR \
-  "F\0r\0e\0e\0B\0S\0D\0 \0f\0o\0u\0n\0d\0a\0t\0i\0o\0n"
-
-#define	STRING_MSC_PRODUCT \
-  "U\0S\0B\0 \0M\0e\0m\0o\0r\0y\0 \0S\0t\0i\0c\0k"
-
-#define	STRING_MSC_SERIAL \
-  "M\0a\0r\0c\0h\0 \0002\0000\0000\08"
-
-/* make the real string descriptors */
-
-USB_MAKE_STRING_DESC(STRING_MSC_DATA, string_msc_data);
-USB_MAKE_STRING_DESC(STRING_MSC_CONFIG, string_msc_config);
-USB_MAKE_STRING_DESC(STRING_MSC_VENDOR, string_msc_vendor);
-USB_MAKE_STRING_DESC(STRING_MSC_PRODUCT, string_msc_product);
-USB_MAKE_STRING_DESC(STRING_MSC_SERIAL, string_msc_serial);
+static struct usb_string_descriptor msc_interface;
+static struct usb_string_descriptor msc_configuration;
+static struct usb_string_descriptor msc_manufacturer;
+static struct usb_string_descriptor msc_product;
+static struct usb_string_descriptor msc_serial_number;
 
 /* prototypes */
 
@@ -169,10 +158,64 @@ struct usb_temp_device_desc usb_template_msc = {
 	.iSerialNumber = STRING_MSC_SERIAL_INDEX,
 };
 
+static void
+usb_decode_str_desc(struct usb_string_descriptor *sd, char *buf, size_t buflen)
+{
+	int i;
+
+	for (i = 0; i < buflen - 1 && i < sd->bLength / 2; i++)
+		buf[i] = UGETW(sd->bString[i]);
+
+	i++;
+	buf[i] = '\0';
+}
+
+static int
+sysctl_msc_string(SYSCTL_HANDLER_ARGS)
+{
+	char buf[128];
+	struct usb_string_descriptor *sd = arg1;
+	size_t len, sdlen = arg2;
+	int error;
+
+	usb_decode_str_desc(sd, buf, sizeof(buf));
+
+	error = sysctl_handle_string(oidp, buf, sizeof(buf), req);
+	if (error != 0 || req->newptr == NULL)
+		return (error);
+
+	len = usb_make_str_desc(sd, sdlen, buf);
+	if (len == 0)
+		return (EINVAL);
+
+	return (0);
+}
+
 SYSCTL_U16(_hw_usb_template_msc, OID_AUTO, vendor_id, CTLFLAG_RWTUN,
-    &usb_template_msc.idVendor, 1, "Vendor ID");
+    &usb_template_msc.idVendor, 1, "Vendor identifier");
 SYSCTL_U16(_hw_usb_template_msc, OID_AUTO, product_id, CTLFLAG_RWTUN,
-    &usb_template_msc.idProduct, 1, "Product ID");
+    &usb_template_msc.idProduct, 1, "Product identifier");
+SYSCTL_PROC(_hw_usb_template_msc, OID_AUTO, interface,
+    CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
+    &msc_interface, sizeof(msc_interface), sysctl_msc_string,
+    "A", "Interface string");
+SYSCTL_PROC(_hw_usb_template_msc, OID_AUTO, configuration,
+    CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
+    &msc_configuration, sizeof(msc_configuration), sysctl_msc_string,
+    "A", "Configuration string");
+SYSCTL_PROC(_hw_usb_template_msc, OID_AUTO, manufacturer,
+    CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
+    &msc_manufacturer, sizeof(msc_manufacturer), sysctl_msc_string,
+    "A", "Manufacturer string");
+SYSCTL_PROC(_hw_usb_template_msc, OID_AUTO, product,
+    CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
+    &msc_product, sizeof(msc_product), sysctl_msc_string,
+    "A", "Product string");
+SYSCTL_PROC(_hw_usb_template_msc, OID_AUTO, serial_number,
+    CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
+    &msc_serial_number, sizeof(msc_serial_number), sysctl_msc_string,
+    "A", "Serial number string");
+
 
 /*------------------------------------------------------------------------*
  *	msc_get_string_desc
@@ -186,11 +229,11 @@ msc_get_string_desc(uint16_t lang_id, uint8_t string_index)
 {
 	static const void *ptr[STRING_MSC_MAX] = {
 		[STRING_LANG_INDEX] = &usb_string_lang_en,
-		[STRING_MSC_DATA_INDEX] = &string_msc_data,
-		[STRING_MSC_CONFIG_INDEX] = &string_msc_config,
-		[STRING_MSC_VENDOR_INDEX] = &string_msc_vendor,
-		[STRING_MSC_PRODUCT_INDEX] = &string_msc_product,
-		[STRING_MSC_SERIAL_INDEX] = &string_msc_serial,
+		[STRING_MSC_DATA_INDEX] = &msc_interface,
+		[STRING_MSC_CONFIG_INDEX] = &msc_configuration,
+		[STRING_MSC_VENDOR_INDEX] = &msc_manufacturer,
+		[STRING_MSC_PRODUCT_INDEX] = &msc_product,
+		[STRING_MSC_SERIAL_INDEX] = &msc_serial_number,
 	};
 
 	if (string_index == 0) {
@@ -204,3 +247,21 @@ msc_get_string_desc(uint16_t lang_id, uint8_t string_index)
 	}
 	return (NULL);
 }
+
+static void
+msc_init(void *arg __unused)
+{
+
+	usb_make_str_desc(&msc_interface, sizeof(msc_interface),
+	    MSC_DEFAULT_INTERFACE);
+	usb_make_str_desc(&msc_configuration, sizeof(msc_configuration),
+	    MSC_DEFAULT_CONFIG);
+	usb_make_str_desc(&msc_manufacturer, sizeof(msc_manufacturer),
+	    MSC_DEFAULT_MANUFACTURER);
+	usb_make_str_desc(&msc_product, sizeof(msc_product),
+	    MSC_DEFAULT_PRODUCT);
+	usb_make_str_desc(&msc_serial_number, sizeof(msc_serial_number),
+	    MSC_DEFAULT_SERIAL_NUMBER);
+}
+
+SYSINIT(msc_init, SI_SUB_LOCK, SI_ORDER_FIRST, msc_init, NULL);
