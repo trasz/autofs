@@ -1,7 +1,11 @@
 /* $FreeBSD$ */
 /*-
  * Copyright (c) 2008 Hans Petter Selasky <hselasky@FreeBSD.org>
+ * Copyright (c) 2018 The FreeBSD Foundation
  * All rights reserved.
+ *
+ * Portions of this software were developed by Edward Tomasz Napierala
+ * under sponsorship from the FreeBSD Foundation.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -54,35 +58,35 @@
 #include <dev/usb/usb.h>
 #include <dev/usb/usbdi.h>
 #include <dev/usb/usb_core.h>
+#include <dev/usb/usb_ioctl.h>
 #include <dev/usb/usb_util.h>
 
 #include <dev/usb/template/usb_template.h>
 #endif			/* USB_GLOBAL_INCLUDE_FILE */
 
-SYSCTL_NODE(_hw_usb, OID_AUTO, template_msc, CTLFLAG_RW, 0,
-    "USB Mass Storage device side template");
-
 enum {
-	STRING_LANG_INDEX,
-	STRING_MSC_DATA_INDEX,
-	STRING_MSC_CONFIG_INDEX,
-	STRING_MSC_VENDOR_INDEX,
-	STRING_MSC_PRODUCT_INDEX,
-	STRING_MSC_SERIAL_INDEX,
-	STRING_MSC_MAX,
+	MSC_LANG_INDEX,
+	MSC_INTERFACE_INDEX,
+	MSC_CONFIGURATION_INDEX,
+	MSC_MANUFACTURER_INDEX,
+	MSC_PRODUCT_INDEX,
+	MSC_SERIAL_NUMBER_INDEX,
+	MSC_MAX_INDEX,
 };
 
 #define	MSC_DEFAULT_INTERFACE		"USB Mass Storage Interface"
-#define	MSC_DEFAULT_CONFIG		"Default Config"
+#define	MSC_DEFAULT_CONFIGURATION	"Default Config"
 #define	MSC_DEFAULT_MANUFACTURER	"FreeBSD foundation"
 #define	MSC_DEFAULT_PRODUCT		"USB Memory Stick"
 #define	MSC_DEFAULT_SERIAL_NUMBER	"March 2008"
 
-static struct usb_string_descriptor msc_interface;
-static struct usb_string_descriptor msc_configuration;
-static struct usb_string_descriptor msc_manufacturer;
-static struct usb_string_descriptor msc_product;
-static struct usb_string_descriptor msc_serial_number;
+static struct usb_string_descriptor	msc_interface;
+static struct usb_string_descriptor	msc_configuration;
+static struct usb_string_descriptor	msc_manufacturer;
+static struct usb_string_descriptor	msc_product;
+static struct usb_string_descriptor	msc_serial_number;
+
+static struct sysctl_ctx_list		msc_ctx_list;
 
 /* prototypes */
 
@@ -124,7 +128,7 @@ static const struct usb_temp_interface_desc msc_data_interface = {
 	.bInterfaceClass = UICLASS_MASS,
 	.bInterfaceSubClass = UISUBCLASS_SCSI,
 	.bInterfaceProtocol = UIPROTO_MASS_BBB,
-	.iInterface = STRING_MSC_DATA_INDEX,
+	.iInterface = MSC_INTERFACE_INDEX,
 };
 
 static const struct usb_temp_interface_desc *msc_interfaces[] = {
@@ -136,7 +140,7 @@ static const struct usb_temp_config_desc msc_config_desc = {
 	.ppIfaceDesc = msc_interfaces,
 	.bmAttributes = UC_BUS_POWERED,
 	.bMaxPower = 25,		/* 50 mA */
-	.iConfiguration = STRING_MSC_CONFIG_INDEX,
+	.iConfiguration = MSC_CONFIGURATION_INDEX,
 };
 
 static const struct usb_temp_config_desc *msc_configs[] = {
@@ -153,69 +157,10 @@ struct usb_temp_device_desc usb_template_msc = {
 	.bDeviceClass = UDCLASS_COMM,
 	.bDeviceSubClass = 0,
 	.bDeviceProtocol = 0,
-	.iManufacturer = STRING_MSC_VENDOR_INDEX,
-	.iProduct = STRING_MSC_PRODUCT_INDEX,
-	.iSerialNumber = STRING_MSC_SERIAL_INDEX,
+	.iManufacturer = MSC_MANUFACTURER_INDEX,
+	.iProduct = MSC_PRODUCT_INDEX,
+	.iSerialNumber = MSC_SERIAL_NUMBER_INDEX,
 };
-
-static void
-usb_decode_str_desc(struct usb_string_descriptor *sd, char *buf, size_t buflen)
-{
-	int i;
-
-	for (i = 0; i < buflen - 1 && i < sd->bLength / 2; i++)
-		buf[i] = UGETW(sd->bString[i]);
-
-	i++;
-	buf[i] = '\0';
-}
-
-static int
-sysctl_msc_string(SYSCTL_HANDLER_ARGS)
-{
-	char buf[128];
-	struct usb_string_descriptor *sd = arg1;
-	size_t len, sdlen = arg2;
-	int error;
-
-	usb_decode_str_desc(sd, buf, sizeof(buf));
-
-	error = sysctl_handle_string(oidp, buf, sizeof(buf), req);
-	if (error != 0 || req->newptr == NULL)
-		return (error);
-
-	len = usb_make_str_desc(sd, sdlen, buf);
-	if (len == 0)
-		return (EINVAL);
-
-	return (0);
-}
-
-SYSCTL_U16(_hw_usb_template_msc, OID_AUTO, vendor_id, CTLFLAG_RWTUN,
-    &usb_template_msc.idVendor, 1, "Vendor identifier");
-SYSCTL_U16(_hw_usb_template_msc, OID_AUTO, product_id, CTLFLAG_RWTUN,
-    &usb_template_msc.idProduct, 1, "Product identifier");
-SYSCTL_PROC(_hw_usb_template_msc, OID_AUTO, interface,
-    CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
-    &msc_interface, sizeof(msc_interface), sysctl_msc_string,
-    "A", "Interface string");
-SYSCTL_PROC(_hw_usb_template_msc, OID_AUTO, configuration,
-    CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
-    &msc_configuration, sizeof(msc_configuration), sysctl_msc_string,
-    "A", "Configuration string");
-SYSCTL_PROC(_hw_usb_template_msc, OID_AUTO, manufacturer,
-    CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
-    &msc_manufacturer, sizeof(msc_manufacturer), sysctl_msc_string,
-    "A", "Manufacturer string");
-SYSCTL_PROC(_hw_usb_template_msc, OID_AUTO, product,
-    CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
-    &msc_product, sizeof(msc_product), sysctl_msc_string,
-    "A", "Product string");
-SYSCTL_PROC(_hw_usb_template_msc, OID_AUTO, serial_number,
-    CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
-    &msc_serial_number, sizeof(msc_serial_number), sysctl_msc_string,
-    "A", "Serial number string");
-
 
 /*------------------------------------------------------------------------*
  *	msc_get_string_desc
@@ -227,13 +172,13 @@ SYSCTL_PROC(_hw_usb_template_msc, OID_AUTO, serial_number,
 static const void *
 msc_get_string_desc(uint16_t lang_id, uint8_t string_index)
 {
-	static const void *ptr[STRING_MSC_MAX] = {
-		[STRING_LANG_INDEX] = &usb_string_lang_en,
-		[STRING_MSC_DATA_INDEX] = &msc_interface,
-		[STRING_MSC_CONFIG_INDEX] = &msc_configuration,
-		[STRING_MSC_VENDOR_INDEX] = &msc_manufacturer,
-		[STRING_MSC_PRODUCT_INDEX] = &msc_product,
-		[STRING_MSC_SERIAL_INDEX] = &msc_serial_number,
+	static const void *ptr[MSC_MAX_INDEX] = {
+		[MSC_LANG_INDEX] = &usb_string_lang_en,
+		[MSC_INTERFACE_INDEX] = &msc_interface,
+		[MSC_CONFIGURATION_INDEX] = &msc_configuration,
+		[MSC_MANUFACTURER_INDEX] = &msc_manufacturer,
+		[MSC_PRODUCT_INDEX] = &msc_product,
+		[MSC_SERIAL_NUMBER_INDEX] = &msc_serial_number,
 	};
 
 	if (string_index == 0) {
@@ -242,7 +187,7 @@ msc_get_string_desc(uint16_t lang_id, uint8_t string_index)
 	if (lang_id != 0x0409) {
 		return (NULL);
 	}
-	if (string_index < STRING_MSC_MAX) {
+	if (string_index < MSC_MAX_INDEX) {
 		return (ptr[string_index]);
 	}
 	return (NULL);
@@ -251,17 +196,61 @@ msc_get_string_desc(uint16_t lang_id, uint8_t string_index)
 static void
 msc_init(void *arg __unused)
 {
+	struct sysctl_oid *parent;
+	char parent_name[3];
 
 	usb_make_str_desc(&msc_interface, sizeof(msc_interface),
 	    MSC_DEFAULT_INTERFACE);
 	usb_make_str_desc(&msc_configuration, sizeof(msc_configuration),
-	    MSC_DEFAULT_CONFIG);
+	    MSC_DEFAULT_CONFIGURATION);
 	usb_make_str_desc(&msc_manufacturer, sizeof(msc_manufacturer),
 	    MSC_DEFAULT_MANUFACTURER);
 	usb_make_str_desc(&msc_product, sizeof(msc_product),
 	    MSC_DEFAULT_PRODUCT);
 	usb_make_str_desc(&msc_serial_number, sizeof(msc_serial_number),
 	    MSC_DEFAULT_SERIAL_NUMBER);
+
+	snprintf(parent_name, sizeof(parent_name), "%d", USB_TEMP_MSC);
+	sysctl_ctx_init(&msc_ctx_list);
+
+	parent = SYSCTL_ADD_NODE(&msc_ctx_list,
+	    SYSCTL_STATIC_CHILDREN(_hw_usb_templates), OID_AUTO,
+	    parent_name, CTLFLAG_RW,
+	    0, "USB Mass Storage device side template");
+	SYSCTL_ADD_U16(&msc_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
+	    "vendor_id", CTLFLAG_RWTUN,
+	    &usb_template_msc.idVendor, 1, "Vendor identifier");
+	SYSCTL_ADD_U16(&msc_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
+	    "product_id", CTLFLAG_RWTUN,
+	    &usb_template_msc.idProduct, 1, "Product identifier");
+	SYSCTL_ADD_PROC(&msc_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
+	    "interface", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
+	    &msc_interface, sizeof(msc_interface), usb_temp_sysctl,
+	    "A", "Interface string");
+	SYSCTL_ADD_PROC(&msc_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
+	    "configuration", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
+	    &msc_configuration, sizeof(msc_configuration), usb_temp_sysctl,
+	    "A", "Configuration string");
+	SYSCTL_ADD_PROC(&msc_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
+	    "manufacturer", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
+	    &msc_manufacturer, sizeof(msc_manufacturer), usb_temp_sysctl,
+	    "A", "Manufacturer string");
+	SYSCTL_ADD_PROC(&msc_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
+	    "product", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
+	    &msc_product, sizeof(msc_product), usb_temp_sysctl,
+	    "A", "Product string");
+	SYSCTL_ADD_PROC(&msc_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
+	    "serial_number", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
+	    &msc_serial_number, sizeof(msc_serial_number), usb_temp_sysctl,
+	    "A", "Serial number string");
+}
+
+static void
+msc_uninit(void *arg __unused)
+{
+
+	sysctl_ctx_free(&msc_ctx_list);
 }
 
 SYSINIT(msc_init, SI_SUB_LOCK, SI_ORDER_FIRST, msc_init, NULL);
+SYSUNINIT(msc_init, SI_SUB_LOCK, SI_ORDER_FIRST, msc_uninit, NULL);
