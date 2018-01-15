@@ -310,6 +310,7 @@ eth_init(void *arg __unused)
 	    "mac", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &eth_mac, sizeof(eth_mac), usb_temp_sysctl,
 	    "A", "MAC address string");
+#if 0
 	SYSCTL_ADD_PROC(&eth_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "control", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &eth_control, sizeof(eth_control), usb_temp_sysctl,
@@ -322,6 +323,7 @@ eth_init(void *arg __unused)
 	    "configuration", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &eth_configuration, sizeof(eth_configuration), usb_temp_sysctl,
 	    "A", "Configuration string");
+#endif
 	SYSCTL_ADD_PROC(&eth_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "manufacturer", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &eth_manufacturer, sizeof(eth_manufacturer), usb_temp_sysctl,

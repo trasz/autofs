@@ -223,6 +223,7 @@ msc_init(void *arg __unused)
 	SYSCTL_ADD_U16(&msc_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "product_id", CTLFLAG_RWTUN,
 	    &usb_template_msc.idProduct, 1, "Product identifier");
+#if 0
 	SYSCTL_ADD_PROC(&msc_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "interface", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &msc_interface, sizeof(msc_interface), usb_temp_sysctl,
@@ -231,6 +232,7 @@ msc_init(void *arg __unused)
 	    "configuration", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &msc_configuration, sizeof(msc_configuration), usb_temp_sysctl,
 	    "A", "Configuration string");
+#endif
 	SYSCTL_ADD_PROC(&msc_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "manufacturer", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &msc_manufacturer, sizeof(msc_manufacturer), usb_temp_sysctl,

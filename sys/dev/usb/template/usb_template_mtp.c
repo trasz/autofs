@@ -290,6 +290,7 @@ mtp_init(void *arg __unused)
 	SYSCTL_ADD_U16(&mtp_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "product_id", CTLFLAG_RWTUN,
 	    &usb_template_mtp.idProduct, 1, "Product identifier");
+#if 0
 	SYSCTL_ADD_PROC(&mtp_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "interface", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &mtp_interface, sizeof(mtp_interface), usb_temp_sysctl,
@@ -298,6 +299,7 @@ mtp_init(void *arg __unused)
 	    "configuration", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &mtp_configuration, sizeof(mtp_configuration), usb_temp_sysctl,
 	    "A", "Configuration string");
+#endif
 	SYSCTL_ADD_PROC(&mtp_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "manufacturer", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &mtp_manufacturer, sizeof(mtp_manufacturer), usb_temp_sysctl,

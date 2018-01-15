@@ -423,6 +423,7 @@ audio_init(void *arg __unused)
 	SYSCTL_ADD_U16(&audio_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "product_id", CTLFLAG_RWTUN, &usb_template_audio.idProduct,
 	    1, "Product identifier");
+#if 0
 	SYSCTL_ADD_PROC(&audio_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "mixer", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &audio_mixer, sizeof(audio_mixer), usb_temp_sysctl,
@@ -435,6 +436,7 @@ audio_init(void *arg __unused)
 	    "playback", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &audio_playback, sizeof(audio_playback), usb_temp_sysctl,
 	    "A", "Playback interface string");
+#endif
 	SYSCTL_ADD_PROC(&audio_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "product", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &audio_product, sizeof(audio_product), usb_temp_sysctl,

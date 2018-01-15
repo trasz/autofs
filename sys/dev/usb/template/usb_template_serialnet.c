@@ -412,13 +412,14 @@ serialnet_init(void *arg __unused)
 	    "product_id", CTLFLAG_RWTUN,
 	    &usb_template_serialnet.idProduct, 1, "Product identifier");
 	SYSCTL_ADD_PROC(&serialnet_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
-	    "modem", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
-	    &serialnet_modem, sizeof(serialnet_modem), usb_temp_sysctl,
-	    "A", "Modem interface string");
-	SYSCTL_ADD_PROC(&serialnet_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "eth_mac", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &serialnet_eth_mac, sizeof(serialnet_eth_mac), usb_temp_sysctl,
 	    "A", "Ethernet MAC address string");
+#if 0
+	SYSCTL_ADD_PROC(&serialnet_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
+	    "modem", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
+	    &serialnet_modem, sizeof(serialnet_modem), usb_temp_sysctl,
+	    "A", "Modem interface string");
 	SYSCTL_ADD_PROC(&serialnet_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "eth_control", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &serialnet_eth_control, sizeof(serialnet_eth_data), usb_temp_sysctl,
@@ -431,6 +432,7 @@ serialnet_init(void *arg __unused)
 	    "configuration", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &serialnet_configuration, sizeof(serialnet_configuration), usb_temp_sysctl,
 	    "A", "Configuration string");
+#endif
 	SYSCTL_ADD_PROC(&serialnet_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "manufacturer", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &serialnet_manufacturer, sizeof(serialnet_manufacturer), usb_temp_sysctl,

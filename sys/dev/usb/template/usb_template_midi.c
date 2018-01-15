@@ -267,10 +267,12 @@ midi_init(void *arg __unused)
 	SYSCTL_ADD_U16(&midi_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "product_id", CTLFLAG_RWTUN,
 	    &usb_template_midi.idProduct, 1, "Product identifier");
+#if 0
 	SYSCTL_ADD_PROC(&midi_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "interface", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &midi_interface, sizeof(midi_interface), usb_temp_sysctl,
 	    "A", "Interface string");
+#endif
 	SYSCTL_ADD_PROC(&midi_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "product", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &midi_product, sizeof(midi_product), usb_temp_sysctl,

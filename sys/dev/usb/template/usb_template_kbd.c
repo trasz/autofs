@@ -247,10 +247,12 @@ kbd_init(void *arg __unused)
 	SYSCTL_ADD_U16(&kbd_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "product_id", CTLFLAG_RWTUN,
 	    &usb_template_kbd.idProduct, 1, "Product identifier");
+#if 0
 	SYSCTL_ADD_PROC(&kbd_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "interface", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &kbd_interface, sizeof(kbd_interface), usb_temp_sysctl,
 	    "A", "Interface string");
+#endif
 	SYSCTL_ADD_PROC(&kbd_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "product", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &kbd_product, sizeof(kbd_product), usb_temp_sysctl,

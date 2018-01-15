@@ -446,6 +446,7 @@ phone_init(void *arg __unused)
 	SYSCTL_ADD_U16(&phone_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "product_id", CTLFLAG_RWTUN,
 	    &usb_template_cdce.idProduct, 1, "Product identifier");
+#if 0
 	SYSCTL_ADD_PROC(&phone_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "mixer", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &phone_mixer, sizeof(phone_mixer), usb_temp_sysctl,
@@ -458,6 +459,7 @@ phone_init(void *arg __unused)
 	    "playback", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &phone_playback, sizeof(phone_playback), usb_temp_sysctl,
 	    "A", "Playback interface string");
+#endif
 	SYSCTL_ADD_PROC(&phone_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "product", CTLTYPE_STRING | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
 	    &phone_product, sizeof(phone_product), usb_temp_sysctl,
