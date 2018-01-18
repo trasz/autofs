@@ -85,6 +85,7 @@
 
 /* function prototypes  */
 
+static int	sysctl_hw_usb_template(SYSCTL_HANDLER_ARGS);
 static void	usb_init_endpoint(struct usb_device *, uint8_t,
 		    struct usb_endpoint_descriptor *,
 		    struct usb_endpoint_ss_comp_descriptor *,
@@ -118,8 +119,129 @@ int	usb_template = USB_TEMPLATE;
 int	usb_template;
 #endif
 
-SYSCTL_INT(_hw_usb, OID_AUTO, template, CTLFLAG_RWTUN,
-    &usb_template, 0, "Selected USB device side template");
+SYSCTL_PROC(_hw_usb, OID_AUTO, template,
+    CTLTYPE_INT | CTLFLAG_RWTUN | CTLFLAG_MPSAFE,
+    NULL, 0, sysctl_hw_usb_template,
+    "I", "Selected USB device side template");
+
+/*------------------------------------------------------------------------*
+ *	usb_trigger_reprobe_on_off
+ *
+ * This function sets the pull up resistors for all ports currently
+ * operating in device mode either on (when on_not_off is 1), or off
+ * (when it's 0).
+ *------------------------------------------------------------------------*/
+static void
+usb_trigger_reprobe_on_off(int on_not_off)
+{
+	struct usb_port_status ps;
+	struct usb_device *udev;
+	usb_error_t err;
+	int i;
+
+	struct usb_bus *bus;
+	devclass_t dc;
+	device_t dev;
+	int max;
+
+	dc = usb_devclass_ptr;
+	if (dc == NULL) {
+		DPRINTFN(0, "no devclass\n");
+		return;
+	}
+
+	max = devclass_get_maxunit(dc);
+	while (max >= 0) {
+		dev = devclass_get_device(dc, max);
+		max--;
+
+		if (dev == NULL)
+			continue;
+
+		bus = device_get_softc(dev);
+		if (bus == NULL)
+			continue;
+
+		for (i = 0; i < bus->devices_max; i++) {
+			udev = bus->devices[i];
+			if (udev == NULL)
+				continue;
+
+			err = usbd_req_get_port_status(udev, NULL, &ps, 1);
+			if (err != 0) {
+				DPRINTF("usbd_req_get_port_status() "
+				    "failed: %s\n", usbd_errstr(err));
+				continue;
+			}
+
+			if ((UGETW(ps.wPortStatus) & UPS_PORT_MODE_DEVICE) == 0)
+				continue;
+
+			if (on_not_off) {
+				err = usbd_req_set_port_feature(udev, NULL, 1,
+				    UHF_PORT_POWER);
+				if (err != 0) {
+					DPRINTF("usbd_req_set_port_feature() "
+					    "failed: %s\n", usbd_errstr(err));
+				}
+			} else {
+				err = usbd_req_clear_port_feature(udev, NULL, 1,
+				    UHF_PORT_POWER);
+				if (err != 0) {
+					DPRINTF("usbd_req_clear_port_feature() "
+					    "failed: %s\n", usbd_errstr(err));
+				}
+			}
+		}
+	}
+}
+
+/*------------------------------------------------------------------------*
+ *	usb_trigger_reprobe_all
+ *
+ * This function toggles the pull up resistors for all ports currently
+ * operating in device mode, causing the host machine to reenumerate them.
+ *------------------------------------------------------------------------*/
+static void
+usb_trigger_reprobe_all(void)
+{
+
+	/*
+	 * Set the pull up resistors off for all ports in device mode.
+	 */
+	usb_trigger_reprobe_on_off(0);
+
+	/*
+	 * According to the DWC OTG spec this must be at least 3ms.
+	 */
+	usb_pause_mtx(NULL, USB_MS_TO_TICKS(USB_POWER_DOWN_TIME));
+
+	/*
+	 * Set the pull up resistors back on.
+	 */
+	usb_trigger_reprobe_on_off(1);
+}
+
+static int
+sysctl_hw_usb_template(SYSCTL_HANDLER_ARGS)
+{
+	int error, val;
+
+	val = usb_template;
+	error = sysctl_handle_int(oidp, &val, 0, req);
+	if (error != 0 || req->newptr == NULL || usb_template == val)
+		return (error);
+
+	usb_template = val;
+
+	if (usb_template < 0) {
+		usb_trigger_reprobe_on_off(0);
+	} else {
+		usb_trigger_reprobe_all();
+	}
+
+	return (0);
+}
 
 /* English is default language */
 
