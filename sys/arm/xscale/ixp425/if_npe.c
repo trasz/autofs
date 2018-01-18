@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2006-2008 Sam Leffler.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -513,7 +515,8 @@ npe_dma_setup(struct npe_softc *sc, struct npedma *dma,
 		return error;
 	}
 	/* XXX M_TEMP */
-	dma->buf = malloc(nbuf * sizeof(struct npebuf), M_TEMP, M_NOWAIT | M_ZERO);
+	dma->buf = mallocarray(nbuf, sizeof(struct npebuf), M_TEMP,
+	    M_NOWAIT | M_ZERO);
 	if (dma->buf == NULL) {
 		device_printf(sc->sc_dev,
 		     "unable to allocate memory for %s s/w buffers\n",
