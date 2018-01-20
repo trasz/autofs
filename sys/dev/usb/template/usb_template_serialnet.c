@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2015 Ruslan Bukin <br@bsdpad.com>
  * Copyright (c) 2018 The FreeBSD Foundation
  * All rights reserved.
@@ -79,7 +81,6 @@ enum {
 	SERIALNET_ETH_MAC_INDEX,
 	SERIALNET_ETH_CONTROL_INDEX,
 	SERIALNET_ETH_DATA_INDEX,
-	SERIALNET_ETH_CONFIG_INDEX,
 	SERIALNET_CONFIGURATION_INDEX,
 	SERIALNET_MANUFACTURER_INDEX,
 	SERIALNET_PRODUCT_INDEX,

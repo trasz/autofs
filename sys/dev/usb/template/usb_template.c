@@ -130,7 +130,6 @@ usb_decode_str_desc(struct usb_string_descriptor *sd, char *buf, size_t buflen)
 	for (i = 0; i < buflen - 1 && i < sd->bLength / 2; i++)
 		buf[i] = UGETW(sd->bString[i]);
 
-	//i++;
 	buf[i] = '\0';
 }
 

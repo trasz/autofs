@@ -2575,6 +2575,15 @@ _pmap_allocpte(pmap_t pmap, vm_pindex_t ptepindex, struct rwlock **lockp)
 		pml4 = &pmap->pm_pml4[pml4index];
 		*pml4 = VM_PAGE_TO_PHYS(m) | PG_U | PG_RW | PG_V | PG_A | PG_M;
 		if (pmap->pm_pml4u != NULL && pml4index < NUPML4E) {
+			/*
+			 * PTI: Make all user-space mappings in the
+			 * kernel-mode page table no-execute so that
+			 * we detect any programming errors that leave
+			 * the kernel-mode page table active on return
+			 * to user space.
+			 */
+			*pml4 |= pg_nx;
+
 			pml4u = &pmap->pm_pml4u[pml4index];
 			*pml4u = VM_PAGE_TO_PHYS(m) | PG_U | PG_RW | PG_V |
 			    PG_A | PG_M;
@@ -7595,6 +7604,9 @@ pmap_pti_init(void)
 		pmap_pti_add_kva_locked(va - PAGE_SIZE, va, false);
 		/* NMI stack IST 2 */
 		va = common_tss[i].tss_ist2 + sizeof(struct nmi_pcpu);
+		pmap_pti_add_kva_locked(va - PAGE_SIZE, va, false);
+		/* MC# stack IST 3 */
+		va = common_tss[i].tss_ist3 + sizeof(struct nmi_pcpu);
 		pmap_pti_add_kva_locked(va - PAGE_SIZE, va, false);
 	}
 	pmap_pti_add_kva_locked((vm_offset_t)kernphys + KERNBASE,
