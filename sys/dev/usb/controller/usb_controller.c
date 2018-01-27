@@ -649,8 +649,6 @@ usb_bus_pull_up(struct usb_proc_msg *pm)
 	struct usb_device *udev;
 	usb_error_t err;
 
-	printf("%s: go!\n", __func__);
-
 	bus = ((struct usb_bus_msg *)pm)->bus;
 	udev = bus->devices[USB_ROOT_HUB_ADDR];
 
@@ -662,7 +660,6 @@ usb_bus_pull_up(struct usb_proc_msg *pm)
 		DPRINTF("usbd_req_set_port_feature() failed: %s\n",
 		    usbd_errstr(err));
 	}
-	printf("%s: done\n", __func__);
 }
 
 static void
@@ -671,8 +668,6 @@ usb_bus_pull_down(struct usb_proc_msg *pm)
 	struct usb_bus *bus;
 	struct usb_device *udev;
 	usb_error_t err;
-
-	printf("%s: go!\n", __func__);
 
 	bus = ((struct usb_bus_msg *)pm)->bus;
 	udev = bus->devices[USB_ROOT_HUB_ADDR];
@@ -685,7 +680,6 @@ usb_bus_pull_down(struct usb_proc_msg *pm)
 		DPRINTF("usbd_req_set_port_feature() failed: %s\n",
 		    usbd_errstr(err));
 	}
-	printf("%s: done\n", __func__);
 }
 
 /*------------------------------------------------------------------------*
