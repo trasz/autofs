@@ -67,7 +67,6 @@
 #include <dev/usb/usb_controller.h>
 #include <dev/usb/usb_bus.h>
 #include <dev/usb/usb_pf.h>
-#include <dev/usb/usb_request.h>
 #include "usb_if.h"
 #endif			/* USB_GLOBAL_INCLUDE_FILE */
 
@@ -642,52 +641,6 @@ usb_bus_shutdown(struct usb_proc_msg *pm)
 	USB_BUS_LOCK(bus);
 }
 
-static void
-usb_bus_pull_up(struct usb_proc_msg *pm)
-{
-	struct usb_bus *bus;
-	struct usb_device *udev;
-	usb_error_t err;
-
-	printf("%s: go!\n", __func__);
-
-	bus = ((struct usb_bus_msg *)pm)->bus;
-	udev = bus->devices[USB_ROOT_HUB_ADDR];
-
-	if (udev == NULL || bus->bdev == NULL)
-		return;
-
-	err = usbd_req_set_port_feature(udev, NULL, 1, UHF_PORT_POWER);
-	if (err != 0) {
-		DPRINTF("usbd_req_set_port_feature() failed: %s\n",
-		    usbd_errstr(err));
-	}
-	printf("%s: done\n", __func__);
-}
-
-static void
-usb_bus_pull_down(struct usb_proc_msg *pm)
-{
-	struct usb_bus *bus;
-	struct usb_device *udev;
-	usb_error_t err;
-
-	printf("%s: go!\n", __func__);
-
-	bus = ((struct usb_bus_msg *)pm)->bus;
-	udev = bus->devices[USB_ROOT_HUB_ADDR];
-
-	if (udev == NULL || bus->bdev == NULL)
-		return;
-
-	err = usbd_req_clear_port_feature(udev, NULL, 1, UHF_PORT_POWER);
-	if (err != 0) {
-		DPRINTF("usbd_req_set_port_feature() failed: %s\n",
-		    usbd_errstr(err));
-	}
-	printf("%s: done\n", __func__);
-}
-
 /*------------------------------------------------------------------------*
  *	usb_bus_cleanup
  *
@@ -875,16 +828,6 @@ usb_attach_sub(device_t dev, struct usb_bus *bus)
 	bus->attach_msg[0].bus = bus;
 	bus->attach_msg[1].hdr.pm_callback = &usb_bus_attach;
 	bus->attach_msg[1].bus = bus;
-
-	bus->pull_up_msg[0].hdr.pm_callback = &usb_bus_pull_up;
-	bus->pull_up_msg[0].bus = bus;
-	bus->pull_up_msg[1].hdr.pm_callback = &usb_bus_pull_up;
-	bus->pull_up_msg[1].bus = bus;
-
-	bus->pull_down_msg[0].hdr.pm_callback = &usb_bus_pull_down;
-	bus->pull_down_msg[0].bus = bus;
-	bus->pull_down_msg[1].hdr.pm_callback = &usb_bus_pull_down;
-	bus->pull_down_msg[1].bus = bus;
 
 	bus->suspend_msg[0].hdr.pm_callback = &usb_bus_suspend;
 	bus->suspend_msg[0].bus = bus;

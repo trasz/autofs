@@ -138,10 +138,12 @@ usb_trigger_reprobe_on_off(int on_not_off)
 {
 	struct usb_port_status ps;
 	struct usb_device *udev;
+	usb_error_t err;
+	int i;
+
 	struct usb_bus *bus;
 	devclass_t dc;
 	device_t dev;
-	usb_error_t err;
 	int max;
 
 	dc = usb_devclass_ptr;
@@ -162,36 +164,37 @@ usb_trigger_reprobe_on_off(int on_not_off)
 		if (bus == NULL)
 			continue;
 
-		if (bus->devices == NULL)
-			continue;
+		for (i = 0; i < bus->devices_max; i++) {
+			udev = bus->devices[i];
+			if (udev == NULL)
+				continue;
 
-		udev = bus->devices[USB_ROOT_HUB_ADDR];
-		if (udev == NULL)
-			continue;
+			err = usbd_req_get_port_status(udev, NULL, &ps, 1);
+			if (err != 0) {
+				DPRINTF("usbd_req_get_port_status() "
+				    "failed: %s\n", usbd_errstr(err));
+				continue;
+			}
 
-		err = usbd_req_get_port_status(udev, NULL, &ps, 1);
-		if (err != 0) {
-			DPRINTF("usbd_req_get_port_status() "
-			    "failed: %s\n", usbd_errstr(err));
-			continue;
+			if ((UGETW(ps.wPortStatus) & UPS_PORT_MODE_DEVICE) == 0)
+				continue;
+
+			if (on_not_off) {
+				err = usbd_req_set_port_feature(udev, NULL, 1,
+				    UHF_PORT_POWER);
+				if (err != 0) {
+					DPRINTF("usbd_req_set_port_feature() "
+					    "failed: %s\n", usbd_errstr(err));
+				}
+			} else {
+				err = usbd_req_clear_port_feature(udev, NULL, 1,
+				    UHF_PORT_POWER);
+				if (err != 0) {
+					DPRINTF("usbd_req_clear_port_feature() "
+					    "failed: %s\n", usbd_errstr(err));
+				}
+			}
 		}
-
-		if ((UGETW(ps.wPortStatus) & UPS_PORT_MODE_DEVICE) == 0)
-			continue;
-
-		USB_BUS_LOCK(bus);
-		if (on_not_off) {
-			(void)usb_proc_msignal(USB_BUS_EXPLORE_PROC(bus),
-			    &bus->pull_up_msg[0], &bus->pull_up_msg[1]);
-			(void)usb_proc_mwait(USB_BUS_EXPLORE_PROC(bus),
-			    &bus->pull_up_msg[0], &bus->pull_up_msg[1]);
-		} else {
-			(void)usb_proc_msignal(USB_BUS_EXPLORE_PROC(bus),
-			    &bus->pull_down_msg[0], &bus->pull_down_msg[1]);
-			(void)usb_proc_mwait(USB_BUS_EXPLORE_PROC(bus),
-			    &bus->pull_down_msg[0], &bus->pull_down_msg[1]);
-		}
-		USB_BUS_UNLOCK(bus);
 	}
 }
 
