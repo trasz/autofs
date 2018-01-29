@@ -137,64 +137,70 @@ static void
 usb_trigger_reprobe_on_off(int on_not_off)
 {
 	struct usb_port_status ps;
+	struct usb_bus *bus;
 	struct usb_device *udev;
 	usb_error_t err;
-	int i;
+	int do_unlock, max;
 
-	struct usb_bus *bus;
-	devclass_t dc;
-	device_t dev;
-	int max;
-
-	dc = usb_devclass_ptr;
-	if (dc == NULL) {
-		DPRINTFN(0, "no devclass\n");
-		return;
-	}
-
-	max = devclass_get_maxunit(dc);
+	max = devclass_get_maxunit(usb_devclass_ptr);
 	while (max >= 0) {
-		dev = devclass_get_device(dc, max);
+		mtx_lock(&usb_ref_lock);
+		bus = devclass_get_softc(usb_devclass_ptr, max);
 		max--;
 
-		if (dev == NULL)
+		if (bus == NULL || bus->devices == NULL ||
+		    bus->devices[USB_ROOT_HUB_ADDR] == NULL) {
+			mtx_unlock(&usb_ref_lock);
+			continue;
+		}
+
+		udev = bus->devices[USB_ROOT_HUB_ADDR];
+
+		if (udev->refcount == USB_DEV_REF_MAX) {
+			mtx_unlock(&usb_ref_lock);
+			continue;
+		}
+
+		udev->refcount++;
+		mtx_unlock(&usb_ref_lock);
+
+		do_unlock = usbd_enum_lock(udev);
+		if (do_unlock > 1)
 			continue;
 
-		bus = device_get_softc(dev);
-		if (bus == NULL)
-			continue;
+		err = usbd_req_get_port_status(udev, NULL, &ps, 1);
+		if (err != 0) {
+			DPRINTF("usbd_req_get_port_status() "
+			    "failed: %s\n", usbd_errstr(err));
+			goto next;
+		}
 
-		for (i = 0; i < bus->devices_max; i++) {
-			udev = bus->devices[i];
-			if (udev == NULL)
-				continue;
+		if ((UGETW(ps.wPortStatus) & UPS_PORT_MODE_DEVICE) == 0)
+			goto next;
 
-			err = usbd_req_get_port_status(udev, NULL, &ps, 1);
+		if (on_not_off) {
+			err = usbd_req_set_port_feature(udev, NULL, 1,
+			    UHF_PORT_POWER);
 			if (err != 0) {
-				DPRINTF("usbd_req_get_port_status() "
+				DPRINTF("usbd_req_set_port_feature() "
 				    "failed: %s\n", usbd_errstr(err));
-				continue;
 			}
-
-			if ((UGETW(ps.wPortStatus) & UPS_PORT_MODE_DEVICE) == 0)
-				continue;
-
-			if (on_not_off) {
-				err = usbd_req_set_port_feature(udev, NULL, 1,
-				    UHF_PORT_POWER);
-				if (err != 0) {
-					DPRINTF("usbd_req_set_port_feature() "
-					    "failed: %s\n", usbd_errstr(err));
-				}
-			} else {
-				err = usbd_req_clear_port_feature(udev, NULL, 1,
-				    UHF_PORT_POWER);
-				if (err != 0) {
-					DPRINTF("usbd_req_clear_port_feature() "
-					    "failed: %s\n", usbd_errstr(err));
-				}
+		} else {
+			err = usbd_req_clear_port_feature(udev, NULL, 1,
+			    UHF_PORT_POWER);
+			if (err != 0) {
+				DPRINTF("usbd_req_clear_port_feature() "
+				    "failed: %s\n", usbd_errstr(err));
 			}
 		}
+
+next:
+		mtx_lock(&usb_ref_lock);
+		if (do_unlock)
+			    usbd_enum_unlock(udev);
+		if (--(udev->refcount) == 0)
+			    cv_broadcast(&udev->ref_cv);
+		mtx_unlock(&usb_ref_lock);
 	}
 }
 
