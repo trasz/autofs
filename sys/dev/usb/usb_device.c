@@ -165,8 +165,10 @@ usb_trigger_reprobe_on_off(int on_not_off)
 		mtx_unlock(&usb_ref_lock);
 
 		do_unlock = usbd_enum_lock(udev);
-		if (do_unlock > 1)
-			continue;
+		if (do_unlock > 1) {
+			do_unlock = 0;
+			goto next;
+		}
 
 		err = usbd_req_get_port_status(udev, NULL, &ps, 1);
 		if (err != 0) {
@@ -197,9 +199,9 @@ usb_trigger_reprobe_on_off(int on_not_off)
 next:
 		mtx_lock(&usb_ref_lock);
 		if (do_unlock)
-			    usbd_enum_unlock(udev);
+			usbd_enum_unlock(udev);
 		if (--(udev->refcount) == 0)
-			    cv_broadcast(&udev->ref_cv);
+			cv_broadcast(&udev->ref_cv);
 		mtx_unlock(&usb_ref_lock);
 	}
 }
