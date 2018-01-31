@@ -6,8 +6,7 @@ SRCS=	main.c init.c subr.c chat.c
 LIBADD=	util
 MAN=	gettytab.5 ttys.5 getty.8
 
-WARNS?=	1
-WFORMAT=0
+WARNS?=	5
 
 .include <bsd.prog.mk>
 
