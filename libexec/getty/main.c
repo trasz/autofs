@@ -253,14 +253,15 @@ main(int argc, char *argv[])
 		}
 
 		if (AC) {
-			int i, rfds;
+			fd_set rfds;
 			struct timeval to;
+			int i;
 
-        		rfds = 1 << 0;	/* FD_SET */
+			FD_ZERO(&rfds);
+			FD_SET(0, &rfds);
         		to.tv_sec = RT;
         		to.tv_usec = 0;
-        		i = select(32, (fd_set*)&rfds, (fd_set*)NULL,
-        			       (fd_set*)NULL, RT ? &to : NULL);
+			i = select(32, &rfds, NULL, NULL, RT ? &to : NULL);
         		if (i < 0) {
 				syslog(LOG_ERR, "select %s: %m", ttyn);
 			} else if (i == 0) {
@@ -716,7 +717,7 @@ getline(int fd)
 	 * This is certainly slow, but it avoids having to include
 	 * stdio.h unnecessarily. Issue files should be small anyway.
 	 */
-	while (i < (sizeof linebuf - 3) && read(fd, linebuf+i, 1)==1) {
+	while ((size_t)i < (sizeof(linebuf) - 3) && read(fd, linebuf+i, 1)==1) {
 		if (linebuf[i] == '\n') {
 			/* Don't rely on newline mode, assume raw */
 			linebuf[i++] = '\r';
