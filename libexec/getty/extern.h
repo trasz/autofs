@@ -37,7 +37,6 @@ struct termios;
 
 extern	char editedhost[];
 extern	char hostname[];
-extern	int hopcount;
 extern	struct termios tmode, omode;
 extern	struct gettyflags gettyflags[];
 extern	struct gettynums gettynums[];
