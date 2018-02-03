@@ -93,23 +93,23 @@ struct termios omode;
 /* current mode */
 struct termios tmode;
 
-int crmod, digit, lower, upper;
+static int crmod, digit, lower, upper;
 
 char	hostname[MAXHOSTNAMELEN];
-char	name[MAXLOGNAME*3];
-char	dev[] = _PATH_DEV;
-char	ttyn[32];
+static char	name[MAXLOGNAME*3];
+static char	dev[] = _PATH_DEV;
+static char	ttyn[32];
 
 #define	OBUFSIZ		128
 #define	TABBUFSIZ	512
 
-char	defent[TABBUFSIZ];
-char	tabent[TABBUFSIZ];
-const	char *tname;
+static char	defent[TABBUFSIZ];
+static char	tabent[TABBUFSIZ];
+static const char	*tname;
 
-char	*env[128];
+static char	*env[128];
 
-char partab[] = {
+static char partab[] = {
 	0001,0201,0201,0001,0201,0001,0001,0201,
 	0202,0004,0003,0205,0005,0206,0201,0001,
 	0201,0001,0001,0201,0001,0201,0201,0001,
@@ -150,7 +150,7 @@ static char	*getline(int);
 static void	setttymode(int);
 static int	opentty(const char *, int);
 
-jmp_buf timeout;
+static jmp_buf timeout;
 
 static void
 dingdong(int signo __unused)
@@ -159,7 +159,7 @@ dingdong(int signo __unused)
 	longjmp(timeout, 1);
 }
 
-jmp_buf	intrupt;
+static jmp_buf	intrupt;
 
 static void
 interrupt(int signo __unused)
@@ -667,8 +667,8 @@ puts(const char *s)
 		putchr(*s++);
 }
 
-char	outbuf[OBUFSIZ];
-int	obufcnt = 0;
+static char	outbuf[OBUFSIZ];
+static int	obufcnt = 0;
 
 static void
 putchr(int cc)
@@ -734,7 +734,6 @@ getline(int fd)
 static void
 putf(const char *cp)
 {
-	extern char editedhost[];
 	time_t t;
 	char *slash, db[100];
 
