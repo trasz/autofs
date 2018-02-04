@@ -7,6 +7,7 @@ LIBADD=	util
 MAN=	gettytab.5 ttys.5 getty.8
 
 WARNS?=	6
+WFORMAT=0
 
 .include <bsd.prog.mk>
 
