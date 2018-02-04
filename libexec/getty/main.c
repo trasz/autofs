@@ -181,7 +181,6 @@ timeoverrun(int signo __unused)
 int
 main(int argc, char *argv[])
 {
-	extern	char **environ;
 	int first_sleep = 1, first_time = 1;
 	struct rlimit limit;
 	int rval;
