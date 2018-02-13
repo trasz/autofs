@@ -1,0 +1,82 @@
+#!/bin/sh
+#
+# $FreeBSD$
+#
+
+# PROVIDE: cfumass
+# REQUIRE: var
+# KEYWORD: nojail
+
+. /etc/rc.subr
+
+name="cfumass"
+desc="Configure the LUN for device mode USB mass storage"
+rcvar="cfumass_enable"
+
+start_cmd="${name}_start"
+stop_cmd="${name}_stop"
+
+extra_commands="reload"
+reload_cmd="${name}_start"
+
+: ${cfumass_dir:=/var/cfumass}
+: ${cfumass_image:=/var/cfumass.img}
+
+remove_luns()
+{
+	local _lun _luns
+
+	_luns=`ctladm devlist -b block -v | awk '
+
+	$1 ~ /^[0-9]+$/ {
+		lun = $1
+	}
+
+	$1 == "file='"${cfumass_image}"'" {
+		print lun
+	}'`
+
+	for _lun in ${_luns}; do
+		ctladm remove -b block -l "${_lun}" > /dev/null
+	done
+}
+
+cfumass_start()
+{
+	local err _files
+
+	if [ ! -d "${cfumass_dir}" ]; then
+		warn "${cfumass_dir} does not exist"
+		return 1
+	fi
+
+	_files=`find "${cfumass_dir}" -newer "${cfumass_image}" -print 2> /dev/null`
+	if [ -n "${_files}" ]; then
+		# The image doesn't exist or is out of date.
+		makefs -t cd9660 -o rockridge "${cfumass_image}" "${cfumass_dir}"
+		err=$?
+		if [ "${err}" -ne 0 ]; then
+			warn "unable to create ${cfumass_image}"
+			return "${err}"
+		fi
+	fi
+
+	remove_luns
+
+	ctladm create -b block -o file="${cfumass_image}" -o readonly=on -t 5 > /dev/null
+	err=$?
+	if [ "${err}" -ne 0 ]; then
+		return "${err}"
+	fi
+
+	load_kld -e cfumass cfumass
+}
+
+cfumass_stop()
+{
+
+	remove_luns
+}
+
+load_rc_config $name
+run_rc_command "$1"
