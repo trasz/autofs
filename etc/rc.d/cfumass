@@ -21,6 +21,8 @@ reload_cmd="${name}_start"
 
 : ${cfumass_dir:=/var/cfumass}
 : ${cfumass_image:=/var/cfumass.img}
+: ${cfumass_vendor:="FreeBSD"}
+: ${cfumass_product:="cfumass(4)"}
 
 remove_luns()
 {
@@ -43,7 +45,7 @@ remove_luns()
 
 cfumass_start()
 {
-	local err _files
+	local err _files _template
 
 	if [ ! -d "${cfumass_dir}" ]; then
 		warn "${cfumass_dir} does not exist"
@@ -63,17 +65,58 @@ cfumass_start()
 
 	remove_luns
 
-	ctladm create -b block -o file="${cfumass_image}" -o readonly=on -t 5 > /dev/null
+	ctladm create -b block -o file="${cfumass_image}" -o readonly=on \
+	    -o vendor="${cfumass_vendor}" -o product="${cfumass_product}" \
+	    -t 5 -S 0 > /dev/null
 	err=$?
 	if [ "${err}" -ne 0 ]; then
+		warn "unable to create CTL LUN"
 		return "${err}"
 	fi
 
 	load_kld -e cfumass cfumass
+
+	# If the template is already switched to Mass Storage, then reset
+	# it to -1 to force the host to reenumerate it; otherwise it might
+	# not notice the new LUN.
+	_template=`sysctl -n hw.usb.template`
+	if [ "${_template}" -eq 0 ]; then
+		sysctl hw.usb.template=-1 > /dev/null
+		err=$?
+		if [ "${err}" -ne 0 ]; then
+			warn "unable to set hw.usb.template sysctl"
+			return "${err}"
+		fi
+	fi
+
+	_template=`sysctl -n hw.usb.template`
+	if [ "${_template}" -lt 0 ]; then
+		sysctl hw.usb.template=0 > /dev/null
+		err=$?
+		if [ "${err}" -ne 0 ]; then
+			warn "unable to set hw.usb.template sysctl"
+			return "${err}"
+		fi
+	else
+		# Otherwise don't touch the sysctl - we could lock the user
+		# out of the machine otherwise.
+		warn "hw.usb.template sysctl set to neither -1 nor 0"
+	fi
 }
 
 cfumass_stop()
 {
+	local err _template
+
+	_template=`sysctl -n hw.usb.template`
+	if [ "${_template}" -eq 0 ]; then
+		sysctl hw.usb.template=-1 > /dev/null
+		err=$?
+		if [ "${err}" -ne 0 ]; then
+			warn "unable to set hw.usb.template sysctl"
+			return "${err}"
+		fi
+	fi
 
 	remove_luns
 }
