@@ -718,7 +718,7 @@ get_line(int fd)
 	 * This is certainly slow, but it avoids having to include
 	 * stdio.h unnecessarily. Issue files should be small anyway.
 	 */
-	while ((size_t)i < (sizeof(linebuf) - 3) && read(fd, linebuf+i, 1)==1) {
+	while (i < (sizeof linebuf - 3) && read(fd, linebuf+i, 1)==1) {
 		if (linebuf[i] == '\n') {
 			/* Don't rely on newline mode, assume raw */
 			linebuf[i++] = '\r';
