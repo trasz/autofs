@@ -68,11 +68,13 @@ gettable(const char *name, char *buf)
 	long n;
 	int l;
 	char *p;
+	static char path_gettytab[PATH_MAX];
 	char *dba[2];
 
 	static int firsttime = 1;
 
-	dba[0] = strdup(_PATH_GETTYTAB);
+	strlcpy(path_gettytab, _PATH_GETTYTAB, sizeof(path_gettytab));
+	dba[0] = path_gettytab;
 	dba[1] = NULL;
 
 	if (firsttime) {

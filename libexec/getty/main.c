@@ -711,7 +711,7 @@ prompt(void)
 static char *
 get_line(int fd)
 {
-	int i = 0;
+	size_t i = 0;
 	static char linebuf[512];
 
 	/*
