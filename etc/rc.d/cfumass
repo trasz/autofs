@@ -20,7 +20,7 @@ extra_commands="reload"
 reload_cmd="${name}_start"
 
 : ${cfumass_dir:=/var/cfumass}
-: ${cfumass_image:=/var/cfumass.img}
+: ${cfumass_image:=/var/tmp/cfumass.img}
 : ${cfumass_vendor:="FreeBSD"}
 : ${cfumass_product:="cfumass(4)"}
 

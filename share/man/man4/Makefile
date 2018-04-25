@@ -120,7 +120,6 @@ MAN=	aac.4 \
 	chromebook_platform.4 \
 	ciss.4 \
 	cloudabi.4 \
-	cm.4 \
 	cmx.4 \
 	${_coretemp.4} \
 	${_cpuctl.4} \
@@ -170,7 +169,6 @@ MAN=	aac.4 \
 	ffclock.4 \
 	filemon.4 \
 	firewire.4 \
-	fpa.4 \
 	full.4 \
 	fwe.4 \
 	fwip.4 \
@@ -402,6 +400,7 @@ MAN=	aac.4 \
 	${_nvram2env.4} \
 	${_nxge.4} \
 	oce.4 \
+	ocs_fc.4\
 	ohci.4 \
 	orm.4 \
 	ow.4 \
@@ -926,6 +925,10 @@ MAN+=		iser.4
 .if ${MK_OFED} != "no"
 MAN+=		mlx4ib.4
 MAN+=		mlx5ib.4
+.endif
+
+.if ${MK_MLX5TOOL} != "no"
+MAN+=		mlx5io.4
 .endif
 
 .if ${MK_TESTS} != "no"

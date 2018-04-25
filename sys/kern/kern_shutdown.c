@@ -72,6 +72,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/smp.h>
 #include <sys/sysctl.h>
 #include <sys/sysproto.h>
+#include <sys/taskqueue.h>
 #include <sys/vnode.h>
 #include <sys/watchdog.h>
 
@@ -123,12 +124,16 @@ SYSCTL_INT(_debug, OID_AUTO, debugger_on_panic,
 
 #ifdef KDB_TRACE
 static int trace_on_panic = 1;
+static bool trace_all_panics = true;
 #else
 static int trace_on_panic = 0;
+static bool trace_all_panics = false;
 #endif
 SYSCTL_INT(_debug, OID_AUTO, trace_on_panic,
     CTLFLAG_RWTUN | CTLFLAG_SECURE,
     &trace_on_panic, 0, "Print stack trace on kernel panic");
+SYSCTL_BOOL(_debug, OID_AUTO, trace_all_panics, CTLFLAG_RWTUN,
+    &trace_all_panics, 0, "Print stack traces on secondary kernel panics");
 #endif /* KDB */
 
 static int sync_on_panic = 0;
@@ -268,16 +273,35 @@ sys_reboot(struct thread *td, struct reboot_args *uap)
 	if (error == 0)
 		error = priv_check(td, PRIV_REBOOT);
 	if (error == 0) {
-		if (uap->opt & RB_REROOT) {
+		if (uap->opt & RB_REROOT)
 			error = kern_reroot();
-		} else {
-			mtx_lock(&Giant);
+		else
 			kern_reboot(uap->opt);
-			mtx_unlock(&Giant);
-		}
 	}
 	return (error);
 }
+
+static void
+shutdown_nice_task_fn(void *arg, int pending __unused)
+{
+	int howto;
+
+	howto = (uintptr_t)arg;
+	/* Send a signal to init(8) and have it shutdown the world. */
+	PROC_LOCK(initproc);
+	if (howto & RB_POWEROFF)
+		kern_psignal(initproc, SIGUSR2);
+	else if (howto & RB_POWERCYCLE)
+		kern_psignal(initproc, SIGWINCH);
+	else if (howto & RB_HALT)
+		kern_psignal(initproc, SIGUSR1);
+	else
+		kern_psignal(initproc, SIGINT);
+	PROC_UNLOCK(initproc);
+}
+
+static struct task shutdown_nice_task = TASK_INITIALIZER(0,
+    &shutdown_nice_task_fn, NULL);
 
 /*
  * Called by events that want to shut down.. e.g  <CTL><ALT><DEL> on a PC
@@ -286,20 +310,14 @@ void
 shutdown_nice(int howto)
 {
 
-	if (initproc != NULL) {
-		/* Send a signal to init(8) and have it shutdown the world. */
-		PROC_LOCK(initproc);
-		if (howto & RB_POWEROFF)
-			kern_psignal(initproc, SIGUSR2);
-		else if (howto & RB_POWERCYCLE)
-			kern_psignal(initproc, SIGWINCH);
-		else if (howto & RB_HALT)
-			kern_psignal(initproc, SIGUSR1);
-		else
-			kern_psignal(initproc, SIGINT);
-		PROC_UNLOCK(initproc);
+	if (initproc != NULL && !SCHEDULER_STOPPED()) {
+		shutdown_nice_task.ta_context = (void *)(uintptr_t)howto;
+		taskqueue_enqueue(taskqueue_fast, &shutdown_nice_task);
 	} else {
-		/* No init(8) running, so simply reboot. */
+		/*
+		 * No init(8) running, or scheduler would not allow it
+		 * to run, so simply reboot.
+		 */
 		kern_reboot(howto | RB_NOSYNC);
 	}
 }
@@ -368,6 +386,17 @@ void
 kern_reboot(int howto)
 {
 	static int once = 0;
+
+	/*
+	 * Normal paths here don't hold Giant, but we can wind up here
+	 * unexpectedly with it held.  Drop it now so we don't have to
+	 * drop and pick it up elsewhere. The paths it is locking will
+	 * never be returned to, and it is preferable to preclude
+	 * deadlock than to lock against code that won't ever
+	 * continue.
+	 */
+	while (mtx_owned(&Giant))
+		mtx_unlock(&Giant);
 
 #if defined(SMP)
 	/*
@@ -617,6 +646,7 @@ static int kassert_do_log = 1;
 static int kassert_log_pps_limit = 4;
 static int kassert_log_mute_at = 0;
 static int kassert_log_panic_at = 0;
+static int kassert_suppress_in_panic = 0;
 static int kassert_warnings = 0;
 
 SYSCTL_NODE(_debug, OID_AUTO, kassert, CTLFLAG_RW, NULL, "kassert options");
@@ -637,7 +667,8 @@ SYSCTL_UINT(_debug_kassert, OID_AUTO, do_ktr, CTLFLAG_RWTUN,
 #endif
 
 SYSCTL_INT(_debug_kassert, OID_AUTO, do_log, CTLFLAG_RWTUN,
-    &kassert_do_log, 0, "KASSERT triggers a panic (1) or just a warning (0)");
+    &kassert_do_log, 0,
+    "If warn_only is enabled, log (1) or do not log (0) assertion violations");
 
 SYSCTL_INT(_debug_kassert, OID_AUTO, warnings, CTLFLAG_RWTUN,
     &kassert_warnings, 0, "number of KASSERTs that have been triggered");
@@ -650,6 +681,10 @@ SYSCTL_INT(_debug_kassert, OID_AUTO, log_pps_limit, CTLFLAG_RWTUN,
 
 SYSCTL_INT(_debug_kassert, OID_AUTO, log_mute_at, CTLFLAG_RWTUN,
     &kassert_log_mute_at, 0, "max number of KASSERTS to log");
+
+SYSCTL_INT(_debug_kassert, OID_AUTO, suppress_in_panic, CTLFLAG_RWTUN,
+    &kassert_suppress_in_panic, 0,
+    "KASSERTs will be suppressed while handling a panic");
 
 static int kassert_sysctl_kassert(SYSCTL_HANDLER_ARGS);
 
@@ -686,6 +721,21 @@ kassert_panic(const char *fmt, ...)
 	va_start(ap, fmt);
 	(void)vsnprintf(buf, sizeof(buf), fmt, ap);
 	va_end(ap);
+
+	/*
+	 * If we are suppressing secondary panics, log the warning but do not
+	 * re-enter panic/kdb.
+	 */
+	if (panicstr != NULL && kassert_suppress_in_panic) {
+		if (kassert_do_log) {
+			printf("KASSERT failed: %s\n", buf);
+#ifdef KDB
+			if (trace_all_panics && trace_on_panic)
+				kdb_backtrace();
+#endif
+		}
+		return;
+	}
 
 	/*
 	 * panic if we're not just warning, or if we've exceeded
@@ -795,7 +845,7 @@ vpanic(const char *fmt, va_list ap)
 #endif
 	printf("time = %jd\n", (intmax_t )time_second);
 #ifdef KDB
-	if (newpanic && trace_on_panic)
+	if ((newpanic || trace_all_panics) && trace_on_panic)
 		kdb_backtrace();
 	if (debugger_on_panic)
 		kdb_enter(KDB_WHY_PANIC, "panic");
@@ -1115,6 +1165,12 @@ dump_check_bounds(struct dumperinfo *di, off_t offset, size_t length)
 
 	if (length != 0 && (offset < di->mediaoffset ||
 	    offset - di->mediaoffset + length > di->mediasize)) {
+		if (di->kdcomp != NULL && offset >= di->mediaoffset) {
+			printf(
+		    "Compressed dump failed to fit in device boundaries.\n");
+			return (E2BIG);
+		}
+
 		printf("Attempt to write outside dump device boundaries.\n"
 	    "offset(%jd), mediaoffset(%jd), length(%ju), mediasize(%jd).\n",
 		    (intmax_t)offset, (intmax_t)di->mediaoffset,
