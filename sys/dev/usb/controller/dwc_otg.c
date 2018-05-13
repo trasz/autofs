@@ -3961,6 +3961,12 @@ dwc_otg_init(struct dwc_otg_softc *sc)
 	/* enable USB port */
 	DWC_OTG_WRITE_4(sc, DOTG_PCGCCTL, 0);
 
+	/*
+	 * XXX: The line above seems to enable the device-side pull-ups.
+	 *      Turn them off again.
+	 */
+	DWC_OTG_WRITE_4(sc, DOTG_DCTL, DCTL_SFTDISCON);
+
 	/* wait 10ms */
 	usb_pause_mtx(&sc->sc_bus.bus_mtx, hz / 100);
 
