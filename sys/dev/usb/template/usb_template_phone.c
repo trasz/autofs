@@ -83,7 +83,7 @@ enum {
 #define	PHONE_DEFAULT_RECORD		"Record interface"
 #define	PHONE_DEFAULT_PLAYBACK		"Playback interface"
 #define	PHONE_DEFAULT_HID		"HID interface"
-#define	PHONE_DEFAULT_MANUFACTURER	"FreeBSD foundation"
+#define	PHONE_DEFAULT_MANUFACTURER	USB_TEMPLATE_MANUFACTURER
 #define	PHONE_DEFAULT_PRODUCT		"USB Phone Device"
 #define	PHONE_DEFAULT_SERIAL_NUMBER	"March 2008"
 

@@ -77,7 +77,7 @@ enum {
 };
 
 #define	KBD_DEFAULT_INTERFACE		"Keyboard Interface"
-#define	KBD_DEFAULT_MANUFACTURER	"FreeBSD foundation"
+#define	KBD_DEFAULT_MANUFACTURER	USB_TEMPLATE_MANUFACTURER
 #define	KBD_DEFAULT_PRODUCT		"Keyboard Test Device"
 #define	KBD_DEFAULT_SERIAL_NUMBER	"March 2008"
 
@@ -173,7 +173,7 @@ struct usb_temp_device_desc usb_template_kbd = {
 	.getVendorDesc = &keyboard_get_vendor_desc,
 	.ppConfigDesc = keyboard_configs,
 	.idVendor = USB_TEMPLATE_VENDOR,
-	.idProduct = 0x00CB,
+	.idProduct = 0x27db,
 	.bcdDevice = 0x0100,
 	.bDeviceClass = UDCLASS_COMM,
 	.bDeviceSubClass = 0,

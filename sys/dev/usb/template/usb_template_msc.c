@@ -78,7 +78,7 @@ enum {
 
 #define	MSC_DEFAULT_INTERFACE		"USB Mass Storage Interface"
 #define	MSC_DEFAULT_CONFIGURATION	"Default Config"
-#define	MSC_DEFAULT_MANUFACTURER	"FreeBSD foundation"
+#define	MSC_DEFAULT_MANUFACTURER	USB_TEMPLATE_MANUFACTURER
 #define	MSC_DEFAULT_PRODUCT		"USB Memory Stick"
 #define	MSC_DEFAULT_SERIAL_NUMBER	"March 2008"
 

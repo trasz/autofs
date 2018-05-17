@@ -93,8 +93,8 @@ enum {
 #define	SERIALNET_DEFAULT_ETH_CONTROL	"USB Ethernet Comm Interface"
 #define	SERIALNET_DEFAULT_ETH_DATA	"USB Ethernet Data Interface"
 #define	SERIALNET_DEFAULT_CONFIGURATION	"Default configuration"
-#define	SERIALNET_DEFAULT_MANUFACTURER	"The FreeBSD Project"
-#define SERIALNET_DEFAULT_PRODUCT	"SERIALNET"
+#define	SERIALNET_DEFAULT_MANUFACTURER	USB_TEMPLATE_MANUFACTURER
+#define	SERIALNET_DEFAULT_PRODUCT	"SERIALNET"
 /*
  * The reason for this being called like this is that OSX
  * derives the device node name from it, resulting in a somewhat
@@ -338,7 +338,7 @@ struct usb_temp_device_desc usb_template_serialnet = {
 	.getStringDesc = &serialnet_get_string_desc,
 	.ppConfigDesc = serialnet_configs,
 	.idVendor = USB_TEMPLATE_VENDOR,
-	.idProduct = 0x0001,
+	.idProduct = 0x05dc,
 	.bcdDevice = 0x0100,
 	.bDeviceClass = UDCLASS_COMM,
 	.bDeviceSubClass = 0,

@@ -95,7 +95,7 @@ enum {
 #define	MULTI_DEFAULT_ETH_DATA		"Ethernet Data Interface"
 #define	MULTI_DEFAULT_STORAGE		"Mass Storage Interface"
 #define	MULTI_DEFAULT_CONFIGURATION	"Default configuration"
-#define	MULTI_DEFAULT_MANUFACTURER	"The FreeBSD Project"
+#define	MULTI_DEFAULT_MANUFACTURER	USB_TEMPLATE_MANUFACTURER
 #define MULTI_DEFAULT_PRODUCT		"Multifunction Device"
 /*
  * The reason for this being called like this is that OSX
@@ -357,12 +357,12 @@ static const struct usb_temp_interface_desc msc_data_interface = {
 };
 
 static const struct usb_temp_interface_desc *multi_interfaces[] = {
+	&msc_data_interface,
 	&modem_iface_0,
 	&modem_iface_1,
 	&eth_control_interface,
 	&eth_data_null_interface,
 	&eth_data_interface,
-	&msc_data_interface,
 	NULL,
 };
 
@@ -381,7 +381,7 @@ struct usb_temp_device_desc usb_template_multi = {
 	.getStringDesc = &multi_get_string_desc,
 	.ppConfigDesc = multi_configs,
 	.idVendor = USB_TEMPLATE_VENDOR,
-	.idProduct = 0x0001,
+	.idProduct = 0x27d8,
 	.bcdDevice = 0x0100,
 	.bDeviceClass = UDCLASS_IN_INTERFACE,
 	.bDeviceSubClass = 0,

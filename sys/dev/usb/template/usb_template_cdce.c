@@ -83,7 +83,7 @@ enum {
 #define	ETH_DEFAULT_CONTROL		"USB Ethernet Comm Interface"
 #define	ETH_DEFAULT_DATA		"USB Ethernet Data Interface"
 #define	ETH_DEFAULT_CONFIG		"Default Config"
-#define	ETH_DEFAULT_MANUFACTURER	"FreeBSD foundation"
+#define	ETH_DEFAULT_MANUFACTURER	USB_TEMPLATE_MANUFACTURER
 #define	ETH_DEFAULT_PRODUCT		"USB Ethernet Adapter"
 #define	ETH_DEFAULT_SERIAL_NUMBER	"December 2007"
 

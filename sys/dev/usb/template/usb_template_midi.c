@@ -76,7 +76,7 @@ enum {
 };
 
 #define	MIDI_DEFAULT_INTERFACE		"MIDI interface"
-#define	MIDI_DEFAULT_MANUFACTURER	"FreeBSD foundation"
+#define	MIDI_DEFAULT_MANUFACTURER	USB_TEMPLATE_MANUFACTURER
 #define	MIDI_DEFAULT_PRODUCT		"MIDI Test Device"
 #define	MIDI_DEFAULT_SERIAL_NUMBER	"March 2008"
 
@@ -213,7 +213,7 @@ struct usb_temp_device_desc usb_template_midi = {
 	.getStringDesc = &midi_get_string_desc,
 	.ppConfigDesc = midi_configs,
 	.idVendor = USB_TEMPLATE_VENDOR,
-	.idProduct = 0x00BB,
+	.idProduct = 0x05e4,
 	.bcdDevice = 0x0100,
 	.bDeviceClass = 0,
 	.bDeviceSubClass = 0,

@@ -77,7 +77,7 @@ enum {
 };
 
 #define	MODEM_DEFAULT_INTERFACE		"Modem interface"
-#define	MODEM_DEFAULT_MANUFACTURER	"FreeBSD foundation"
+#define	MODEM_DEFAULT_MANUFACTURER	USB_TEMPLATE_MANUFACTURER
 #define MODEM_DEFAULT_PRODUCT		"Modem Test Device"
 /*
  * The reason for this being called like this is that OSX
@@ -214,7 +214,7 @@ struct usb_temp_device_desc usb_template_modem = {
 	.getVendorDesc = &modem_get_vendor_desc,
 	.ppConfigDesc = modem_configs,
 	.idVendor = USB_TEMPLATE_VENDOR,
-	.idProduct = 0x000E,
+	.idProduct = 0x27dc,
 	.bcdDevice = 0x0100,
 	.bDeviceClass = UDCLASS_COMM,
 	.bDeviceSubClass = 0,
