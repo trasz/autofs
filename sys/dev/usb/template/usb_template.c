@@ -463,7 +463,7 @@ usb_make_config_desc(struct usb_temp_setup *temp,
 		cd->bConfigurationValue = temp->bConfigurationValue;
 		cd->iConfiguration = tcd->iConfiguration;
 		cd->bmAttributes = tcd->bmAttributes;
-		cd->bMaxPower = tcd->bMaxPower;
+		cd->bMaxPower = 250; /* 500 mA */
 		cd->bmAttributes |= (UC_REMOTE_WAKEUP | UC_BUS_POWERED);
 
 		if (temp->self_powered) {
