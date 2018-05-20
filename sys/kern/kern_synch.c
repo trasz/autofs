@@ -109,7 +109,7 @@ sleepinit(void *unused)
  * vmem tries to lock the sleepq mutexes when free'ing kva, so make sure
  * it is available.
  */
-SYSINIT(sleepinit, SI_SUB_KMEM, SI_ORDER_ANY, sleepinit, 0);
+SYSINIT(sleepinit, SI_SUB_KMEM, SI_ORDER_ANY, sleepinit, NULL);
 
 /*
  * General sleep call.  Suspends the current thread until a wakeup is
@@ -147,6 +147,7 @@ _sleep(void *ident, struct lock_object *lock, int priority,
 	    ("sleeping without a lock"));
 	KASSERT(ident != NULL, ("_sleep: NULL ident"));
 	KASSERT(TD_IS_RUNNING(td), ("_sleep: curthread not running"));
+	KASSERT(td->td_epochnest == 0, ("sleeping in an epoch section"));
 	if (priority & PDROP)
 		KASSERT(lock != NULL && lock != &Giant.lock_object,
 		    ("PDROP requires a non-Giant lock"));

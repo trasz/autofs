@@ -88,6 +88,8 @@ enum {
 	SERIALNET_MAX_INDEX,
 };
 
+#define	SERIALNET_DEFAULT_VENDOR_ID	USB_TEMPLATE_VENDOR
+#define	SERIALNET_DEFAULT_PRODUCT_ID	0x05dc
 #define	SERIALNET_DEFAULT_MODEM		"USB Modem Interface"
 #define	SERIALNET_DEFAULT_ETH_MAC	"2A02030405060789AB"
 #define	SERIALNET_DEFAULT_ETH_CONTROL	"USB Ethernet Comm Interface"
@@ -337,8 +339,8 @@ static const struct usb_temp_config_desc *serialnet_configs[] = {
 struct usb_temp_device_desc usb_template_serialnet = {
 	.getStringDesc = &serialnet_get_string_desc,
 	.ppConfigDesc = serialnet_configs,
-	.idVendor = USB_TEMPLATE_VENDOR,
-	.idProduct = 0x05dc,
+	.idVendor = SERIALNET_DEFAULT_VENDOR_ID,
+	.idProduct = SERIALNET_DEFAULT_PRODUCT_ID,
 	.bcdDevice = 0x0100,
 	.bDeviceClass = UDCLASS_COMM,
 	.bDeviceSubClass = 0,
@@ -411,7 +413,7 @@ serialnet_init(void *arg __unused)
 	parent = SYSCTL_ADD_NODE(&serialnet_ctx_list,
 	    SYSCTL_STATIC_CHILDREN(_hw_usb_templates), OID_AUTO,
 	    parent_name, CTLFLAG_RW,
-	    0, "USB Mass Storage device side template");
+	    0, "USB CDC Serial/Ethernet device side template");
 	SYSCTL_ADD_U16(&serialnet_ctx_list, SYSCTL_CHILDREN(parent), OID_AUTO,
 	    "vendor_id", CTLFLAG_RWTUN,
 	    &usb_template_serialnet.idVendor, 1, "Vendor identifier");

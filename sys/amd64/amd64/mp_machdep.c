@@ -91,6 +91,7 @@ extern	struct pcpu __pcpu[];
 char *doublefault_stack;
 char *mce_stack;
 char *nmi_stack;
+char *dbg_stack;
 
 /*
  * Local data and functions.
@@ -251,6 +252,10 @@ init_secondary(void)
 	np = ((struct nmi_pcpu *) &mce_stack[PAGE_SIZE]) - 1;
 	common_tss[cpu].tss_ist3 = (long) np;
 
+	/* The DB# stack runs on IST4. */
+	np = ((struct nmi_pcpu *) &dbg_stack[PAGE_SIZE]) - 1;
+	common_tss[cpu].tss_ist4 = (long) np;
+
 	/* Prepare private GDT */
 	gdt_segs[GPROC0_SEL].ssd_base = (long) &common_tss[cpu];
 	for (x = 0; x < NGDT; x++) {
@@ -276,8 +281,8 @@ init_secondary(void)
 	pc->pc_tssp = &common_tss[cpu];
 	pc->pc_commontssp = &common_tss[cpu];
 	pc->pc_rsp0 = 0;
-	pc->pc_pti_rsp0 = ((vm_offset_t)&pc->pc_pti_stack +
-	    PC_PTI_STACK_SZ * sizeof(uint64_t) & ~0xful);
+	pc->pc_pti_rsp0 = (((vm_offset_t)&pc->pc_pti_stack +
+	    PC_PTI_STACK_SZ * sizeof(uint64_t)) & ~0xful);
 	pc->pc_tss = (struct system_segment_descriptor *)&gdt[NGDT * cpu +
 	    GPROC0_SEL];
 	pc->pc_fs32p = &gdt[NGDT * cpu + GUFS32_SEL];
@@ -295,6 +300,10 @@ init_secondary(void)
 
 	/* Save the per-cpu pointer for use by the MC# handler. */
 	np = ((struct nmi_pcpu *) &mce_stack[PAGE_SIZE]) - 1;
+	np->np_pcpu = (register_t) pc;
+
+	/* Save the per-cpu pointer for use by the DB# handler. */
+	np = ((struct nmi_pcpu *) &dbg_stack[PAGE_SIZE]) - 1;
 	np->np_pcpu = (register_t) pc;
 
 	wrmsr(MSR_FSBASE, 0);		/* User value */
@@ -391,6 +400,8 @@ native_start_all_aps(void)
 		mce_stack = (char *)kmem_malloc(kernel_arena, PAGE_SIZE,
 		    M_WAITOK | M_ZERO);
 		nmi_stack = (char *)kmem_malloc(kernel_arena, PAGE_SIZE,
+		    M_WAITOK | M_ZERO);
+		dbg_stack = (char *)kmem_malloc(kernel_arena, PAGE_SIZE,
 		    M_WAITOK | M_ZERO);
 		dpcpu = (void *)kmem_malloc(kernel_arena, DPCPU_SIZE,
 		    M_WAITOK | M_ZERO);

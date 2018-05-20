@@ -290,6 +290,8 @@ dev/ixl/i40e_nvm.c		optional	ixl pci | ixlv pci \
 	compile-with "${NORMAL_C} -I$S/dev/ixl"
 dev/ixl/i40e_adminq.c		optional	ixl pci | ixlv pci \
 	compile-with "${NORMAL_C} -I$S/dev/ixl"
+dev/ixl/i40e_dcb.c		optional	ixl pci \
+	compile-with "${NORMAL_C} -I$S/dev/ixl"
 dev/fdc/fdc.c			optional	fdc
 dev/fdc/fdc_acpi.c		optional	fdc
 dev/fdc/fdc_isa.c		optional	fdc isa
@@ -618,8 +620,6 @@ isa/vga_isa.c			optional	vga
 kern/kern_clocksource.c		standard
 kern/link_elf_obj.c		standard
 libkern/x86/crc32_sse42.c	standard
-libkern/memmove.c		standard
-libkern/memset.c		standard
 #
 # IA32 binary support
 #

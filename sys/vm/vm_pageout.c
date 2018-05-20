@@ -252,32 +252,16 @@ vm_pageout_end_scan(struct scan_state *ss)
 }
 
 /*
- * Ensure that the page has not been dequeued after a pageout batch was
- * collected.  See vm_page_dequeue_complete().
- */
-static inline bool
-vm_pageout_page_queued(vm_page_t m, int queue)
-{
-
-	vm_page_assert_locked(m);
-
-	if ((m->aflags & PGA_DEQUEUE) != 0)
-		return (false);
-	atomic_thread_fence_acq();
-	return (m->queue == queue);
-}
-
-/*
  * Add a small number of queued pages to a batch queue for later processing
  * without the corresponding queue lock held.  The caller must have enqueued a
  * marker page at the desired start point for the scan.  Pages will be
  * physically dequeued if the caller so requests.  Otherwise, the returned
  * batch may contain marker pages, and it is up to the caller to handle them.
  *
- * When processing the batch queue, vm_pageout_page_queued() must be used to
- * determine whether the page was logically dequeued by another thread.  Once
- * this check is performed, the page lock guarantees that the page will not be
- * disassociated from the queue.
+ * When processing the batch queue, vm_page_queue() must be used to
+ * determine whether the page has been logically dequeued by another thread.
+ * Once this check is performed, the page lock guarantees that the page will
+ * not be disassociated from the queue.
  */
 static __always_inline void
 vm_pageout_collect_batch(struct scan_state *ss, const bool dequeue)
@@ -384,12 +368,12 @@ more:
 			break;
 		}
 		vm_page_test_dirty(p);
-		if (p->dirty == 0 || !vm_page_in_laundry(p)) {
+		if (p->dirty == 0) {
 			ib = 0;
 			break;
 		}
 		vm_page_lock(p);
-		if (vm_page_held(p)) {
+		if (vm_page_held(p) || !vm_page_in_laundry(p)) {
 			vm_page_unlock(p);
 			ib = 0;
 			break;
@@ -412,10 +396,10 @@ more:
 		if ((p = vm_page_next(ps)) == NULL || vm_page_busied(p))
 			break;
 		vm_page_test_dirty(p);
-		if (p->dirty == 0 || !vm_page_in_laundry(p))
+		if (p->dirty == 0)
 			break;
 		vm_page_lock(p);
-		if (vm_page_held(p)) {
+		if (vm_page_held(p) || !vm_page_in_laundry(p)) {
 			vm_page_unlock(p);
 			break;
 		}
@@ -751,7 +735,7 @@ recheck:
 		 * The page may have been disassociated from the queue
 		 * while locks were dropped.
 		 */
-		if (!vm_pageout_page_queued(m, queue))
+		if (vm_page_queue(m) != queue)
 			continue;
 
 		/*
@@ -1129,7 +1113,7 @@ vm_pageout_reinsert_inactive_page(struct scan_state *ss, vm_page_t m)
 {
 	struct vm_domain *vmd;
 
-	if (!vm_page_inactive(m) || (m->aflags & PGA_ENQUEUED) != 0)
+	if (m->queue != PQ_INACTIVE || (m->aflags & PGA_ENQUEUED) != 0)
 		return (0);
 	vm_page_aflag_set(m, PGA_ENQUEUED);
 	if ((m->aflags & PGA_REQUEUE_HEAD) != 0) {
@@ -1217,7 +1201,7 @@ vm_pageout_scan(struct vm_domain *vmd, int pass, int shortage)
 	}
 
 	/*
-	 * The addl_page_shortage is the number of temporarily
+	 * The addl_page_shortage is an estimate of the number of temporarily
 	 * stuck pages in the inactive queue.  In other words, the
 	 * number of pages from the inactive count that should be
 	 * discounted in setting the target for the active queue scan.
@@ -1262,7 +1246,7 @@ recheck:
 		 * The page may have been disassociated from the queue
 		 * while locks were dropped.
 		 */
-		if (!vm_pageout_page_queued(m, PQ_INACTIVE)) {
+		if (vm_page_queue(m) != PQ_INACTIVE) {
 			addl_page_shortage++;
 			continue;
 		}
@@ -1291,7 +1275,6 @@ recheck:
 			goto reinsert;
 		}
 		if (m->wire_count != 0) {
-			addl_page_shortage++;
 			vm_page_dequeue_deferred(m);
 			continue;
 		}
@@ -1542,7 +1525,7 @@ act_scan:
 		 * The page may have been disassociated from the queue
 		 * while locks were dropped.
 		 */
-		if (!vm_pageout_page_queued(m, PQ_ACTIVE))
+		if (vm_page_queue(m) != PQ_ACTIVE)
 			continue;
 
 		/*

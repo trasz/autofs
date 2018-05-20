@@ -109,30 +109,6 @@ done:
 	return (0);
 }
 
-/*
- * Convert an ACT_OPEN_RPL status to an errno.
- */
-static inline int
-act_open_rpl_status_to_errno(int status)
-{
-
-	switch (status) {
-	case CPL_ERR_CONN_RESET:
-		return (ECONNREFUSED);
-	case CPL_ERR_ARP_MISS:
-		return (EHOSTUNREACH);
-	case CPL_ERR_CONN_TIMEDOUT:
-		return (ETIMEDOUT);
-	case CPL_ERR_TCAM_FULL:
-		return (EAGAIN);
-	case CPL_ERR_CONN_EXIST:
-		log(LOG_ERR, "ACTIVE_OPEN_RPL: 4-tuple in use\n");
-		return (EAGAIN);
-	default:
-		return (EIO);
-	}
-}
-
 void
 act_open_failure_cleanup(struct adapter *sc, u_int atid, u_int status)
 {
@@ -281,7 +257,8 @@ t4_init_connect_cpl_handlers(void)
 {
 
 	t4_register_cpl_handler(CPL_ACT_ESTABLISH, do_act_establish);
-	t4_register_cpl_handler(CPL_ACT_OPEN_RPL, do_act_open_rpl);
+	t4_register_shared_cpl_handler(CPL_ACT_OPEN_RPL, do_act_open_rpl,
+	    CPL_COOKIE_TOM);
 }
 
 void
@@ -289,7 +266,7 @@ t4_uninit_connect_cpl_handlers(void)
 {
 
 	t4_register_cpl_handler(CPL_ACT_ESTABLISH, NULL);
-	t4_register_cpl_handler(CPL_ACT_OPEN_RPL, NULL);
+	t4_register_shared_cpl_handler(CPL_ACT_OPEN_RPL, NULL, CPL_COOKIE_TOM);
 }
 
 #define DONT_OFFLOAD_ACTIVE_OPEN(x)	do { \
@@ -418,7 +395,8 @@ t4_connect(struct toedev *tod, struct socket *so, struct rtentry *rt,
 	else
 		rscale = 0;
 	mtu_idx = find_best_mtu_idx(sc, &inp->inp_inc, &settings);
-	qid_atid = (toep->ofld_rxq->iq.abs_id << 14) | toep->tid;
+	qid_atid = V_TID_QID(toep->ofld_rxq->iq.abs_id) | V_TID_TID(toep->tid) |
+	    V_TID_COOKIE(CPL_COOKIE_TOM);
 
 	if (isipv6) {
 		struct cpl_act_open_req6 *cpl = wrtod(wr);

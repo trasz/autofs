@@ -208,7 +208,7 @@ struct vm_page {
 	uint16_t flags;			/* page PG_* flags (P) */
 	uint8_t aflags;			/* access is atomic */
 	uint8_t oflags;			/* page VPO_* flags (O) */
-	uint8_t	queue;			/* page queue index (Q) */
+	volatile uint8_t queue;		/* page queue index (Q) */
 	int8_t psind;			/* pagesizes[] index (O) */
 	int8_t segind;			/* vm_phys segment index (C) */
 	uint8_t	order;			/* index of the buddy queue (F) */
@@ -785,43 +785,45 @@ vm_page_replace_checked(vm_page_t mnew, vm_object_t object, vm_pindex_t pindex,
 	(void)mret;
 }
 
+/*
+ *	vm_page_queue:
+ *
+ *	Return the index of the queue containing m.  This index is guaranteed
+ *	not to change while the page lock is held.
+ */
+static inline uint8_t
+vm_page_queue(vm_page_t m)
+{
+
+	vm_page_assert_locked(m);
+
+	if ((m->aflags & PGA_DEQUEUE) != 0)
+		return (PQ_NONE);
+	atomic_thread_fence_acq();
+	return (m->queue);
+}
+
 static inline bool
 vm_page_active(vm_page_t m)
 {
 
-	return (m->queue == PQ_ACTIVE);
+	return (vm_page_queue(m) == PQ_ACTIVE);
 }
 
 static inline bool
 vm_page_inactive(vm_page_t m)
 {
 
-	return (m->queue == PQ_INACTIVE);
+	return (vm_page_queue(m) == PQ_INACTIVE);
 }
 
 static inline bool
 vm_page_in_laundry(vm_page_t m)
 {
+	uint8_t queue;
 
-	return (m->queue == PQ_LAUNDRY || m->queue == PQ_UNSWAPPABLE);
-}
-
-/*
- *	vm_page_enqueued:
- *
- *	Return true if the page is logically enqueued and no deferred
- *	dequeue is pending.
- */
-static inline bool
-vm_page_enqueued(vm_page_t m)
-{
-
-	vm_page_assert_locked(m);
-
-	if ((m->aflags & PGA_DEQUEUE) != 0)
-		return (false);
-	atomic_thread_fence_acq();
-	return (m->queue != PQ_NONE);
+	queue = vm_page_queue(m);
+	return (queue == PQ_LAUNDRY || queue == PQ_UNSWAPPABLE);
 }
 
 /*
