@@ -98,7 +98,7 @@ enum {
 #define	MULTI_DEFAULT_STORAGE		"Mass Storage Interface"
 #define	MULTI_DEFAULT_CONFIGURATION	"Default configuration"
 #define	MULTI_DEFAULT_MANUFACTURER	USB_TEMPLATE_MANUFACTURER
-#define MULTI_DEFAULT_PRODUCT		"Multifunction Device"
+#define	MULTI_DEFAULT_PRODUCT		"Multifunction Device"
 /*
  * The reason for this being called like this is that OSX
  * derives the device node name from it, resulting in a somewhat
