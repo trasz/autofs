@@ -451,6 +451,7 @@ usb_make_config_desc(struct usb_temp_setup *temp,
 	struct usb_config_descriptor *cd;
 	const struct usb_temp_interface_desc **tid;
 	uint16_t old_size;
+	int power;
 
 	/* Reserve memory */
 
@@ -488,9 +489,11 @@ usb_make_config_desc(struct usb_temp_setup *temp,
 		cd->bConfigurationValue = temp->bConfigurationValue;
 		cd->iConfiguration = tcd->iConfiguration;
 		cd->bmAttributes = tcd->bmAttributes;
-		cd->bMaxPower = usb_template_power / 2; /* 2 mA units */
+
+		power = usb_template_power;
+		cd->bMaxPower = power / 2; /* 2 mA units */
 		cd->bmAttributes |= UC_REMOTE_WAKEUP;
-		if (usb_template_power > 0) {
+		if (power > 0) {
 			cd->bmAttributes |= UC_BUS_POWERED;
 			cd->bmAttributes &= ~UC_SELF_POWERED;
 		} else {
