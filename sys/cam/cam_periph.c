@@ -654,6 +654,7 @@ static void
 camperiphfree(struct cam_periph *periph)
 {
 	struct periph_driver **p_drv;
+	struct periph_driver *drv;
 
 	cam_periph_assert(periph, MA_OWNED);
 	KASSERT(periph->periph_allocating == 0, ("%s%d: freed while allocating",
@@ -666,6 +667,15 @@ camperiphfree(struct cam_periph *periph)
 		printf("camperiphfree: attempt to free non-existant periph\n");
 		return;
 	}
+	/*
+	 * Cache a pointer to the periph_driver structure.  If a
+	 * periph_driver is added or removed from the array (see
+	 * periphdriver_register()) while we drop the toplogy lock
+	 * below, p_drv may change.  This doesn't protect against this
+	 * particular periph_driver going away.  That will require full
+	 * reference counting in the periph_driver infrastructure.
+	 */
+	drv = *p_drv;
 
 	/*
 	 * We need to set this flag before dropping the topology lock, to
@@ -701,8 +711,8 @@ camperiphfree(struct cam_periph *periph)
 	 */
 	xpt_lock_buses();
 
-	TAILQ_REMOVE(&(*p_drv)->units, periph, unit_links);
-	(*p_drv)->generation++;
+	TAILQ_REMOVE(&drv->units, periph, unit_links);
+	drv->generation++;
 
 	xpt_remove_periph(periph);
 
@@ -818,6 +828,17 @@ cam_periph_mapmem(union ccb *ccb, struct cam_periph_map_info *mapinfo,
 		lengths[1] = ccb->smpio.smp_response_len;
 		dirs[1] = CAM_DIR_IN;
 		numbufs = 2;
+		break;
+	case XPT_NVME_IO:
+	case XPT_NVME_ADMIN:
+		if ((ccb->ccb_h.flags & CAM_DIR_MASK) == CAM_DIR_NONE)
+			return (0);
+		if ((ccb->ccb_h.flags & CAM_DATA_MASK) != CAM_DATA_VADDR)
+			return (EINVAL);
+		data_ptrs[0] = &ccb->nvmeio.data_ptr;
+		lengths[0] = ccb->nvmeio.dxfer_len;
+		dirs[0] = ccb->ccb_h.flags & CAM_DIR_MASK;
+		numbufs = 1;
 		break;
 	case XPT_DEV_ADVINFO:
 		if (ccb->cdai.bufsiz == 0)
@@ -984,6 +1005,11 @@ cam_periph_unmapmem(union ccb *ccb, struct cam_periph_map_info *mapinfo)
 	case XPT_DEV_ADVINFO:
 		numbufs = min(mapinfo->num_bufs_used, 1);
 		data_ptrs[0] = (uint8_t **)&ccb->cdai.buf;
+		break;
+	case XPT_NVME_IO:
+	case XPT_NVME_ADMIN:
+		data_ptrs[0] = &ccb->nvmeio.data_ptr;
+		numbufs = min(mapinfo->num_bufs_used, 1);
 		break;
 	default:
 		/* allow ourselves to be swapped once again */
@@ -1218,7 +1244,7 @@ camperiphdone(struct cam_periph *periph, union ccb *done_ccb)
 	union ccb      *saved_ccb;
 	cam_status	status;
 	struct scsi_start_stop_unit *scsi_cmd;
-	int    error_code, sense_key, asc, ascq;
+	int		error = 0, error_code, sense_key, asc, ascq;
 
 	scsi_cmd = (struct scsi_start_stop_unit *)
 	    &done_ccb->csio.cdb_io.cdb_bytes;
@@ -1250,8 +1276,9 @@ camperiphdone(struct cam_periph *periph, union ccb *done_ccb)
 				goto out;
 			}
 		}
-		if (cam_periph_error(done_ccb,
-		    0, SF_RETRY_UA | SF_NO_PRINT, NULL) == ERESTART)
+		error = cam_periph_error(done_ccb, 0,
+		    SF_RETRY_UA | SF_NO_PRINT, NULL);
+		if (error == ERESTART)
 			goto out;
 		if (done_ccb->ccb_h.status & CAM_DEV_QFRZN) {
 			cam_release_devq(done_ccb->ccb_h.path, 0, 0, 0, 0);
@@ -1270,14 +1297,21 @@ camperiphdone(struct cam_periph *periph, union ccb *done_ccb)
 	}
 
 	/*
-	 * Perform the final retry with the original CCB so that final
-	 * error processing is performed by the owner of the CCB.
+	 * After recovery action(s) completed, return to the original CCB.
+	 * If the recovery CCB has failed, considering its own possible
+	 * retries and recovery, assume we are back in state where we have
+	 * been originally, but without recovery hopes left.  In such case,
+	 * after the final attempt below, we cancel any further retries,
+	 * blocking by that also any new recovery attempts for this CCB,
+	 * and the result will be the final one returned to the CCB owher.
 	 */
 	saved_ccb = (union ccb *)done_ccb->ccb_h.saved_ccb_ptr;
 	bcopy(saved_ccb, done_ccb, sizeof(*done_ccb));
 	xpt_free_ccb(saved_ccb);
 	if (done_ccb->ccb_h.cbfcnp != camperiphdone)
 		periph->flags &= ~CAM_PERIPH_RECOVERY_INPROG;
+	if (error != 0)
+		done_ccb->ccb_h.retry_count = 0;
 	xpt_action(done_ccb);
 
 out:

@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2015 Tycho Nightingale <tycho.nightingale@pluribusnetworks.com>
  * All rights reserved.
  *
@@ -31,6 +33,6 @@
 
 #define	RFB_PORT	5900
 
-int	rfb_init(char *hostname, int port, int wait);
+int	rfb_init(char *hostname, int port, int wait, char *password);
 
 #endif /* _RFB_H_ */

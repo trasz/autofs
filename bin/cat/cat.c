@@ -51,15 +51,14 @@ __FBSDID("$FreeBSD$");
 #ifndef NO_UDOM_SUPPORT
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <errno.h>
 #include <netdb.h>
 #endif
 
 #include <ctype.h>
 #include <err.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <locale.h>
-#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

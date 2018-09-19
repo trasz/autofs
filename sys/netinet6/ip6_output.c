@@ -200,18 +200,10 @@ in6_delayed_cksum(struct mbuf *m, uint32_t plen, u_short offset)
 		csum = 0xffff;
 	offset += m->m_pkthdr.csum_data;	/* checksum offset */
 
-	if (offset + sizeof(u_short) > m->m_len) {
-		printf("%s: delayed m_pullup, m->len: %d plen %u off %u "
-		    "csum_flags=%b\n", __func__, m->m_len, plen, offset,
-		    (int)m->m_pkthdr.csum_flags, CSUM_BITS);
-		/*
-		 * XXX this should not happen, but if it does, the correct
-		 * behavior may be to insert the checksum in the appropriate
-		 * next mbuf in the chain.
-		 */
-		return;
-	}
-	*(u_short *)(m->m_data + offset) = csum;
+	if (offset + sizeof(csum) > m->m_len)
+		m_copyback(m, offset, sizeof(csum), (caddr_t)&csum);
+	else
+		*(u_short *)mtodo(m, offset) = csum;
 }
 
 int
@@ -790,7 +782,7 @@ again:
 
 	odst = ip6->ip6_dst;
 	/* Run through list of hooks for output packets. */
-	error = pfil_run_hooks(&V_inet6_pfil_hook, &m, ifp, PFIL_OUT, inp);
+	error = pfil_run_hooks(&V_inet6_pfil_hook, &m, ifp, PFIL_OUT, 0, inp);
 	if (error != 0 || m == NULL)
 		goto done;
 	/* adjust pointer */
@@ -1038,7 +1030,7 @@ sendorfree:
 	m = m0->m_nextpkt;
 	m0->m_nextpkt = 0;
 	m_freem(m0);
-	for (m0 = m; m; m = m0) {
+	for (; m; m = m0) {
 		m0 = m->m_nextpkt;
 		m->m_nextpkt = 0;
 		if (error == 0) {
@@ -2421,7 +2413,7 @@ do {\
 	if (src->type) {\
 		int hlen = (((struct ip6_ext *)src->type)->ip6e_len + 1) << 3;\
 		dst->type = malloc(hlen, M_IP6OPT, canwait);\
-		if (dst->type == NULL && canwait == M_NOWAIT)\
+		if (dst->type == NULL)\
 			goto bad;\
 		bcopy(src->type, dst->type, hlen);\
 	}\

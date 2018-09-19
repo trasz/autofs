@@ -131,7 +131,7 @@ TGTS=	all all-man buildenv buildenvvars buildkernel buildworld \
 	build32 distribute32 install32 buildsoft distributesoft installsoft \
 	builddtb xdev xdev-build xdev-install \
 	xdev-links native-xtools stageworld stagekernel stage-packages \
-	create-world-packages create-kernel-packages create-packages \
+	create-packages-world create-packages-kernel create-packages \
 	packages installconfig real-packages sign-packages package-pkg \
 	print-dir test-system-compiler
 
@@ -171,16 +171,17 @@ PATH=	/sbin:/bin:/usr/sbin:/usr/bin
 MAKEOBJDIRPREFIX?=	/usr/obj
 _MAKEOBJDIRPREFIX!= /usr/bin/env -i PATH=${PATH} MK_AUTO_OBJ=no ${MAKE} \
     ${.MAKEFLAGS:MMAKEOBJDIRPREFIX=*} __MAKE_CONF=${__MAKE_CONF} \
+    SRCCONF=${SRCCONF} SRC_ENV_CONF= \
     -f /dev/null -V MAKEOBJDIRPREFIX dummy
 .if !empty(_MAKEOBJDIRPREFIX)
-.error MAKEOBJDIRPREFIX can only be set in environment, not as a global\
-	(in make.conf(5)) or command-line variable.
+.error MAKEOBJDIRPREFIX can only be set in environment or src-env.conf(5),\
+    not as a global (in make.conf(5) or src.conf(5)) or command-line variable.
 .endif
 
 # We often need to use the tree's version of make to build it.
 # Choices add to complexity though.
 # We cannot blindly use a make which may not be the one we want
-# so be exlicit - until all choice is removed.
+# so be explicit - until all choice is removed.
 WANT_MAKE=	bmake
 .if !empty(.MAKE.MODE:Mmeta)
 # 20160604 - support missing-meta,missing-filemon and performance improvements
@@ -195,7 +196,8 @@ HAVE_MAKE=	bmake
 .else
 HAVE_MAKE=	fmake
 .endif
-.if ${HAVE_MAKE} != ${WANT_MAKE} || \
+.if defined(ALWAYS_BOOTSTRAP_MAKE) || \
+    ${HAVE_MAKE} != ${WANT_MAKE} || \
     (defined(WANT_MAKE_VERSION) && ${MAKE_VERSION} < ${WANT_MAKE_VERSION})
 NEED_MAKE_UPGRADE= t
 .endif
@@ -514,12 +516,17 @@ universe_${target}: universe_${target}_done
 universe_${target}_done:
 	@echo ">> ${target} completed on `LC_ALL=C date`"
 .endfor
-universe_kernels: universe_kernconfs .PHONY
 .if !defined(TARGET)
 TARGET!=	uname -m
 .endif
+universe_kernels_prologue: .PHONY
+	@echo ">> ${TARGET} kernels started on `LC_ALL=C date`"
+universe_kernels: universe_kernconfs .PHONY
+	@echo ">> ${TARGET} kernels completed on `LC_ALL=C date`"
 .if defined(MAKE_ALL_KERNELS)
 _THINNER=cat
+.elif defined(MAKE_LINT_KERNELS)
+_THINNER=grep 'LINT' || true
 .else
 _THINNER=xargs grep -L "^.NO_UNIVERSE" || true
 .endif
@@ -528,7 +535,7 @@ KERNCONFS!=	cd ${KERNSRCDIR}/${TARGET}/conf && \
 		-type f -maxdepth 0 \
 		! -name DEFAULTS ! -name NOTES | \
 		${_THINNER}
-universe_kernconfs: .PHONY
+universe_kernconfs: universe_kernels_prologue .PHONY
 .for kernel in ${KERNCONFS}
 TARGET_ARCH_${kernel}!=	cd ${KERNSRCDIR}/${TARGET}/conf && \
 	config -m ${KERNSRCDIR}/${TARGET}/conf/${kernel} 2> /dev/null | \
@@ -538,6 +545,7 @@ TARGET_ARCH_${kernel}!=	cd ${KERNSRCDIR}/${TARGET}/conf && \
 .endif
 universe_kernconfs: universe_kernconf_${TARGET}_${kernel}
 universe_kernconf_${TARGET}_${kernel}: .MAKE
+	@echo ">> ${TARGET}.${TARGET_ARCH_${kernel}} ${kernel} kernel started on `LC_ALL=C date`"
 	@(cd ${.CURDIR} && env __MAKE_CONF=/dev/null \
 	    ${SUB_MAKE} ${JFLAG} buildkernel \
 	    TARGET=${TARGET} \
@@ -546,6 +554,7 @@ universe_kernconf_${TARGET}_${kernel}: .MAKE
 	    > _.${TARGET}.${kernel} 2>&1 || \
 	    (echo "${TARGET} ${kernel} kernel failed," \
 	    "check _.${TARGET}.${kernel} for details"| ${MAKEFAIL}))
+	@echo ">> ${TARGET}.${TARGET_ARCH_${kernel}} ${kernel} kernel completed on `LC_ALL=C date`"
 .endfor
 universe: universe_epilogue
 universe_epilogue: .PHONY

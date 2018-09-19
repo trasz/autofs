@@ -226,7 +226,7 @@ kern_mmap(struct thread *td, uintptr_t addr0, size_t size, int prot, int flags,
 	}
 	if ((flags & ~(MAP_SHARED | MAP_PRIVATE | MAP_FIXED | MAP_HASSEMAPHORE |
 	    MAP_STACK | MAP_NOSYNC | MAP_ANON | MAP_EXCL | MAP_NOCORE |
-	    MAP_PREFAULT_READ |
+	    MAP_PREFAULT_READ | MAP_GUARD |
 #ifdef MAP_32BIT
 	    MAP_32BIT |
 #endif
@@ -238,6 +238,10 @@ kern_mmap(struct thread *td, uintptr_t addr0, size_t size, int prot, int flags,
 		return (EINVAL);
 	if (prot != PROT_NONE &&
 	    (prot & ~(PROT_READ | PROT_WRITE | PROT_EXEC)) != 0)
+		return (EINVAL);
+	if ((flags & MAP_GUARD) != 0 && (prot != PROT_NONE || fd != -1 ||
+	    pos != 0 || (flags & (MAP_SHARED | MAP_PRIVATE | MAP_PREFAULT |
+	    MAP_PREFAULT_READ | MAP_ANON | MAP_STACK)) != 0))
 		return (EINVAL);
 
 	/*
@@ -314,7 +318,10 @@ kern_mmap(struct thread *td, uintptr_t addr0, size_t size, int prot, int flags,
 		 * returns an error earlier.
 		 */
 		error = 0;
-	} else if (flags & MAP_ANON) {
+	} else if ((flags & MAP_GUARD) != 0) {
+		error = vm_mmap_object(&vms->vm_map, &addr, size, VM_PROT_NONE,
+		    VM_PROT_NONE, flags, NULL, pos, FALSE, td);
+	} else if ((flags & MAP_ANON) != 0) {
 		/*
 		 * Mapping blank space is trivial.
 		 *
@@ -534,8 +541,7 @@ kern_munmap(struct thread *td, uintptr_t addr0, size_t size)
 		 */
 		pkm.pm_address = (uintptr_t) NULL;
 		if (vm_map_lookup_entry(map, addr, &entry)) {
-			for (;
-			    entry != &map->header && entry->start < addr + size;
+			for (; entry->start < addr + size;
 			    entry = entry->next) {
 				if (vm_map_check_protection(map, entry->start,
 					entry->end, VM_PROT_EXECUTE) == TRUE) {
@@ -590,6 +596,12 @@ kern_mprotect(struct thread *td, uintptr_t addr0, size_t size, int prot)
 	addr -= pageoff;
 	size += pageoff;
 	size = (vm_size_t) round_page(size);
+#ifdef COMPAT_FREEBSD32
+	if (SV_PROC_FLAG(td->td_proc, SV_ILP32)) {
+		if (((addr + size) & 0xffffffff) < addr)
+			return (EINVAL);
+	} else
+#endif
 	if (addr + size < addr)
 		return (EINVAL);
 
@@ -761,16 +773,12 @@ RestartScan:
 	 * up the pages elsewhere.
 	 */
 	lastvecindex = -1;
-	for (current = entry;
-	    (current != &map->header) && (current->start < end);
-	    current = current->next) {
+	for (current = entry; current->start < end; current = current->next) {
 
 		/*
 		 * check for contiguity
 		 */
-		if (current->end < end &&
-		    (entry->next == &map->header ||
-		     current->next->start > current->end)) {
+		if (current->end < end && current->next->start > current->end) {
 			vm_map_unlock_read(map);
 			return (ENOMEM);
 		}
@@ -1189,7 +1197,7 @@ vm_mmap_vnode(struct thread *td, vm_size_t objsize,
 {
 	struct vattr va;
 	vm_object_t obj;
-	vm_offset_t foff;
+	vm_ooffset_t foff;
 	struct ucred *cred;
 	int error, flags, locktype;
 
@@ -1431,10 +1439,12 @@ vm_mmap_object(vm_map_t map, vm_offset_t *addr, vm_size_t size, vm_prot_t prot,
     vm_prot_t maxprot, int flags, vm_object_t object, vm_ooffset_t foff,
     boolean_t writecounted, struct thread *td)
 {
-	boolean_t fitit;
+	boolean_t curmap, fitit;
+	vm_offset_t max_addr;
 	int docow, error, findspace, rv;
 
-	if (map == &td->td_proc->p_vmspace->vm_map) {
+	curmap = map == &td->td_proc->p_vmspace->vm_map;
+	if (curmap) {
 		PROC_LOCK(td->td_proc);
 		if (map->size + size > lim_cur_proc(td->td_proc, RLIMIT_VMEM)) {
 			PROC_UNLOCK(td->td_proc);
@@ -1511,6 +1521,8 @@ vm_mmap_object(vm_map_t map, vm_offset_t *addr, vm_size_t size, vm_prot_t prot,
 	}
 	if ((flags & MAP_EXCL) != 0)
 		docow |= MAP_CHECK_EXCL;
+	if ((flags & MAP_GUARD) != 0)
+		docow |= MAP_CREATE_GUARD;
 
 	if (fitit) {
 		if ((flags & MAP_ALIGNMENT_MASK) == MAP_ALIGNED_SUPER)
@@ -1520,11 +1532,20 @@ vm_mmap_object(vm_map_t map, vm_offset_t *addr, vm_size_t size, vm_prot_t prot,
 			    MAP_ALIGNMENT_SHIFT);
 		else
 			findspace = VMFS_OPTIMAL_SPACE;
-		rv = vm_map_find(map, object, foff, addr, size,
+		max_addr = 0;
 #ifdef MAP_32BIT
-		    flags & MAP_32BIT ? MAP_32BIT_MAX_ADDR :
+		if ((flags & MAP_32BIT) != 0)
+			max_addr = MAP_32BIT_MAX_ADDR;
 #endif
-		    0, findspace, prot, maxprot, docow);
+		if (curmap) {
+			rv = vm_map_find_min(map, object, foff, addr, size,
+			    round_page((vm_offset_t)td->td_proc->p_vmspace->
+			    vm_daddr + lim_max(td, RLIMIT_DATA)), max_addr,
+			    findspace, prot, maxprot, docow);
+		} else {
+			rv = vm_map_find(map, object, foff, addr, size,
+			    max_addr, findspace, prot, maxprot, docow);
+		}
 	} else {
 		rv = vm_map_fixed(map, object, foff, *addr, size,
 		    prot, maxprot, docow);

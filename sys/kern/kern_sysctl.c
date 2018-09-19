@@ -88,7 +88,7 @@ static MALLOC_DEFINE(M_SYSCTLTMP, "sysctltmp", "sysctl temp output buffer");
  * sysctl requests larger than a single page via an exclusive lock.
  */
 static struct rmlock sysctllock;
-static struct sx sysctlmemlock;
+static struct sx __exclusive_cache_line sysctlmemlock;
 
 #define	SYSCTL_WLOCK()		rm_wlock(&sysctllock)
 #define	SYSCTL_WUNLOCK()	rm_wunlock(&sysctllock)
@@ -188,16 +188,11 @@ sysctl_load_tunable_by_oid_locked(struct sysctl_oid *oidp)
 	struct sysctl_req req;
 	struct sysctl_oid *curr;
 	char *penv = NULL;
-	char path[64];
+	char path[96];
 	ssize_t rem = sizeof(path);
 	ssize_t len;
-	uint8_t val_8;
-	uint16_t val_16;
-	uint32_t val_32;
-	int val_int;
-	long val_long;
-	int64_t val_64;
-	quad_t val_quad;
+	uint8_t data[512] __aligned(sizeof(uint64_t));
+	int size;
 	int error;
 
 	path[--rem] = 0;
@@ -225,85 +220,88 @@ sysctl_load_tunable_by_oid_locked(struct sysctl_oid *oidp)
 
 	switch (oidp->oid_kind & CTLTYPE) {
 	case CTLTYPE_INT:
-		if (getenv_int(path + rem, &val_int) == 0)
+		if (getenv_array(path + rem, data, sizeof(data), &size,
+		    sizeof(int), GETENV_SIGNED) == 0)
 			return;
-		req.newlen = sizeof(val_int);
-		req.newptr = &val_int;
+		req.newlen = size;
+		req.newptr = data;
 		break;
 	case CTLTYPE_UINT:
-		if (getenv_uint(path + rem, (unsigned int *)&val_int) == 0)
+		if (getenv_array(path + rem, data, sizeof(data), &size,
+		    sizeof(int), GETENV_UNSIGNED) == 0)
 			return;
-		req.newlen = sizeof(val_int);
-		req.newptr = &val_int;
+		req.newlen = size;
+		req.newptr = data;
 		break;
 	case CTLTYPE_LONG:
-		if (getenv_long(path + rem, &val_long) == 0)
+		if (getenv_array(path + rem, data, sizeof(data), &size,
+		    sizeof(long), GETENV_SIGNED) == 0)
 			return;
-		req.newlen = sizeof(val_long);
-		req.newptr = &val_long;
+		req.newlen = size;
+		req.newptr = data;
 		break;
 	case CTLTYPE_ULONG:
-		if (getenv_ulong(path + rem, (unsigned long *)&val_long) == 0)
+		if (getenv_array(path + rem, data, sizeof(data), &size,
+		    sizeof(long), GETENV_UNSIGNED) == 0)
 			return;
-		req.newlen = sizeof(val_long);
-		req.newptr = &val_long;
+		req.newlen = size;
+		req.newptr = data;
 		break;
 	case CTLTYPE_S8:
-		if (getenv_int(path + rem, &val_int) == 0)
+		if (getenv_array(path + rem, data, sizeof(data), &size,
+		    sizeof(int8_t), GETENV_SIGNED) == 0)
 			return;
-		val_8 = val_int;
-		req.newlen = sizeof(val_8);
-		req.newptr = &val_8;
+		req.newlen = size;
+		req.newptr = data;
 		break;
 	case CTLTYPE_S16:
-		if (getenv_int(path + rem, &val_int) == 0)
+		if (getenv_array(path + rem, data, sizeof(data), &size,
+		    sizeof(int16_t), GETENV_SIGNED) == 0)
 			return;
-		val_16 = val_int;
-		req.newlen = sizeof(val_16);
-		req.newptr = &val_16;
+		req.newlen = size;
+		req.newptr = data;
 		break;
 	case CTLTYPE_S32:
-		if (getenv_long(path + rem, &val_long) == 0)
+		if (getenv_array(path + rem, data, sizeof(data), &size,
+		    sizeof(int32_t), GETENV_SIGNED) == 0)
 			return;
-		val_32 = val_long;
-		req.newlen = sizeof(val_32);
-		req.newptr = &val_32;
+		req.newlen = size;
+		req.newptr = data;
 		break;
 	case CTLTYPE_S64:
-		if (getenv_quad(path + rem, &val_quad) == 0)
+		if (getenv_array(path + rem, data, sizeof(data), &size,
+		    sizeof(int64_t), GETENV_SIGNED) == 0)
 			return;
-		val_64 = val_quad;
-		req.newlen = sizeof(val_64);
-		req.newptr = &val_64;
+		req.newlen = size;
+		req.newptr = data;
 		break;
 	case CTLTYPE_U8:
-		if (getenv_uint(path + rem, (unsigned int *)&val_int) == 0)
+		if (getenv_array(path + rem, data, sizeof(data), &size,
+		    sizeof(uint8_t), GETENV_UNSIGNED) == 0)
 			return;
-		val_8 = val_int;
-		req.newlen = sizeof(val_8);
-		req.newptr = &val_8;
+		req.newlen = size;
+		req.newptr = data;
 		break;
 	case CTLTYPE_U16:
-		if (getenv_uint(path + rem, (unsigned int *)&val_int) == 0)
+		if (getenv_array(path + rem, data, sizeof(data), &size,
+		    sizeof(uint16_t), GETENV_UNSIGNED) == 0)
 			return;
-		val_16 = val_int;
-		req.newlen = sizeof(val_16);
-		req.newptr = &val_16;
+		req.newlen = size;
+		req.newptr = data;
 		break;
 	case CTLTYPE_U32:
-		if (getenv_ulong(path + rem, (unsigned long *)&val_long) == 0)
+		if (getenv_array(path + rem, data, sizeof(data), &size,
+		    sizeof(uint32_t), GETENV_UNSIGNED) == 0)
 			return;
-		val_32 = val_long;
-		req.newlen = sizeof(val_32);
-		req.newptr = &val_32;
+		req.newlen = size;
+		req.newptr = data;
 		break;
 	case CTLTYPE_U64:
-		/* XXX there is no getenv_uquad() */
-		if (getenv_quad(path + rem, &val_quad) == 0)
+		if (getenv_array(path + rem, data, sizeof(data), &size,
+		    sizeof(uint64_t), GETENV_UNSIGNED) == 0)
 			return;
-		val_64 = val_quad;
-		req.newlen = sizeof(val_64);
-		req.newptr = &val_64;
+		req.newlen = size;
+		req.newptr = data;
 		break;
 	case CTLTYPE_STRING:
 		penv = kern_getenv(path + rem);
@@ -422,6 +420,37 @@ retry:
 		/* try to fetch value from kernel environment */
 		sysctl_load_tunable_by_oid_locked(oidp);
 	}
+}
+
+void
+sysctl_register_disabled_oid(struct sysctl_oid *oidp)
+{
+
+	/*
+	 * Mark the leaf as dormant if it's not to be immediately enabled.
+	 * We do not disable nodes as they can be shared between modules
+	 * and it is always safe to access a node.
+	 */
+	KASSERT((oidp->oid_kind & CTLFLAG_DORMANT) == 0,
+	    ("internal flag is set in oid_kind"));
+	if ((oidp->oid_kind & CTLTYPE) != CTLTYPE_NODE)
+		oidp->oid_kind |= CTLFLAG_DORMANT;
+	sysctl_register_oid(oidp);
+}
+
+void
+sysctl_enable_oid(struct sysctl_oid *oidp)
+{
+
+	SYSCTL_ASSERT_WLOCKED();
+	if ((oidp->oid_kind & CTLTYPE) == CTLTYPE_NODE) {
+		KASSERT((oidp->oid_kind & CTLFLAG_DORMANT) == 0,
+		    ("sysctl node is marked as dormant"));
+		return;
+	}
+	KASSERT((oidp->oid_kind & CTLFLAG_DORMANT) != 0,
+	    ("enabling already enabled sysctl oid"));
+	oidp->oid_kind &= ~CTLFLAG_DORMANT;
 }
 
 void
@@ -965,7 +994,7 @@ sysctl_sysctl_next_ls(struct sysctl_oid_list *lsp, int *name, u_int namelen,
 		*next = oidp->oid_number;
 		*oidpp = oidp;
 
-		if (oidp->oid_kind & CTLFLAG_SKIP)
+		if ((oidp->oid_kind & (CTLFLAG_SKIP | CTLFLAG_DORMANT)) != 0)
 			continue;
 
 		if (!namelen) {
@@ -1086,17 +1115,21 @@ sysctl_sysctl_name2oid(SYSCTL_HANDLER_ARGS)
 	int error, oid[CTL_MAXNAME], len = 0;
 	struct sysctl_oid *op = NULL;
 	struct rm_priotracker tracker;
+	char buf[32];
 
 	if (!req->newlen) 
 		return (ENOENT);
 	if (req->newlen >= MAXPATHLEN)	/* XXX arbitrary, undocumented */
 		return (ENAMETOOLONG);
 
-	p = malloc(req->newlen+1, M_SYSCTL, M_WAITOK);
+	p = buf;
+	if (req->newlen >= sizeof(buf))
+		p = malloc(req->newlen+1, M_SYSCTL, M_WAITOK);
 
 	error = SYSCTL_IN(req, p, req->newlen);
 	if (error) {
-		free(p, M_SYSCTL);
+		if (p != buf)
+			free(p, M_SYSCTL);
 		return (error);
 	}
 
@@ -1106,7 +1139,8 @@ sysctl_sysctl_name2oid(SYSCTL_HANDLER_ARGS)
 	error = name2oid(p, oid, &len, &op);
 	SYSCTL_RUNLOCK(&tracker);
 
-	free(p, M_SYSCTL);
+	if (p != buf)
+		free(p, M_SYSCTL);
 
 	if (error)
 		return (error);
@@ -1761,6 +1795,8 @@ sysctl_find_oid(int *name, u_int namelen, struct sysctl_oid **noid,
 			}
 			lsp = SYSCTL_CHILDREN(oid);
 		} else if (indx == namelen) {
+			if ((oid->oid_kind & CTLFLAG_DORMANT) != 0)
+				return (ENOENT);
 			*noid = oid;
 			if (nindx != NULL)
 				*nindx = indx;
@@ -1944,16 +1980,9 @@ userland_sysctl(struct thread *td, int *name, u_int namelen, void *old,
 		}
 	}
 	req.validlen = req.oldlen;
-
-	if (old) {
-		if (!useracc(old, req.oldlen, VM_PROT_WRITE))
-			return (EFAULT);
-		req.oldptr= old;
-	}
+	req.oldptr = old;
 
 	if (new != NULL) {
-		if (!useracc(new, newlen, VM_PROT_READ))
-			return (EFAULT);
 		req.newlen = newlen;
 		req.newptr = new;
 	}

@@ -73,6 +73,9 @@ LIBADD.timer_create_test+=	rt
 
 .include "../Makefile.netbsd-tests"
 
+SRCS.mlock_test+=		mlock_helper.c
+SRCS.setrlimit_test+=		mlock_helper.c
+
 .if ${COMPILER_TYPE} == "gcc"
 WARNS?=			3
 .else
@@ -84,7 +87,7 @@ FILESGROUPS+=		truncate_test_FILES
 truncate_test_FILES=	truncate_test.root_owned
 truncate_test_FILESDIR=	${TESTSDIR}
 truncate_test_FILESMODE= 0600
-truncate_test_FILESOWNER= root
+truncate_test_FILESOWN= root
 truncate_test_FILESGRP= wheel
 truncate_test_FILESPACKAGE=	${PACKAGE}
 

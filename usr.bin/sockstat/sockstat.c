@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2002 Dag-Erling Coïdan Smørgrav
  * All rights reserved.
  *
@@ -54,6 +56,7 @@ __FBSDID("$FreeBSD$");
 #include <ctype.h>
 #include <err.h>
 #include <errno.h>
+#include <jail.h>
 #include <netdb.h>
 #include <pwd.h>
 #include <stdarg.h>
@@ -1179,7 +1182,9 @@ main(int argc, char *argv[])
 			opt_c = 1;
 			break;
 		case 'j':
-			opt_j = atoi(optarg);
+			opt_j = jail_getid(optarg);
+			if (opt_j < 0)
+				errx(1, "%s", jail_errmsg);
 			break;
 		case 'L':
 			opt_L = 1;

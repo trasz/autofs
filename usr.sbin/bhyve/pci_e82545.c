@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2016 Alexander Motin <mav@FreeBSD.org>
  * Copyright (c) 2015 Peter Grehan <grehan@freebsd.org>
  * Copyright (c) 2013 Jeremiah Lott, Avere Systems
@@ -31,6 +33,9 @@
 __FBSDID("$FreeBSD$");
 
 #include <sys/types.h>
+#ifndef WITHOUT_CAPSICUM
+#include <sys/capsicum.h>
+#endif
 #include <sys/limits.h>
 #include <sys/ioctl.h>
 #include <sys/uio.h>
@@ -38,12 +43,14 @@ __FBSDID("$FreeBSD$");
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 
+#include <err.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <md5.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sysexits.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <pthread_np.h>
@@ -337,8 +344,8 @@ struct e82545_softc {
 #define E82545_NVM_MODE_OPADDR  0x0
 #define E82545_NVM_MODE_DATAIN  0x1
 #define E82545_NVM_MODE_DATAOUT 0x2
-        /* EEPROM data */
-        uint16_t eeprom_data[E82545_NVM_EEPROM_SIZE];
+	/* EEPROM data */
+	uint16_t eeprom_data[E82545_NVM_EEPROM_SIZE];
 };
 
 static void e82545_reset(struct e82545_softc *sc, int dev);
@@ -1400,7 +1407,7 @@ e82545_tx_run(struct e82545_softc *sc)
 	    sc->esc_TDH, sc->esc_TDHr, sc->esc_TDT);
 }
 
-static void *
+static _Noreturn void *
 e82545_tx_thread(void *param)
 {
 	struct e82545_softc *sc = param;
@@ -1465,7 +1472,7 @@ e82545_rx_disable(struct e82545_softc *sc)
 static void
 e82545_write_ra(struct e82545_softc *sc, int reg, uint32_t wval)
 {
-        struct eth_uni *eu;
+	struct eth_uni *eu;
 	int idx;
 
 	idx = reg >> 1;
@@ -1491,7 +1498,7 @@ e82545_write_ra(struct e82545_softc *sc, int reg, uint32_t wval)
 static uint32_t
 e82545_read_ra(struct e82545_softc *sc, int reg)
 {
-        struct eth_uni *eu;
+	struct eth_uni *eu;
 	uint32_t retval;
 	int idx;
 
@@ -1735,12 +1742,12 @@ e82545_read_register(struct e82545_softc *sc, uint32_t offset)
 {
 	uint32_t retval;
 	int ridx;
-	
+
 	if (offset & 0x3) {
 		DPRINTF("Unaligned register read offset:0x%x\r\n", offset);
 		return 0;
 	}
-		
+
 	DPRINTF("Register read: 0x%x\r\n", offset);
 
 	switch (offset) {
@@ -2202,6 +2209,9 @@ static void
 e82545_open_tap(struct e82545_softc *sc, char *opts)
 {
 	char tbuf[80];
+#ifndef WITHOUT_CAPSICUM
+	cap_rights_t rights;
+#endif
 	
 	if (opts == NULL) {
 		sc->esc_tapfd = -1;
@@ -2214,7 +2224,7 @@ e82545_open_tap(struct e82545_softc *sc, char *opts)
 	sc->esc_tapfd = open(tbuf, O_RDWR);
 	if (sc->esc_tapfd == -1) {
 		DPRINTF("unable to open tap device %s\n", opts);
-		exit(1);
+		exit(4);
 	}
 
 	/*
@@ -2228,6 +2238,12 @@ e82545_open_tap(struct e82545_softc *sc, char *opts)
 		sc->esc_tapfd = -1;
 	}
 
+#ifndef WITHOUT_CAPSICUM
+	cap_rights_init(&rights, CAP_EVENT, CAP_READ, CAP_WRITE);
+	if (cap_rights_limit(sc->esc_tapfd, &rights) == -1 && errno != ENOSYS)
+		errx(EX_OSERR, "Unable to apply rights for sandbox");
+#endif
+	
 	sc->esc_mevp = mevent_add(sc->esc_tapfd,
 				  EVF_READ,
 				  e82545_tap_callback,

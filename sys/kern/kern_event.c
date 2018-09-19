@@ -151,6 +151,10 @@ static int	filt_fileattach(struct knote *kn);
 static void	filt_timerexpire(void *knx);
 static int	filt_timerattach(struct knote *kn);
 static void	filt_timerdetach(struct knote *kn);
+static void	filt_timerstart(struct knote *kn, sbintime_t to);
+static void	filt_timertouch(struct knote *kn, struct kevent *kev,
+		    u_long type);
+static int	filt_timervalidate(struct knote *kn, sbintime_t *to);
 static int	filt_timer(struct knote *kn, long hint);
 static int	filt_userattach(struct knote *kn);
 static void	filt_userdetach(struct knote *kn);
@@ -179,6 +183,7 @@ static struct filterops timer_filtops = {
 	.f_attach = filt_timerattach,
 	.f_detach = filt_timerdetach,
 	.f_event = filt_timer,
+	.f_touch = filt_timertouch,
 };
 static struct filterops user_filtops = {
 	.f_attach = filt_userattach,
@@ -573,12 +578,13 @@ knote_fork(struct knlist *list, int pid)
  * interval timer support code.
  */
 
-#define NOTE_TIMER_PRECMASK	(NOTE_SECONDS|NOTE_MSECONDS|NOTE_USECONDS| \
-				NOTE_NSECONDS)
+#define NOTE_TIMER_PRECMASK						\
+    (NOTE_SECONDS | NOTE_MSECONDS | NOTE_USECONDS | NOTE_NSECONDS)
 
 static sbintime_t
 timer2sbintime(intptr_t data, int flags)
 {
+	int64_t secs;
 
         /*
          * Macros for converting to the fractional second portion of an
@@ -597,27 +603,27 @@ timer2sbintime(intptr_t data, int flags)
 	case NOTE_MSECONDS: /* FALLTHROUGH */
 	case 0:
 		if (data >= 1000) {
-			int64_t secs = data / 1000;
+			secs = data / 1000;
 #ifdef __LP64__
 			if (secs > (SBT_MAX / SBT_1S))
 				return (SBT_MAX);
 #endif
 			return (secs << 32 | MS_TO_SBT(data % 1000));
 		}
-		return MS_TO_SBT(data);
+		return (MS_TO_SBT(data));
 	case NOTE_USECONDS:
 		if (data >= 1000000) {
-			int64_t secs = data / 1000000;
+			secs = data / 1000000;
 #ifdef __LP64__
 			if (secs > (SBT_MAX / SBT_1S))
 				return (SBT_MAX);
 #endif
 			return (secs << 32 | US_TO_SBT(data % 1000000));
 		}
-		return US_TO_SBT(data);
+		return (US_TO_SBT(data));
 	case NOTE_NSECONDS:
 		if (data >= 1000000000) {
-			int64_t secs = data / 1000000000;
+			secs = data / 1000000000;
 #ifdef __LP64__
 			if (secs > (SBT_MAX / SBT_1S))
 				return (SBT_MAX);
@@ -660,23 +666,37 @@ filt_timerexpire(void *knx)
  * data contains amount of time to sleep
  */
 static int
-filt_timerattach(struct knote *kn)
+filt_timervalidate(struct knote *kn, sbintime_t *to)
 {
-	struct kq_timer_cb_data *kc;
-	sbintime_t to;
-	unsigned int ncallouts;
 
 	if (kn->kn_sdata < 0)
 		return (EINVAL);
 	if (kn->kn_sdata == 0 && (kn->kn_flags & EV_ONESHOT) == 0)
 		kn->kn_sdata = 1;
-	/* Only precision unit are supported in flags so far */
+	/*
+	 * The only fflags values supported are the timer unit
+	 * (precision) and the absolute time indicator.
+	 */
 	if ((kn->kn_sfflags & ~NOTE_TIMER_PRECMASK) != 0)
 		return (EINVAL);
 
-	to = timer2sbintime(kn->kn_sdata, kn->kn_sfflags);
-	if (to < 0)
+	*to = timer2sbintime(kn->kn_sdata, kn->kn_sfflags);
+	if (*to < 0)
 		return (EINVAL);
+	return (0);
+}
+
+static int
+filt_timerattach(struct knote *kn)
+{
+	struct kq_timer_cb_data *kc;
+	sbintime_t to;
+	unsigned int ncallouts;
+	int error;
+
+	error = filt_timervalidate(kn, &to);
+	if (error != 0)
+		return (error);
 
 	do {
 		ncallouts = kq_ncallouts;
@@ -688,12 +708,21 @@ filt_timerattach(struct knote *kn)
 	kn->kn_status &= ~KN_DETACHED;		/* knlist_add clears it */
 	kn->kn_ptr.p_v = kc = malloc(sizeof(*kc), M_KQUEUE, M_WAITOK);
 	callout_init(&kc->c, 1);
+	filt_timerstart(kn, to);
+
+	return (0);
+}
+
+static void
+filt_timerstart(struct knote *kn, sbintime_t to)
+{
+	struct kq_timer_cb_data *kc;
+
+	kc = kn->kn_ptr.p_v;
 	kc->next = to + sbinuptime();
 	kc->to = to;
 	callout_reset_sbt_on(&kc->c, kc->next, 0, filt_timerexpire, kn,
 	    PCPU_GET(cpuid), C_ABSOLUTE);
-
-	return (0);
 }
 
 static void
@@ -708,6 +737,73 @@ filt_timerdetach(struct knote *kn)
 	old = atomic_fetchadd_int(&kq_ncallouts, -1);
 	KASSERT(old > 0, ("Number of callouts cannot become negative"));
 	kn->kn_status |= KN_DETACHED;	/* knlist_remove sets it */
+}
+
+static void
+filt_timertouch(struct knote *kn, struct kevent *kev, u_long type)
+{
+	struct kq_timer_cb_data *kc;	
+	struct kqueue *kq;
+	sbintime_t to;
+	int error;
+
+	switch (type) {
+	case EVENT_REGISTER:
+		/* Handle re-added timers that update data/fflags */
+		if (kev->flags & EV_ADD) {
+			kc = kn->kn_ptr.p_v;
+
+			/* Drain any existing callout. */
+			callout_drain(&kc->c);
+
+			/* Throw away any existing undelivered record
+			 * of the timer expiration. This is done under
+			 * the presumption that if a process is
+			 * re-adding this timer with new parameters,
+			 * it is no longer interested in what may have
+			 * happened under the old parameters. If it is
+			 * interested, it can wait for the expiration,
+			 * delete the old timer definition, and then
+			 * add the new one.
+			 *
+			 * This has to be done while the kq is locked:
+			 *   - if enqueued, dequeue
+			 *   - make it no longer active
+			 *   - clear the count of expiration events
+			 */
+			kq = kn->kn_kq;
+			KQ_LOCK(kq);
+			if (kn->kn_status & KN_QUEUED)
+				knote_dequeue(kn);
+
+			kn->kn_status &= ~KN_ACTIVE;
+			kn->kn_data = 0;
+			KQ_UNLOCK(kq);
+			
+			/* Reschedule timer based on new data/fflags */
+			kn->kn_sfflags = kev->fflags;
+			kn->kn_sdata = kev->data;
+			error = filt_timervalidate(kn, &to);
+			if (error != 0) {
+			  	kn->kn_flags |= EV_ERROR;
+				kn->kn_data = error;
+			} else
+			  	filt_timerstart(kn, to);
+		}
+		break;
+
+        case EVENT_PROCESS:
+		*kev = kn->kn_kevent;
+		if (kn->kn_flags & EV_CLEAR) {
+			kn->kn_data = 0;
+			kn->kn_fflags = 0;
+		}
+		break;
+
+	default:
+		panic("filt_timertouch() - invalid type (%ld)", type);
+		break;
+	}
 }
 
 static int
@@ -859,17 +955,6 @@ kern_kqueue(struct thread *td, int flags, struct filecaps *fcaps)
 	return (0);
 }
 
-#ifdef KTRACE
-static size_t
-kev_iovlen(int n, u_int kgio)
-{
-
-	if (n < 0 || n >= kgio / sizeof(struct kevent))
-		return (kgio);
-	return (n * sizeof(struct kevent));
-}
-#endif
-
 #ifndef _SYS_SYSPROTO_H_
 struct kevent_args {
 	int	fd;
@@ -889,14 +974,10 @@ sys_kevent(struct thread *td, struct kevent_args *uap)
 		.k_copyout = kevent_copyout,
 		.k_copyin = kevent_copyin,
 	};
-	int error;
 #ifdef KTRACE
-	struct uio ktruio;
-	struct iovec ktriov;
-	struct uio *ktruioin = NULL;
-	struct uio *ktruioout = NULL;
-	u_int kgio;
+	struct kevent *eventlist = uap->eventlist;
 #endif
+	int error;
 
 	if (uap->timeout != NULL) {
 		error = copyin(uap->timeout, &ts, sizeof(ts));
@@ -907,31 +988,18 @@ sys_kevent(struct thread *td, struct kevent_args *uap)
 		tsp = NULL;
 
 #ifdef KTRACE
-	if (KTRPOINT(td, KTR_GENIO)) {
-		kgio = ktr_geniosize;
-		ktriov.iov_base = uap->changelist;
-		ktriov.iov_len = kev_iovlen(uap->nchanges, kgio);
-		ktruio = (struct uio){ .uio_iov = &ktriov, .uio_iovcnt = 1,
-		    .uio_segflg = UIO_USERSPACE, .uio_rw = UIO_READ,
-		    .uio_td = td };
-		ktruioin = cloneuio(&ktruio);
-		ktriov.iov_base = uap->eventlist;
-		ktriov.iov_len = kev_iovlen(uap->nevents, kgio);
-		ktriov.iov_len = uap->nevents * sizeof(struct kevent);
-		ktruioout = cloneuio(&ktruio);
-	}
+	if (KTRPOINT(td, KTR_STRUCT_ARRAY))
+		ktrstructarray("kevent", UIO_USERSPACE, uap->changelist,
+		    uap->nchanges, sizeof(struct kevent));
 #endif
 
 	error = kern_kevent(td, uap->fd, uap->nchanges, uap->nevents,
 	    &k_ops, tsp);
 
 #ifdef KTRACE
-	if (ktruioin != NULL) {
-		ktruioin->uio_resid = kev_iovlen(uap->nchanges, kgio);
-		ktrgenio(uap->fd, UIO_WRITE, ktruioin, 0);
-		ktruioout->uio_resid = kev_iovlen(td->td_retval[0], kgio);
-		ktrgenio(uap->fd, UIO_READ, ktruioout, error);
-	}
+	if (error == 0 && KTRPOINT(td, KTR_STRUCT_ARRAY))
+		ktrstructarray("kevent", UIO_USERSPACE, eventlist,
+		    td->td_retval[0], sizeof(struct kevent));
 #endif
 
 	return (error);

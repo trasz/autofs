@@ -28,7 +28,6 @@
  *
  */
 
-
 #ifndef __ECORE_HSI_RDMA__
 #define __ECORE_HSI_RDMA__ 
 /************************************************************************/
@@ -37,12 +36,453 @@
 #include "rdma_common.h"
 
 /*
+ * The rdma task context of Mstorm
+ */
+struct ystorm_rdma_task_st_ctx
+{
+	struct regpair temp[4];
+};
+
+struct e4_ystorm_rdma_task_ag_ctx
+{
+	u8 reserved /* cdu_validation */;
+	u8 byte1 /* state */;
+	__le16 msem_ctx_upd_seq /* icid */;
+	u8 flags0;
+#define E4_YSTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_MASK  0xF /* connection_type */
+#define E4_YSTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_SHIFT 0
+#define E4_YSTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_MASK     0x1 /* exist_in_qm0 */
+#define E4_YSTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_SHIFT    4
+#define E4_YSTORM_RDMA_TASK_AG_CTX_BIT1_MASK             0x1 /* exist_in_qm1 */
+#define E4_YSTORM_RDMA_TASK_AG_CTX_BIT1_SHIFT            5
+#define E4_YSTORM_RDMA_TASK_AG_CTX_VALID_MASK            0x1 /* bit2 */
+#define E4_YSTORM_RDMA_TASK_AG_CTX_VALID_SHIFT           6
+#define E4_YSTORM_RDMA_TASK_AG_CTX_DIF_FIRST_IO_MASK     0x1 /* bit3 */
+#define E4_YSTORM_RDMA_TASK_AG_CTX_DIF_FIRST_IO_SHIFT    7
+	u8 flags1;
+#define E4_YSTORM_RDMA_TASK_AG_CTX_CF0_MASK              0x3 /* cf0 */
+#define E4_YSTORM_RDMA_TASK_AG_CTX_CF0_SHIFT             0
+#define E4_YSTORM_RDMA_TASK_AG_CTX_CF1_MASK              0x3 /* cf1 */
+#define E4_YSTORM_RDMA_TASK_AG_CTX_CF1_SHIFT             2
+#define E4_YSTORM_RDMA_TASK_AG_CTX_CF2SPECIAL_MASK       0x3 /* cf2special */
+#define E4_YSTORM_RDMA_TASK_AG_CTX_CF2SPECIAL_SHIFT      4
+#define E4_YSTORM_RDMA_TASK_AG_CTX_CF0EN_MASK            0x1 /* cf0en */
+#define E4_YSTORM_RDMA_TASK_AG_CTX_CF0EN_SHIFT           6
+#define E4_YSTORM_RDMA_TASK_AG_CTX_CF1EN_MASK            0x1 /* cf1en */
+#define E4_YSTORM_RDMA_TASK_AG_CTX_CF1EN_SHIFT           7
+	u8 flags2;
+#define E4_YSTORM_RDMA_TASK_AG_CTX_BIT4_MASK             0x1 /* bit4 */
+#define E4_YSTORM_RDMA_TASK_AG_CTX_BIT4_SHIFT            0
+#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE0EN_MASK          0x1 /* rule0en */
+#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE0EN_SHIFT         1
+#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE1EN_MASK          0x1 /* rule1en */
+#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE1EN_SHIFT         2
+#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE2EN_MASK          0x1 /* rule2en */
+#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE2EN_SHIFT         3
+#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE3EN_MASK          0x1 /* rule3en */
+#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE3EN_SHIFT         4
+#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE4EN_MASK          0x1 /* rule4en */
+#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE4EN_SHIFT         5
+#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE5EN_MASK          0x1 /* rule5en */
+#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE5EN_SHIFT         6
+#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE6EN_MASK          0x1 /* rule6en */
+#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE6EN_SHIFT         7
+	u8 key /* byte2 */;
+	__le32 mw_cnt /* reg0 */;
+	u8 ref_cnt_seq /* byte3 */;
+	u8 ctx_upd_seq /* byte4 */;
+	__le16 dif_flags /* word1 */;
+	__le16 tx_ref_count /* word2 */;
+	__le16 last_used_ltid /* word3 */;
+	__le16 parent_mr_lo /* word4 */;
+	__le16 parent_mr_hi /* word5 */;
+	__le32 fbo_lo /* reg1 */;
+	__le32 fbo_hi /* reg2 */;
+};
+
+struct e4_mstorm_rdma_task_ag_ctx
+{
+	u8 reserved /* cdu_validation */;
+	u8 byte1 /* state */;
+	__le16 icid /* icid */;
+	u8 flags0;
+#define E4_MSTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_MASK  0xF /* connection_type */
+#define E4_MSTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_SHIFT 0
+#define E4_MSTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_MASK     0x1 /* exist_in_qm0 */
+#define E4_MSTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_SHIFT    4
+#define E4_MSTORM_RDMA_TASK_AG_CTX_BIT1_MASK             0x1 /* exist_in_qm1 */
+#define E4_MSTORM_RDMA_TASK_AG_CTX_BIT1_SHIFT            5
+#define E4_MSTORM_RDMA_TASK_AG_CTX_BIT2_MASK             0x1 /* bit2 */
+#define E4_MSTORM_RDMA_TASK_AG_CTX_BIT2_SHIFT            6
+#define E4_MSTORM_RDMA_TASK_AG_CTX_DIF_FIRST_IO_MASK     0x1 /* bit3 */
+#define E4_MSTORM_RDMA_TASK_AG_CTX_DIF_FIRST_IO_SHIFT    7
+	u8 flags1;
+#define E4_MSTORM_RDMA_TASK_AG_CTX_CF0_MASK              0x3 /* cf0 */
+#define E4_MSTORM_RDMA_TASK_AG_CTX_CF0_SHIFT             0
+#define E4_MSTORM_RDMA_TASK_AG_CTX_CF1_MASK              0x3 /* cf1 */
+#define E4_MSTORM_RDMA_TASK_AG_CTX_CF1_SHIFT             2
+#define E4_MSTORM_RDMA_TASK_AG_CTX_CF2_MASK              0x3 /* cf2 */
+#define E4_MSTORM_RDMA_TASK_AG_CTX_CF2_SHIFT             4
+#define E4_MSTORM_RDMA_TASK_AG_CTX_CF0EN_MASK            0x1 /* cf0en */
+#define E4_MSTORM_RDMA_TASK_AG_CTX_CF0EN_SHIFT           6
+#define E4_MSTORM_RDMA_TASK_AG_CTX_CF1EN_MASK            0x1 /* cf1en */
+#define E4_MSTORM_RDMA_TASK_AG_CTX_CF1EN_SHIFT           7
+	u8 flags2;
+#define E4_MSTORM_RDMA_TASK_AG_CTX_CF2EN_MASK            0x1 /* cf2en */
+#define E4_MSTORM_RDMA_TASK_AG_CTX_CF2EN_SHIFT           0
+#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE0EN_MASK          0x1 /* rule0en */
+#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE0EN_SHIFT         1
+#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE1EN_MASK          0x1 /* rule1en */
+#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE1EN_SHIFT         2
+#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE2EN_MASK          0x1 /* rule2en */
+#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE2EN_SHIFT         3
+#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE3EN_MASK          0x1 /* rule3en */
+#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE3EN_SHIFT         4
+#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE4EN_MASK          0x1 /* rule4en */
+#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE4EN_SHIFT         5
+#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE5EN_MASK          0x1 /* rule5en */
+#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE5EN_SHIFT         6
+#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE6EN_MASK          0x1 /* rule6en */
+#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE6EN_SHIFT         7
+	u8 key /* byte2 */;
+	__le32 mw_cnt /* reg0 */;
+	u8 ref_cnt_seq /* byte3 */;
+	u8 ctx_upd_seq /* byte4 */;
+	__le16 dif_flags /* word1 */;
+	__le16 tx_ref_count /* word2 */;
+	__le16 last_used_ltid /* word3 */;
+	__le16 parent_mr_lo /* word4 */;
+	__le16 parent_mr_hi /* word5 */;
+	__le32 fbo_lo /* reg1 */;
+	__le32 fbo_hi /* reg2 */;
+};
+
+/*
  * The roce task context of Mstorm
  */
 struct mstorm_rdma_task_st_ctx
 {
 	struct regpair temp[4];
 };
+
+/*
+ * The roce task context of Ustorm
+ */
+struct ustorm_rdma_task_st_ctx
+{
+	struct regpair temp[2];
+};
+
+struct e4_ustorm_rdma_task_ag_ctx
+{
+	u8 reserved /* cdu_validation */;
+	u8 byte1 /* state */;
+	__le16 icid /* icid */;
+	u8 flags0;
+#define E4_USTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_MASK         0xF /* connection_type */
+#define E4_USTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_SHIFT        0
+#define E4_USTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_MASK            0x1 /* exist_in_qm0 */
+#define E4_USTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_SHIFT           4
+#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_RUNT_VALID_MASK          0x1 /* exist_in_qm1 */
+#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_RUNT_VALID_SHIFT         5
+#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_WRITE_RESULT_CF_MASK     0x3 /* timer0cf */
+#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_WRITE_RESULT_CF_SHIFT    6
+	u8 flags1;
+#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_RESULT_TOGGLE_BIT_MASK   0x3 /* timer1cf */
+#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_RESULT_TOGGLE_BIT_SHIFT  0
+#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_TX_IO_FLG_MASK           0x3 /* timer2cf */
+#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_TX_IO_FLG_SHIFT          2
+#define E4_USTORM_RDMA_TASK_AG_CTX_CF3_MASK                     0x3 /* timer_stop_all */
+#define E4_USTORM_RDMA_TASK_AG_CTX_CF3_SHIFT                    4
+#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_CF_MASK            0x3 /* cf4 */
+#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_CF_SHIFT           6
+	u8 flags2;
+#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_WRITE_RESULT_CF_EN_MASK  0x1 /* cf0en */
+#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_WRITE_RESULT_CF_EN_SHIFT 0
+#define E4_USTORM_RDMA_TASK_AG_CTX_RESERVED2_MASK               0x1 /* cf1en */
+#define E4_USTORM_RDMA_TASK_AG_CTX_RESERVED2_SHIFT              1
+#define E4_USTORM_RDMA_TASK_AG_CTX_RESERVED3_MASK               0x1 /* cf2en */
+#define E4_USTORM_RDMA_TASK_AG_CTX_RESERVED3_SHIFT              2
+#define E4_USTORM_RDMA_TASK_AG_CTX_CF3EN_MASK                   0x1 /* cf3en */
+#define E4_USTORM_RDMA_TASK_AG_CTX_CF3EN_SHIFT                  3
+#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_CF_EN_MASK         0x1 /* cf4en */
+#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_CF_EN_SHIFT        4
+#define E4_USTORM_RDMA_TASK_AG_CTX_RULE0EN_MASK                 0x1 /* rule0en */
+#define E4_USTORM_RDMA_TASK_AG_CTX_RULE0EN_SHIFT                5
+#define E4_USTORM_RDMA_TASK_AG_CTX_RULE1EN_MASK                 0x1 /* rule1en */
+#define E4_USTORM_RDMA_TASK_AG_CTX_RULE1EN_SHIFT                6
+#define E4_USTORM_RDMA_TASK_AG_CTX_RULE2EN_MASK                 0x1 /* rule2en */
+#define E4_USTORM_RDMA_TASK_AG_CTX_RULE2EN_SHIFT                7
+	u8 flags3;
+#define E4_USTORM_RDMA_TASK_AG_CTX_RULE3EN_MASK                 0x1 /* rule3en */
+#define E4_USTORM_RDMA_TASK_AG_CTX_RULE3EN_SHIFT                0
+#define E4_USTORM_RDMA_TASK_AG_CTX_RULE4EN_MASK                 0x1 /* rule4en */
+#define E4_USTORM_RDMA_TASK_AG_CTX_RULE4EN_SHIFT                1
+#define E4_USTORM_RDMA_TASK_AG_CTX_RULE5EN_MASK                 0x1 /* rule5en */
+#define E4_USTORM_RDMA_TASK_AG_CTX_RULE5EN_SHIFT                2
+#define E4_USTORM_RDMA_TASK_AG_CTX_RULE6EN_MASK                 0x1 /* rule6en */
+#define E4_USTORM_RDMA_TASK_AG_CTX_RULE6EN_SHIFT                3
+#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_TYPE_MASK          0xF /* nibble1 */
+#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_TYPE_SHIFT         4
+	__le32 dif_err_intervals /* reg0 */;
+	__le32 dif_error_1st_interval /* reg1 */;
+	__le32 reg2 /* reg2 */;
+	__le32 dif_runt_value /* reg3 */;
+	__le32 reg4 /* reg4 */;
+	__le32 reg5 /* reg5 */;
+};
+
+/*
+ * RDMA task context
+ */
+struct e4_rdma_task_context
+{
+	struct ystorm_rdma_task_st_ctx ystorm_st_context /* ystorm storm context */;
+	struct e4_ystorm_rdma_task_ag_ctx ystorm_ag_context /* ystorm aggregative context */;
+	struct tdif_task_context tdif_context /* tdif context */;
+	struct e4_mstorm_rdma_task_ag_ctx mstorm_ag_context /* mstorm aggregative context */;
+	struct mstorm_rdma_task_st_ctx mstorm_st_context /* mstorm storm context */;
+	struct rdif_task_context rdif_context /* rdif context */;
+	struct ustorm_rdma_task_st_ctx ustorm_st_context /* ustorm storm context */;
+	struct regpair ustorm_st_padding[2] /* padding */;
+	struct e4_ustorm_rdma_task_ag_ctx ustorm_ag_context /* ustorm aggregative context */;
+};
+
+
+struct e5_ystorm_rdma_task_ag_ctx
+{
+	u8 reserved /* cdu_validation */;
+	u8 byte1 /* state_and_core_id */;
+	__le16 msem_ctx_upd_seq /* icid */;
+	u8 flags0;
+#define E5_YSTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_MASK  0xF /* connection_type */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_SHIFT 0
+#define E5_YSTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_MASK     0x1 /* exist_in_qm0 */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_SHIFT    4
+#define E5_YSTORM_RDMA_TASK_AG_CTX_BIT1_MASK             0x1 /* exist_in_qm1 */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_BIT1_SHIFT            5
+#define E5_YSTORM_RDMA_TASK_AG_CTX_VALID_MASK            0x1 /* bit2 */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_VALID_SHIFT           6
+#define E5_YSTORM_RDMA_TASK_AG_CTX_BIT3_MASK             0x1 /* bit3 */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_BIT3_SHIFT            7
+	u8 flags1;
+#define E5_YSTORM_RDMA_TASK_AG_CTX_CF0_MASK              0x3 /* cf0 */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_CF0_SHIFT             0
+#define E5_YSTORM_RDMA_TASK_AG_CTX_CF1_MASK              0x3 /* cf1 */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_CF1_SHIFT             2
+#define E5_YSTORM_RDMA_TASK_AG_CTX_CF2SPECIAL_MASK       0x3 /* cf2special */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_CF2SPECIAL_SHIFT      4
+#define E5_YSTORM_RDMA_TASK_AG_CTX_CF0EN_MASK            0x1 /* cf0en */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_CF0EN_SHIFT           6
+#define E5_YSTORM_RDMA_TASK_AG_CTX_CF1EN_MASK            0x1 /* cf1en */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_CF1EN_SHIFT           7
+	u8 flags2;
+#define E5_YSTORM_RDMA_TASK_AG_CTX_BIT4_MASK             0x1 /* bit4 */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_BIT4_SHIFT            0
+#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE0EN_MASK          0x1 /* rule0en */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE0EN_SHIFT         1
+#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE1EN_MASK          0x1 /* rule1en */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE1EN_SHIFT         2
+#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE2EN_MASK          0x1 /* rule2en */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE2EN_SHIFT         3
+#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE3EN_MASK          0x1 /* rule3en */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE3EN_SHIFT         4
+#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE4EN_MASK          0x1 /* rule4en */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE4EN_SHIFT         5
+#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE5EN_MASK          0x1 /* rule5en */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE5EN_SHIFT         6
+#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE6EN_MASK          0x1 /* rule6en */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE6EN_SHIFT         7
+	u8 flags3;
+#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED1_MASK     0x1 /* bit5 */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED1_SHIFT    0
+#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED2_MASK     0x3 /* cf3 */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED2_SHIFT    1
+#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED3_MASK     0x3 /* cf4 */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED3_SHIFT    3
+#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED4_MASK     0x1 /* cf3en */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED4_SHIFT    5
+#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED5_MASK     0x1 /* cf4en */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED5_SHIFT    6
+#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED6_MASK     0x1 /* rule7en */
+#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED6_SHIFT    7
+	__le32 mw_cnt /* reg0 */;
+	u8 key /* byte2 */;
+	u8 ref_cnt_seq /* byte3 */;
+	u8 ctx_upd_seq /* byte4 */;
+	u8 e4_reserved7 /* byte5 */;
+	__le16 dif_flags /* word1 */;
+	__le16 tx_ref_count /* word2 */;
+	__le16 last_used_ltid /* word3 */;
+	__le16 parent_mr_lo /* word4 */;
+	__le16 parent_mr_hi /* word5 */;
+	__le16 e4_reserved8 /* word6 */;
+	__le32 fbo_lo /* reg1 */;
+};
+
+struct e5_mstorm_rdma_task_ag_ctx
+{
+	u8 reserved /* cdu_validation */;
+	u8 byte1 /* state_and_core_id */;
+	__le16 icid /* icid */;
+	u8 flags0;
+#define E5_MSTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_MASK  0xF /* connection_type */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_SHIFT 0
+#define E5_MSTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_MASK     0x1 /* exist_in_qm0 */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_SHIFT    4
+#define E5_MSTORM_RDMA_TASK_AG_CTX_BIT1_MASK             0x1 /* exist_in_qm1 */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_BIT1_SHIFT            5
+#define E5_MSTORM_RDMA_TASK_AG_CTX_BIT2_MASK             0x1 /* bit2 */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_BIT2_SHIFT            6
+#define E5_MSTORM_RDMA_TASK_AG_CTX_BIT3_MASK             0x1 /* bit3 */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_BIT3_SHIFT            7
+	u8 flags1;
+#define E5_MSTORM_RDMA_TASK_AG_CTX_CF0_MASK              0x3 /* cf0 */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_CF0_SHIFT             0
+#define E5_MSTORM_RDMA_TASK_AG_CTX_CF1_MASK              0x3 /* cf1 */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_CF1_SHIFT             2
+#define E5_MSTORM_RDMA_TASK_AG_CTX_CF2_MASK              0x3 /* cf2 */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_CF2_SHIFT             4
+#define E5_MSTORM_RDMA_TASK_AG_CTX_CF0EN_MASK            0x1 /* cf0en */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_CF0EN_SHIFT           6
+#define E5_MSTORM_RDMA_TASK_AG_CTX_CF1EN_MASK            0x1 /* cf1en */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_CF1EN_SHIFT           7
+	u8 flags2;
+#define E5_MSTORM_RDMA_TASK_AG_CTX_CF2EN_MASK            0x1 /* cf2en */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_CF2EN_SHIFT           0
+#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE0EN_MASK          0x1 /* rule0en */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE0EN_SHIFT         1
+#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE1EN_MASK          0x1 /* rule1en */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE1EN_SHIFT         2
+#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE2EN_MASK          0x1 /* rule2en */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE2EN_SHIFT         3
+#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE3EN_MASK          0x1 /* rule3en */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE3EN_SHIFT         4
+#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE4EN_MASK          0x1 /* rule4en */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE4EN_SHIFT         5
+#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE5EN_MASK          0x1 /* rule5en */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE5EN_SHIFT         6
+#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE6EN_MASK          0x1 /* rule6en */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE6EN_SHIFT         7
+	u8 flags3;
+#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED1_MASK     0x1 /* bit4 */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED1_SHIFT    0
+#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED2_MASK     0x3 /* cf3 */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED2_SHIFT    1
+#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED3_MASK     0x3 /* cf4 */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED3_SHIFT    3
+#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED4_MASK     0x1 /* cf3en */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED4_SHIFT    5
+#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED5_MASK     0x1 /* cf4en */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED5_SHIFT    6
+#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED6_MASK     0x1 /* rule7en */
+#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED6_SHIFT    7
+	__le32 mw_cnt /* reg0 */;
+	u8 key /* byte2 */;
+	u8 ref_cnt_seq /* byte3 */;
+	u8 ctx_upd_seq /* byte4 */;
+	u8 e4_reserved7 /* byte5 */;
+	__le16 dif_flags /* regpair0 */;
+	__le16 tx_ref_count /* word2 */;
+	__le16 last_used_ltid /* word3 */;
+	__le16 parent_mr_lo /* word4 */;
+	__le16 parent_mr_hi /* regpair1 */;
+	__le16 e4_reserved8 /* word6 */;
+	__le32 fbo_lo /* reg1 */;
+};
+
+struct e5_ustorm_rdma_task_ag_ctx
+{
+	u8 reserved /* cdu_validation */;
+	u8 byte1 /* state_and_core_id */;
+	__le16 icid /* icid */;
+	u8 flags0;
+#define E5_USTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_MASK         0xF /* connection_type */
+#define E5_USTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_SHIFT        0
+#define E5_USTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_MASK            0x1 /* exist_in_qm0 */
+#define E5_USTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_SHIFT           4
+#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_RUNT_VALID_MASK          0x1 /* exist_in_qm1 */
+#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_RUNT_VALID_SHIFT         5
+#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_WRITE_RESULT_CF_MASK     0x3 /* timer0cf */
+#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_WRITE_RESULT_CF_SHIFT    6
+	u8 flags1;
+#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_RESULT_TOGGLE_BIT_MASK   0x3 /* timer1cf */
+#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_RESULT_TOGGLE_BIT_SHIFT  0
+#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_TX_IO_FLG_MASK           0x3 /* timer2cf */
+#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_TX_IO_FLG_SHIFT          2
+#define E5_USTORM_RDMA_TASK_AG_CTX_CF3_MASK                     0x3 /* timer_stop_all */
+#define E5_USTORM_RDMA_TASK_AG_CTX_CF3_SHIFT                    4
+#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_CF_MASK            0x3 /* dif_error_cf */
+#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_CF_SHIFT           6
+	u8 flags2;
+#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_WRITE_RESULT_CF_EN_MASK  0x1 /* cf0en */
+#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_WRITE_RESULT_CF_EN_SHIFT 0
+#define E5_USTORM_RDMA_TASK_AG_CTX_RESERVED2_MASK               0x1 /* cf1en */
+#define E5_USTORM_RDMA_TASK_AG_CTX_RESERVED2_SHIFT              1
+#define E5_USTORM_RDMA_TASK_AG_CTX_RESERVED3_MASK               0x1 /* cf2en */
+#define E5_USTORM_RDMA_TASK_AG_CTX_RESERVED3_SHIFT              2
+#define E5_USTORM_RDMA_TASK_AG_CTX_CF3EN_MASK                   0x1 /* cf3en */
+#define E5_USTORM_RDMA_TASK_AG_CTX_CF3EN_SHIFT                  3
+#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_CF_EN_MASK         0x1 /* cf4en */
+#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_CF_EN_SHIFT        4
+#define E5_USTORM_RDMA_TASK_AG_CTX_RULE0EN_MASK                 0x1 /* rule0en */
+#define E5_USTORM_RDMA_TASK_AG_CTX_RULE0EN_SHIFT                5
+#define E5_USTORM_RDMA_TASK_AG_CTX_RULE1EN_MASK                 0x1 /* rule1en */
+#define E5_USTORM_RDMA_TASK_AG_CTX_RULE1EN_SHIFT                6
+#define E5_USTORM_RDMA_TASK_AG_CTX_RULE2EN_MASK                 0x1 /* rule2en */
+#define E5_USTORM_RDMA_TASK_AG_CTX_RULE2EN_SHIFT                7
+	u8 flags3;
+#define E5_USTORM_RDMA_TASK_AG_CTX_RULE3EN_MASK                 0x1 /* rule3en */
+#define E5_USTORM_RDMA_TASK_AG_CTX_RULE3EN_SHIFT                0
+#define E5_USTORM_RDMA_TASK_AG_CTX_RULE4EN_MASK                 0x1 /* rule4en */
+#define E5_USTORM_RDMA_TASK_AG_CTX_RULE4EN_SHIFT                1
+#define E5_USTORM_RDMA_TASK_AG_CTX_RULE5EN_MASK                 0x1 /* rule5en */
+#define E5_USTORM_RDMA_TASK_AG_CTX_RULE5EN_SHIFT                2
+#define E5_USTORM_RDMA_TASK_AG_CTX_RULE6EN_MASK                 0x1 /* rule6en */
+#define E5_USTORM_RDMA_TASK_AG_CTX_RULE6EN_SHIFT                3
+#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED1_MASK            0x1 /* bit2 */
+#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED1_SHIFT           4
+#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED2_MASK            0x1 /* bit3 */
+#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED2_SHIFT           5
+#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED3_MASK            0x1 /* bit4 */
+#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED3_SHIFT           6
+#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED4_MASK            0x1 /* rule7en */
+#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED4_SHIFT           7
+	u8 flags4;
+#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED5_MASK            0x3 /* cf5 */
+#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED5_SHIFT           0
+#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED6_MASK            0x1 /* cf5en */
+#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED6_SHIFT           2
+#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED7_MASK            0x1 /* rule8en */
+#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED7_SHIFT           3
+#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_TYPE_MASK          0xF /* dif_error_type */
+#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_TYPE_SHIFT         4
+	u8 byte2 /* byte2 */;
+	u8 byte3 /* byte3 */;
+	u8 e4_reserved8 /* byte4 */;
+	__le32 dif_err_intervals /* dif_err_intervals */;
+	__le32 dif_error_1st_interval /* dif_error_1st_interval */;
+	__le32 reg2 /* reg2 */;
+	__le32 dif_runt_value /* reg3 */;
+	__le32 reg4 /* reg4 */;
+};
+
+/*
+ * RDMA task context
+ */
+struct e5_rdma_task_context
+{
+	struct ystorm_rdma_task_st_ctx ystorm_st_context /* ystorm storm context */;
+	struct e5_ystorm_rdma_task_ag_ctx ystorm_ag_context /* ystorm aggregative context */;
+	struct tdif_task_context tdif_context /* tdif context */;
+	struct e5_mstorm_rdma_task_ag_ctx mstorm_ag_context /* mstorm aggregative context */;
+	struct mstorm_rdma_task_st_ctx mstorm_st_context /* mstorm storm context */;
+	struct rdif_task_context rdif_context /* rdif context */;
+	struct ustorm_rdma_task_st_ctx ustorm_st_context /* ustorm storm context */;
+	struct regpair ustorm_st_padding[2] /* padding */;
+	struct e5_ustorm_rdma_task_ag_ctx ustorm_ag_context /* ustorm aggregative context */;
+};
+
 
 
 /*
@@ -166,7 +606,10 @@ struct rdma_init_func_hdr
 	u8 cq_ring_mode /* 0 for 32 bit cq producer and consumer counters and 1 for 16 bit */;
 	u8 vf_id /* This field should be assigned to Virtual Function ID if vf_valid == 1. Otherwise its dont care */;
 	u8 vf_valid;
-	u8 reserved[3];
+	u8 relaxed_ordering /* 1 for using relaxed ordering PCI writes */;
+	__le16 first_reg_srq_id /* The SRQ ID of thr first regular (non XRC) SRQ */;
+	__le32 reg_srq_base_addr /* Logical base address of first regular (non XRC) SRQ */;
+	__le32 reserved;
 };
 
 
@@ -205,29 +648,29 @@ enum rdma_ramrod_cmd_id
  */
 struct rdma_register_tid_ramrod_data
 {
-	__le32 flags;
-#define RDMA_REGISTER_TID_RAMROD_DATA_MAX_ID_MASK             0x3FFFF
-#define RDMA_REGISTER_TID_RAMROD_DATA_MAX_ID_SHIFT            0
+	__le16 flags;
 #define RDMA_REGISTER_TID_RAMROD_DATA_PAGE_SIZE_LOG_MASK      0x1F
-#define RDMA_REGISTER_TID_RAMROD_DATA_PAGE_SIZE_LOG_SHIFT     18
+#define RDMA_REGISTER_TID_RAMROD_DATA_PAGE_SIZE_LOG_SHIFT     0
 #define RDMA_REGISTER_TID_RAMROD_DATA_TWO_LEVEL_PBL_MASK      0x1
-#define RDMA_REGISTER_TID_RAMROD_DATA_TWO_LEVEL_PBL_SHIFT     23
+#define RDMA_REGISTER_TID_RAMROD_DATA_TWO_LEVEL_PBL_SHIFT     5
 #define RDMA_REGISTER_TID_RAMROD_DATA_ZERO_BASED_MASK         0x1
-#define RDMA_REGISTER_TID_RAMROD_DATA_ZERO_BASED_SHIFT        24
+#define RDMA_REGISTER_TID_RAMROD_DATA_ZERO_BASED_SHIFT        6
 #define RDMA_REGISTER_TID_RAMROD_DATA_PHY_MR_MASK             0x1
-#define RDMA_REGISTER_TID_RAMROD_DATA_PHY_MR_SHIFT            25
+#define RDMA_REGISTER_TID_RAMROD_DATA_PHY_MR_SHIFT            7
 #define RDMA_REGISTER_TID_RAMROD_DATA_REMOTE_READ_MASK        0x1
-#define RDMA_REGISTER_TID_RAMROD_DATA_REMOTE_READ_SHIFT       26
+#define RDMA_REGISTER_TID_RAMROD_DATA_REMOTE_READ_SHIFT       8
 #define RDMA_REGISTER_TID_RAMROD_DATA_REMOTE_WRITE_MASK       0x1
-#define RDMA_REGISTER_TID_RAMROD_DATA_REMOTE_WRITE_SHIFT      27
+#define RDMA_REGISTER_TID_RAMROD_DATA_REMOTE_WRITE_SHIFT      9
 #define RDMA_REGISTER_TID_RAMROD_DATA_REMOTE_ATOMIC_MASK      0x1
-#define RDMA_REGISTER_TID_RAMROD_DATA_REMOTE_ATOMIC_SHIFT     28
+#define RDMA_REGISTER_TID_RAMROD_DATA_REMOTE_ATOMIC_SHIFT     10
 #define RDMA_REGISTER_TID_RAMROD_DATA_LOCAL_WRITE_MASK        0x1
-#define RDMA_REGISTER_TID_RAMROD_DATA_LOCAL_WRITE_SHIFT       29
+#define RDMA_REGISTER_TID_RAMROD_DATA_LOCAL_WRITE_SHIFT       11
 #define RDMA_REGISTER_TID_RAMROD_DATA_LOCAL_READ_MASK         0x1
-#define RDMA_REGISTER_TID_RAMROD_DATA_LOCAL_READ_SHIFT        30
+#define RDMA_REGISTER_TID_RAMROD_DATA_LOCAL_READ_SHIFT        12
 #define RDMA_REGISTER_TID_RAMROD_DATA_ENABLE_MW_BIND_MASK     0x1
-#define RDMA_REGISTER_TID_RAMROD_DATA_ENABLE_MW_BIND_SHIFT    31
+#define RDMA_REGISTER_TID_RAMROD_DATA_ENABLE_MW_BIND_SHIFT    13
+#define RDMA_REGISTER_TID_RAMROD_DATA_RESERVED_MASK           0x3
+#define RDMA_REGISTER_TID_RAMROD_DATA_RESERVED_SHIFT          14
 	u8 flags1;
 #define RDMA_REGISTER_TID_RAMROD_DATA_PBL_PAGE_SIZE_LOG_MASK  0x1F
 #define RDMA_REGISTER_TID_RAMROD_DATA_PBL_PAGE_SIZE_LOG_SHIFT 0
@@ -245,14 +688,15 @@ struct rdma_register_tid_ramrod_data
 	u8 vf_id /* This field should be assigned to Virtual Function ID if vf_valid == 1. Otherwise its dont care */;
 	u8 vf_valid;
 	__le16 pd;
+	__le16 reserved2;
 	__le32 length_lo /* lower 32 bits of the registered MR length. */;
 	__le32 itid;
-	__le32 reserved2;
+	__le32 reserved3;
 	struct regpair va;
 	struct regpair pbl_base;
 	struct regpair dif_error_addr /* DIF TX IO writes error information to this location when memory region is invalidated. */;
 	struct regpair dif_runt_addr /* DIF RX IO writes runt value to this location when last RDMA Read of the IO has completed. */;
-	__le32 reserved3[2];
+	__le32 reserved4[2];
 };
 
 
@@ -287,7 +731,7 @@ struct rdma_resize_cq_ramrod_data
 
 
 /*
- * The rdma storm context of Mstorm
+ * The rdma SRQ context
  */
 struct rdma_srq_context
 {
@@ -300,13 +744,23 @@ struct rdma_srq_context
  */
 struct rdma_srq_create_ramrod_data
 {
+	u8 flags;
+#define RDMA_SRQ_CREATE_RAMROD_DATA_XRC_FLAG_MASK         0x1
+#define RDMA_SRQ_CREATE_RAMROD_DATA_XRC_FLAG_SHIFT        0
+#define RDMA_SRQ_CREATE_RAMROD_DATA_RESERVED_KEY_EN_MASK  0x1 /* Only applicable when xrc_flag is set */
+#define RDMA_SRQ_CREATE_RAMROD_DATA_RESERVED_KEY_EN_SHIFT 1
+#define RDMA_SRQ_CREATE_RAMROD_DATA_RESERVED1_MASK        0x3F
+#define RDMA_SRQ_CREATE_RAMROD_DATA_RESERVED1_SHIFT       2
+	u8 reserved2;
+	__le16 xrc_domain /* Only applicable when xrc_flag is set */;
+	__le32 xrc_srq_cq_cid /* Only applicable when xrc_flag is set */;
 	struct regpair pbl_base_addr /* SRQ PBL base address */;
 	__le16 pages_in_srq_pbl /* Number of pages in PBL */;
 	__le16 pd_id;
 	struct rdma_srq_id srq_id /* SRQ Index */;
 	__le16 page_size /* Page size in SGEs(16 bytes) elements. Supports up to 2M bytes page size */;
-	__le16 reserved1;
-	__le32 reserved2;
+	__le16 reserved3;
+	__le32 reserved4;
 	struct regpair producers_addr /* SRQ PBL base address */;
 };
 
@@ -332,212 +786,6 @@ struct rdma_srq_modify_ramrod_data
 
 
 /*
- * The rdma task context of Mstorm
- */
-struct ystorm_rdma_task_st_ctx
-{
-	struct regpair temp[4];
-};
-
-struct e4_ystorm_rdma_task_ag_ctx
-{
-	u8 reserved /* cdu_validation */;
-	u8 byte1 /* state */;
-	__le16 msem_ctx_upd_seq /* icid */;
-	u8 flags0;
-#define E4_YSTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_MASK  0xF /* connection_type */
-#define E4_YSTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_SHIFT 0
-#define E4_YSTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_MASK     0x1 /* exist_in_qm0 */
-#define E4_YSTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_SHIFT    4
-#define E4_YSTORM_RDMA_TASK_AG_CTX_BIT1_MASK             0x1 /* exist_in_qm1 */
-#define E4_YSTORM_RDMA_TASK_AG_CTX_BIT1_SHIFT            5
-#define E4_YSTORM_RDMA_TASK_AG_CTX_VALID_MASK            0x1 /* bit2 */
-#define E4_YSTORM_RDMA_TASK_AG_CTX_VALID_SHIFT           6
-#define E4_YSTORM_RDMA_TASK_AG_CTX_BIT3_MASK             0x1 /* bit3 */
-#define E4_YSTORM_RDMA_TASK_AG_CTX_BIT3_SHIFT            7
-	u8 flags1;
-#define E4_YSTORM_RDMA_TASK_AG_CTX_CF0_MASK              0x3 /* cf0 */
-#define E4_YSTORM_RDMA_TASK_AG_CTX_CF0_SHIFT             0
-#define E4_YSTORM_RDMA_TASK_AG_CTX_CF1_MASK              0x3 /* cf1 */
-#define E4_YSTORM_RDMA_TASK_AG_CTX_CF1_SHIFT             2
-#define E4_YSTORM_RDMA_TASK_AG_CTX_CF2SPECIAL_MASK       0x3 /* cf2special */
-#define E4_YSTORM_RDMA_TASK_AG_CTX_CF2SPECIAL_SHIFT      4
-#define E4_YSTORM_RDMA_TASK_AG_CTX_CF0EN_MASK            0x1 /* cf0en */
-#define E4_YSTORM_RDMA_TASK_AG_CTX_CF0EN_SHIFT           6
-#define E4_YSTORM_RDMA_TASK_AG_CTX_CF1EN_MASK            0x1 /* cf1en */
-#define E4_YSTORM_RDMA_TASK_AG_CTX_CF1EN_SHIFT           7
-	u8 flags2;
-#define E4_YSTORM_RDMA_TASK_AG_CTX_BIT4_MASK             0x1 /* bit4 */
-#define E4_YSTORM_RDMA_TASK_AG_CTX_BIT4_SHIFT            0
-#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE0EN_MASK          0x1 /* rule0en */
-#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE0EN_SHIFT         1
-#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE1EN_MASK          0x1 /* rule1en */
-#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE1EN_SHIFT         2
-#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE2EN_MASK          0x1 /* rule2en */
-#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE2EN_SHIFT         3
-#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE3EN_MASK          0x1 /* rule3en */
-#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE3EN_SHIFT         4
-#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE4EN_MASK          0x1 /* rule4en */
-#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE4EN_SHIFT         5
-#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE5EN_MASK          0x1 /* rule5en */
-#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE5EN_SHIFT         6
-#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE6EN_MASK          0x1 /* rule6en */
-#define E4_YSTORM_RDMA_TASK_AG_CTX_RULE6EN_SHIFT         7
-	u8 key /* byte2 */;
-	__le32 mw_cnt /* reg0 */;
-	u8 ref_cnt_seq /* byte3 */;
-	u8 ctx_upd_seq /* byte4 */;
-	__le16 dif_flags /* word1 */;
-	__le16 tx_ref_count /* word2 */;
-	__le16 last_used_ltid /* word3 */;
-	__le16 parent_mr_lo /* word4 */;
-	__le16 parent_mr_hi /* word5 */;
-	__le32 fbo_lo /* reg1 */;
-	__le32 fbo_hi /* reg2 */;
-};
-
-struct e4_mstorm_rdma_task_ag_ctx
-{
-	u8 reserved /* cdu_validation */;
-	u8 byte1 /* state */;
-	__le16 icid /* icid */;
-	u8 flags0;
-#define E4_MSTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_MASK  0xF /* connection_type */
-#define E4_MSTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_SHIFT 0
-#define E4_MSTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_MASK     0x1 /* exist_in_qm0 */
-#define E4_MSTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_SHIFT    4
-#define E4_MSTORM_RDMA_TASK_AG_CTX_BIT1_MASK             0x1 /* exist_in_qm1 */
-#define E4_MSTORM_RDMA_TASK_AG_CTX_BIT1_SHIFT            5
-#define E4_MSTORM_RDMA_TASK_AG_CTX_BIT2_MASK             0x1 /* bit2 */
-#define E4_MSTORM_RDMA_TASK_AG_CTX_BIT2_SHIFT            6
-#define E4_MSTORM_RDMA_TASK_AG_CTX_BIT3_MASK             0x1 /* bit3 */
-#define E4_MSTORM_RDMA_TASK_AG_CTX_BIT3_SHIFT            7
-	u8 flags1;
-#define E4_MSTORM_RDMA_TASK_AG_CTX_CF0_MASK              0x3 /* cf0 */
-#define E4_MSTORM_RDMA_TASK_AG_CTX_CF0_SHIFT             0
-#define E4_MSTORM_RDMA_TASK_AG_CTX_CF1_MASK              0x3 /* cf1 */
-#define E4_MSTORM_RDMA_TASK_AG_CTX_CF1_SHIFT             2
-#define E4_MSTORM_RDMA_TASK_AG_CTX_CF2_MASK              0x3 /* cf2 */
-#define E4_MSTORM_RDMA_TASK_AG_CTX_CF2_SHIFT             4
-#define E4_MSTORM_RDMA_TASK_AG_CTX_CF0EN_MASK            0x1 /* cf0en */
-#define E4_MSTORM_RDMA_TASK_AG_CTX_CF0EN_SHIFT           6
-#define E4_MSTORM_RDMA_TASK_AG_CTX_CF1EN_MASK            0x1 /* cf1en */
-#define E4_MSTORM_RDMA_TASK_AG_CTX_CF1EN_SHIFT           7
-	u8 flags2;
-#define E4_MSTORM_RDMA_TASK_AG_CTX_CF2EN_MASK            0x1 /* cf2en */
-#define E4_MSTORM_RDMA_TASK_AG_CTX_CF2EN_SHIFT           0
-#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE0EN_MASK          0x1 /* rule0en */
-#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE0EN_SHIFT         1
-#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE1EN_MASK          0x1 /* rule1en */
-#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE1EN_SHIFT         2
-#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE2EN_MASK          0x1 /* rule2en */
-#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE2EN_SHIFT         3
-#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE3EN_MASK          0x1 /* rule3en */
-#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE3EN_SHIFT         4
-#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE4EN_MASK          0x1 /* rule4en */
-#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE4EN_SHIFT         5
-#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE5EN_MASK          0x1 /* rule5en */
-#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE5EN_SHIFT         6
-#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE6EN_MASK          0x1 /* rule6en */
-#define E4_MSTORM_RDMA_TASK_AG_CTX_RULE6EN_SHIFT         7
-	u8 key /* byte2 */;
-	__le32 mw_cnt /* reg0 */;
-	u8 ref_cnt_seq /* byte3 */;
-	u8 ctx_upd_seq /* byte4 */;
-	__le16 dif_flags /* word1 */;
-	__le16 tx_ref_count /* word2 */;
-	__le16 last_used_ltid /* word3 */;
-	__le16 parent_mr_lo /* word4 */;
-	__le16 parent_mr_hi /* word5 */;
-	__le32 fbo_lo /* reg1 */;
-	__le32 fbo_hi /* reg2 */;
-};
-
-/*
- * The roce task context of Ustorm
- */
-struct ustorm_rdma_task_st_ctx
-{
-	struct regpair temp[2];
-};
-
-struct e4_ustorm_rdma_task_ag_ctx
-{
-	u8 reserved /* cdu_validation */;
-	u8 byte1 /* state */;
-	__le16 icid /* icid */;
-	u8 flags0;
-#define E4_USTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_MASK         0xF /* connection_type */
-#define E4_USTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_SHIFT        0
-#define E4_USTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_MASK            0x1 /* exist_in_qm0 */
-#define E4_USTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_SHIFT           4
-#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_RUNT_VALID_MASK          0x1 /* exist_in_qm1 */
-#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_RUNT_VALID_SHIFT         5
-#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_WRITE_RESULT_CF_MASK     0x3 /* timer0cf */
-#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_WRITE_RESULT_CF_SHIFT    6
-	u8 flags1;
-#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_RESULT_TOGGLE_BIT_MASK   0x3 /* timer1cf */
-#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_RESULT_TOGGLE_BIT_SHIFT  0
-#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_TX_IO_FLG_MASK           0x3 /* timer2cf */
-#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_TX_IO_FLG_SHIFT          2
-#define E4_USTORM_RDMA_TASK_AG_CTX_CF3_MASK                     0x3 /* timer_stop_all */
-#define E4_USTORM_RDMA_TASK_AG_CTX_CF3_SHIFT                    4
-#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_CF_MASK            0x3 /* cf4 */
-#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_CF_SHIFT           6
-	u8 flags2;
-#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_WRITE_RESULT_CF_EN_MASK  0x1 /* cf0en */
-#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_WRITE_RESULT_CF_EN_SHIFT 0
-#define E4_USTORM_RDMA_TASK_AG_CTX_RESERVED2_MASK               0x1 /* cf1en */
-#define E4_USTORM_RDMA_TASK_AG_CTX_RESERVED2_SHIFT              1
-#define E4_USTORM_RDMA_TASK_AG_CTX_RESERVED3_MASK               0x1 /* cf2en */
-#define E4_USTORM_RDMA_TASK_AG_CTX_RESERVED3_SHIFT              2
-#define E4_USTORM_RDMA_TASK_AG_CTX_CF3EN_MASK                   0x1 /* cf3en */
-#define E4_USTORM_RDMA_TASK_AG_CTX_CF3EN_SHIFT                  3
-#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_CF_EN_MASK         0x1 /* cf4en */
-#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_CF_EN_SHIFT        4
-#define E4_USTORM_RDMA_TASK_AG_CTX_RULE0EN_MASK                 0x1 /* rule0en */
-#define E4_USTORM_RDMA_TASK_AG_CTX_RULE0EN_SHIFT                5
-#define E4_USTORM_RDMA_TASK_AG_CTX_RULE1EN_MASK                 0x1 /* rule1en */
-#define E4_USTORM_RDMA_TASK_AG_CTX_RULE1EN_SHIFT                6
-#define E4_USTORM_RDMA_TASK_AG_CTX_RULE2EN_MASK                 0x1 /* rule2en */
-#define E4_USTORM_RDMA_TASK_AG_CTX_RULE2EN_SHIFT                7
-	u8 flags3;
-#define E4_USTORM_RDMA_TASK_AG_CTX_RULE3EN_MASK                 0x1 /* rule3en */
-#define E4_USTORM_RDMA_TASK_AG_CTX_RULE3EN_SHIFT                0
-#define E4_USTORM_RDMA_TASK_AG_CTX_RULE4EN_MASK                 0x1 /* rule4en */
-#define E4_USTORM_RDMA_TASK_AG_CTX_RULE4EN_SHIFT                1
-#define E4_USTORM_RDMA_TASK_AG_CTX_RULE5EN_MASK                 0x1 /* rule5en */
-#define E4_USTORM_RDMA_TASK_AG_CTX_RULE5EN_SHIFT                2
-#define E4_USTORM_RDMA_TASK_AG_CTX_RULE6EN_MASK                 0x1 /* rule6en */
-#define E4_USTORM_RDMA_TASK_AG_CTX_RULE6EN_SHIFT                3
-#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_TYPE_MASK          0xF /* nibble1 */
-#define E4_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_TYPE_SHIFT         4
-	__le32 dif_err_intervals /* reg0 */;
-	__le32 dif_error_1st_interval /* reg1 */;
-	__le32 reg2 /* reg2 */;
-	__le32 dif_runt_value /* reg3 */;
-	__le32 reg4 /* reg4 */;
-	__le32 reg5 /* reg5 */;
-};
-
-/*
- * RDMA task context
- */
-struct rdma_task_context
-{
-	struct ystorm_rdma_task_st_ctx ystorm_st_context /* ystorm storm context */;
-	struct e4_ystorm_rdma_task_ag_ctx ystorm_ag_context /* ystorm aggregative context */;
-	struct tdif_task_context tdif_context /* tdif context */;
-	struct e4_mstorm_rdma_task_ag_ctx mstorm_ag_context /* mstorm aggregative context */;
-	struct mstorm_rdma_task_st_ctx mstorm_st_context /* mstorm storm context */;
-	struct rdif_task_context rdif_context /* rdif context */;
-	struct ustorm_rdma_task_st_ctx ustorm_st_context /* ustorm storm context */;
-	struct regpair ustorm_st_padding[2] /* padding */;
-	struct e4_ustorm_rdma_task_ag_ctx ustorm_ag_context /* ustorm aggregative context */;
-};
-
-
-/*
  * RDMA Tid type enumeration (for register_tid ramrod)
  */
 enum rdma_tid_type
@@ -547,6 +795,15 @@ enum rdma_tid_type
 	RDMA_TID_MW_TYPE1,
 	RDMA_TID_MW_TYPE2A,
 	MAX_RDMA_TID_TYPE
+};
+
+
+/*
+ * The rdma XRC SRQ context
+ */
+struct rdma_xrc_srq_context
+{
+	struct regpair temp[9];
 };
 
 
@@ -1397,77 +1654,6 @@ struct e5_mstorm_rdma_conn_ag_ctx
 };
 
 
-struct e5_mstorm_rdma_task_ag_ctx
-{
-	u8 reserved /* cdu_validation */;
-	u8 byte1 /* state_and_core_id */;
-	__le16 icid /* icid */;
-	u8 flags0;
-#define E5_MSTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_MASK  0xF /* connection_type */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_SHIFT 0
-#define E5_MSTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_MASK     0x1 /* exist_in_qm0 */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_SHIFT    4
-#define E5_MSTORM_RDMA_TASK_AG_CTX_BIT1_MASK             0x1 /* exist_in_qm1 */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_BIT1_SHIFT            5
-#define E5_MSTORM_RDMA_TASK_AG_CTX_BIT2_MASK             0x1 /* bit2 */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_BIT2_SHIFT            6
-#define E5_MSTORM_RDMA_TASK_AG_CTX_BIT3_MASK             0x1 /* bit3 */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_BIT3_SHIFT            7
-	u8 flags1;
-#define E5_MSTORM_RDMA_TASK_AG_CTX_CF0_MASK              0x3 /* cf0 */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_CF0_SHIFT             0
-#define E5_MSTORM_RDMA_TASK_AG_CTX_CF1_MASK              0x3 /* cf1 */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_CF1_SHIFT             2
-#define E5_MSTORM_RDMA_TASK_AG_CTX_CF2_MASK              0x3 /* cf2 */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_CF2_SHIFT             4
-#define E5_MSTORM_RDMA_TASK_AG_CTX_CF0EN_MASK            0x1 /* cf0en */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_CF0EN_SHIFT           6
-#define E5_MSTORM_RDMA_TASK_AG_CTX_CF1EN_MASK            0x1 /* cf1en */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_CF1EN_SHIFT           7
-	u8 flags2;
-#define E5_MSTORM_RDMA_TASK_AG_CTX_CF2EN_MASK            0x1 /* cf2en */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_CF2EN_SHIFT           0
-#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE0EN_MASK          0x1 /* rule0en */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE0EN_SHIFT         1
-#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE1EN_MASK          0x1 /* rule1en */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE1EN_SHIFT         2
-#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE2EN_MASK          0x1 /* rule2en */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE2EN_SHIFT         3
-#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE3EN_MASK          0x1 /* rule3en */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE3EN_SHIFT         4
-#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE4EN_MASK          0x1 /* rule4en */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE4EN_SHIFT         5
-#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE5EN_MASK          0x1 /* rule5en */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE5EN_SHIFT         6
-#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE6EN_MASK          0x1 /* rule6en */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_RULE6EN_SHIFT         7
-	u8 flags3;
-#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED1_MASK     0x1 /* bit4 */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED1_SHIFT    0
-#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED2_MASK     0x3 /* cf3 */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED2_SHIFT    1
-#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED3_MASK     0x3 /* cf4 */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED3_SHIFT    3
-#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED4_MASK     0x1 /* cf3en */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED4_SHIFT    5
-#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED5_MASK     0x1 /* cf4en */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED5_SHIFT    6
-#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED6_MASK     0x1 /* rule7en */
-#define E5_MSTORM_RDMA_TASK_AG_CTX_E4_RESERVED6_SHIFT    7
-	__le32 mw_cnt /* reg0 */;
-	u8 key /* byte2 */;
-	u8 ref_cnt_seq /* byte3 */;
-	u8 ctx_upd_seq /* byte4 */;
-	u8 e4_reserved7 /* byte5 */;
-	__le16 dif_flags /* regpair0 */;
-	__le16 tx_ref_count /* word2 */;
-	__le16 last_used_ltid /* word3 */;
-	__le16 parent_mr_lo /* word4 */;
-	__le16 parent_mr_hi /* regpair1 */;
-	__le16 e4_reserved8 /* word6 */;
-	__le32 fbo_lo /* reg1 */;
-};
-
 
 struct e5_tstorm_rdma_conn_ag_ctx
 {
@@ -1755,82 +1941,6 @@ struct e5_ustorm_rdma_conn_ag_ctx
 };
 
 
-struct e5_ustorm_rdma_task_ag_ctx
-{
-	u8 reserved /* cdu_validation */;
-	u8 byte1 /* state_and_core_id */;
-	__le16 icid /* icid */;
-	u8 flags0;
-#define E5_USTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_MASK         0xF /* connection_type */
-#define E5_USTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_SHIFT        0
-#define E5_USTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_MASK            0x1 /* exist_in_qm0 */
-#define E5_USTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_SHIFT           4
-#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_RUNT_VALID_MASK          0x1 /* exist_in_qm1 */
-#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_RUNT_VALID_SHIFT         5
-#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_WRITE_RESULT_CF_MASK     0x3 /* timer0cf */
-#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_WRITE_RESULT_CF_SHIFT    6
-	u8 flags1;
-#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_RESULT_TOGGLE_BIT_MASK   0x3 /* timer1cf */
-#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_RESULT_TOGGLE_BIT_SHIFT  0
-#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_TX_IO_FLG_MASK           0x3 /* timer2cf */
-#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_TX_IO_FLG_SHIFT          2
-#define E5_USTORM_RDMA_TASK_AG_CTX_CF3_MASK                     0x3 /* timer_stop_all */
-#define E5_USTORM_RDMA_TASK_AG_CTX_CF3_SHIFT                    4
-#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_CF_MASK            0x3 /* dif_error_cf */
-#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_CF_SHIFT           6
-	u8 flags2;
-#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_WRITE_RESULT_CF_EN_MASK  0x1 /* cf0en */
-#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_WRITE_RESULT_CF_EN_SHIFT 0
-#define E5_USTORM_RDMA_TASK_AG_CTX_RESERVED2_MASK               0x1 /* cf1en */
-#define E5_USTORM_RDMA_TASK_AG_CTX_RESERVED2_SHIFT              1
-#define E5_USTORM_RDMA_TASK_AG_CTX_RESERVED3_MASK               0x1 /* cf2en */
-#define E5_USTORM_RDMA_TASK_AG_CTX_RESERVED3_SHIFT              2
-#define E5_USTORM_RDMA_TASK_AG_CTX_CF3EN_MASK                   0x1 /* cf3en */
-#define E5_USTORM_RDMA_TASK_AG_CTX_CF3EN_SHIFT                  3
-#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_CF_EN_MASK         0x1 /* cf4en */
-#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_CF_EN_SHIFT        4
-#define E5_USTORM_RDMA_TASK_AG_CTX_RULE0EN_MASK                 0x1 /* rule0en */
-#define E5_USTORM_RDMA_TASK_AG_CTX_RULE0EN_SHIFT                5
-#define E5_USTORM_RDMA_TASK_AG_CTX_RULE1EN_MASK                 0x1 /* rule1en */
-#define E5_USTORM_RDMA_TASK_AG_CTX_RULE1EN_SHIFT                6
-#define E5_USTORM_RDMA_TASK_AG_CTX_RULE2EN_MASK                 0x1 /* rule2en */
-#define E5_USTORM_RDMA_TASK_AG_CTX_RULE2EN_SHIFT                7
-	u8 flags3;
-#define E5_USTORM_RDMA_TASK_AG_CTX_RULE3EN_MASK                 0x1 /* rule3en */
-#define E5_USTORM_RDMA_TASK_AG_CTX_RULE3EN_SHIFT                0
-#define E5_USTORM_RDMA_TASK_AG_CTX_RULE4EN_MASK                 0x1 /* rule4en */
-#define E5_USTORM_RDMA_TASK_AG_CTX_RULE4EN_SHIFT                1
-#define E5_USTORM_RDMA_TASK_AG_CTX_RULE5EN_MASK                 0x1 /* rule5en */
-#define E5_USTORM_RDMA_TASK_AG_CTX_RULE5EN_SHIFT                2
-#define E5_USTORM_RDMA_TASK_AG_CTX_RULE6EN_MASK                 0x1 /* rule6en */
-#define E5_USTORM_RDMA_TASK_AG_CTX_RULE6EN_SHIFT                3
-#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED1_MASK            0x1 /* bit2 */
-#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED1_SHIFT           4
-#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED2_MASK            0x1 /* bit3 */
-#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED2_SHIFT           5
-#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED3_MASK            0x1 /* bit4 */
-#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED3_SHIFT           6
-#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED4_MASK            0x1 /* rule7en */
-#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED4_SHIFT           7
-	u8 flags4;
-#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED5_MASK            0x3 /* cf5 */
-#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED5_SHIFT           0
-#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED6_MASK            0x1 /* cf5en */
-#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED6_SHIFT           2
-#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED7_MASK            0x1 /* rule8en */
-#define E5_USTORM_RDMA_TASK_AG_CTX_E4_RESERVED7_SHIFT           3
-#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_TYPE_MASK          0xF /* dif_error_type */
-#define E5_USTORM_RDMA_TASK_AG_CTX_DIF_ERROR_TYPE_SHIFT         4
-	u8 byte2 /* byte2 */;
-	u8 byte3 /* byte3 */;
-	u8 e4_reserved8 /* byte4 */;
-	__le32 dif_err_intervals /* dif_err_intervals */;
-	__le32 dif_error_1st_interval /* dif_error_1st_interval */;
-	__le32 reg2 /* reg2 */;
-	__le32 dif_runt_value /* reg3 */;
-	__le32 reg4 /* reg4 */;
-};
-
 
 struct e5_xstorm_rdma_conn_ag_ctx
 {
@@ -1864,8 +1974,8 @@ struct e5_xstorm_rdma_conn_ag_ctx
 #define E5_XSTORM_RDMA_CONN_AG_CTX_BIT11_SHIFT            3
 #define E5_XSTORM_RDMA_CONN_AG_CTX_BIT12_MASK             0x1 /* bit12 */
 #define E5_XSTORM_RDMA_CONN_AG_CTX_BIT12_SHIFT            4
-#define E5_XSTORM_RDMA_CONN_AG_CTX_BIT13_MASK             0x1 /* bit13 */
-#define E5_XSTORM_RDMA_CONN_AG_CTX_BIT13_SHIFT            5
+#define E5_XSTORM_RDMA_CONN_AG_CTX_MSTORM_FLUSH_MASK      0x1 /* bit13 */
+#define E5_XSTORM_RDMA_CONN_AG_CTX_MSTORM_FLUSH_SHIFT     5
 #define E5_XSTORM_RDMA_CONN_AG_CTX_BIT14_MASK             0x1 /* bit14 */
 #define E5_XSTORM_RDMA_CONN_AG_CTX_BIT14_SHIFT            6
 #define E5_XSTORM_RDMA_CONN_AG_CTX_YSTORM_FLUSH_MASK      0x1 /* bit15 */
@@ -2108,76 +2218,5 @@ struct e5_ystorm_rdma_conn_ag_ctx
 	__le32 reg3 /* reg3 */;
 };
 
-
-struct e5_ystorm_rdma_task_ag_ctx
-{
-	u8 reserved /* cdu_validation */;
-	u8 byte1 /* state_and_core_id */;
-	__le16 msem_ctx_upd_seq /* icid */;
-	u8 flags0;
-#define E5_YSTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_MASK  0xF /* connection_type */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_CONNECTION_TYPE_SHIFT 0
-#define E5_YSTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_MASK     0x1 /* exist_in_qm0 */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_EXIST_IN_QM0_SHIFT    4
-#define E5_YSTORM_RDMA_TASK_AG_CTX_BIT1_MASK             0x1 /* exist_in_qm1 */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_BIT1_SHIFT            5
-#define E5_YSTORM_RDMA_TASK_AG_CTX_VALID_MASK            0x1 /* bit2 */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_VALID_SHIFT           6
-#define E5_YSTORM_RDMA_TASK_AG_CTX_BIT3_MASK             0x1 /* bit3 */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_BIT3_SHIFT            7
-	u8 flags1;
-#define E5_YSTORM_RDMA_TASK_AG_CTX_CF0_MASK              0x3 /* cf0 */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_CF0_SHIFT             0
-#define E5_YSTORM_RDMA_TASK_AG_CTX_CF1_MASK              0x3 /* cf1 */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_CF1_SHIFT             2
-#define E5_YSTORM_RDMA_TASK_AG_CTX_CF2SPECIAL_MASK       0x3 /* cf2special */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_CF2SPECIAL_SHIFT      4
-#define E5_YSTORM_RDMA_TASK_AG_CTX_CF0EN_MASK            0x1 /* cf0en */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_CF0EN_SHIFT           6
-#define E5_YSTORM_RDMA_TASK_AG_CTX_CF1EN_MASK            0x1 /* cf1en */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_CF1EN_SHIFT           7
-	u8 flags2;
-#define E5_YSTORM_RDMA_TASK_AG_CTX_BIT4_MASK             0x1 /* bit4 */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_BIT4_SHIFT            0
-#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE0EN_MASK          0x1 /* rule0en */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE0EN_SHIFT         1
-#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE1EN_MASK          0x1 /* rule1en */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE1EN_SHIFT         2
-#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE2EN_MASK          0x1 /* rule2en */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE2EN_SHIFT         3
-#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE3EN_MASK          0x1 /* rule3en */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE3EN_SHIFT         4
-#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE4EN_MASK          0x1 /* rule4en */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE4EN_SHIFT         5
-#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE5EN_MASK          0x1 /* rule5en */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE5EN_SHIFT         6
-#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE6EN_MASK          0x1 /* rule6en */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_RULE6EN_SHIFT         7
-	u8 flags3;
-#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED1_MASK     0x1 /* bit5 */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED1_SHIFT    0
-#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED2_MASK     0x3 /* cf3 */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED2_SHIFT    1
-#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED3_MASK     0x3 /* cf4 */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED3_SHIFT    3
-#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED4_MASK     0x1 /* cf3en */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED4_SHIFT    5
-#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED5_MASK     0x1 /* cf4en */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED5_SHIFT    6
-#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED6_MASK     0x1 /* rule7en */
-#define E5_YSTORM_RDMA_TASK_AG_CTX_E4_RESERVED6_SHIFT    7
-	__le32 mw_cnt /* reg0 */;
-	u8 key /* byte2 */;
-	u8 ref_cnt_seq /* byte3 */;
-	u8 ctx_upd_seq /* byte4 */;
-	u8 e4_reserved7 /* byte5 */;
-	__le16 dif_flags /* word1 */;
-	__le16 tx_ref_count /* word2 */;
-	__le16 last_used_ltid /* word3 */;
-	__le16 parent_mr_lo /* word4 */;
-	__le16 parent_mr_hi /* word5 */;
-	__le16 e4_reserved8 /* word6 */;
-	__le32 fbo_lo /* reg1 */;
-};
 
 #endif /* __ECORE_HSI_RDMA__ */

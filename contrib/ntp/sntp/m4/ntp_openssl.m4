@@ -85,7 +85,12 @@ case "$with_crypto:${PKG_CONFIG:+notempty}:${with_openssl_libdir-notgiven}:${wit
 	    VER_SUFFIX=o
 	    ntp_openssl=yes
 	    ntp_openssl_from_pkg_config=yes
-	    AC_MSG_RESULT([yes])
+	    ntp_openssl_version="`$PKG_CONFIG --modversion $pkg`"
+	    case "$ntp_openssl_version" in
+	     *.*) ;;
+	     *) ntp_openssl_version='(unknown)' ;;
+	    esac
+	    AC_MSG_RESULT([yes, version $ntp_openssl_version])
 
 	    break
 	fi
@@ -237,6 +242,7 @@ AC_MSG_RESULT([$ntp_openssl])
 
 case "$ntp_openssl" in
  yes)
+    AC_CHECK_HEADERS([openssl/cmac.h openssl/hmac.h])
     AC_DEFINE([OPENSSL], [], [Use OpenSSL?])
     case "$VER_SUFFIX" in
      *o*) ;;

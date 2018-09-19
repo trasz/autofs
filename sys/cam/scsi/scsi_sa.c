@@ -2294,7 +2294,7 @@ sasysctlinit(void *context, int pending)
 {
 	struct cam_periph *periph;
 	struct sa_softc *softc;
-	char tmpstr[80], tmpstr2[80];
+	char tmpstr[32], tmpstr2[16];
 
 	periph = (struct cam_periph *)context;
 	/*
@@ -3454,12 +3454,13 @@ saerror(union ccb *ccb, u_int32_t cflgs, u_int32_t sflgs)
 			break;
 		}
 		/*
-		 * If this was just EOM/EOP, Filemark, Setmark or ILI detected
-		 * on a non read/write command, we assume it's not an error
-		 * and propagate the residule and return.
+		 * If this was just EOM/EOP, Filemark, Setmark, ILI or
+		 * PEW detected on a non read/write command, we assume
+		 * it's not an error and propagate the residual and return.
 		 */
-		if ((aqvalid && asc == 0 && ascq > 0 && ascq <= 5) ||
-		    (aqvalid == 0 && sense_key == SSD_KEY_NO_SENSE)) {
+		if ((aqvalid && asc == 0 && ((ascq > 0 && ascq <= 5)
+		  || (ascq == 0x07)))
+		 || (aqvalid == 0 && sense_key == SSD_KEY_NO_SENSE)) {
 			csio->resid = resid;
 			QFRLS(ccb);
 			return (0);
@@ -4465,7 +4466,18 @@ saextget(struct cdev *dev, struct cam_periph *periph, struct sbuf *sb,
 		if (cgd.serial_num_len > sizeof(tmpstr)) {
 			ts2_len = cgd.serial_num_len + 1;
 			ts2_malloc = 1;
-			tmpstr2 = malloc(ts2_len, M_SCSISA, M_WAITOK | M_ZERO);
+			tmpstr2 = malloc(ts2_len, M_SCSISA, M_NOWAIT | M_ZERO);
+			/*
+			 * The 80 characters allocated on the stack above
+			 * will handle the vast majority of serial numbers.
+			 * If we run into one that is larger than that, and
+			 * we can't malloc the length without blocking,
+			 * bail out with an out of memory error.
+			 */
+			if (tmpstr2 == NULL) {
+				error = ENOMEM;
+				goto extget_bailout;
+			}
 		} else {
 			ts2_len = sizeof(tmpstr);
 			ts2_malloc = 0;

@@ -99,6 +99,7 @@ __FBSDID("$FreeBSD$");
 #include <vm/vm_object.h>
 #include <vm/vm_pager.h>
 #include <vm/vm_param.h>
+#include <vm/vm_phys.h>
 
 #ifdef DDB
 #ifndef KDB
@@ -444,9 +445,6 @@ osendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
 	 * Copy the sigframe out to the user's stack.
 	 */
 	if (copyout(&sf, fp, sizeof(*fp)) != 0) {
-#ifdef DEBUG
-		printf("process %ld has trashed its stack\n", (long)p->p_pid);
-#endif
 		PROC_LOCK(p);
 		sigexit(td, SIGILL);
 	}
@@ -573,9 +571,6 @@ freebsd4_sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
 	 * Copy the sigframe out to the user's stack.
 	 */
 	if (copyout(&sf, sfp, sizeof(*sfp)) != 0) {
-#ifdef DEBUG
-		printf("process %ld has trashed its stack\n", (long)p->p_pid);
-#endif
 		PROC_LOCK(p);
 		sigexit(td, SIGILL);
 	}
@@ -739,9 +734,6 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
 	    (xfpusave != NULL && copyout(xfpusave,
 	    (void *)sf.sf_uc.uc_mcontext.mc_xfpustate, xfpusave_len)
 	    != 0)) {
-#ifdef DEBUG
-		printf("process %ld has trashed its stack\n", (long)p->p_pid);
-#endif
 		PROC_LOCK(p);
 		sigexit(td, SIGILL);
 	}
@@ -1133,8 +1125,12 @@ sys_sigreturn(td, uap)
 void
 exec_setregs(struct thread *td, struct image_params *imgp, u_long stack)
 {
-	struct trapframe *regs = td->td_frame;
-	struct pcb *pcb = td->td_pcb;
+	struct trapframe *regs;
+	struct pcb *pcb;
+	register_t saved_eflags;
+
+	regs = td->td_frame;
+	pcb = td->td_pcb;
 
 	/* Reset pc->pcb_gs and %gs before possibly invalidating it. */
 	pcb->pcb_gs = _udatasel;
@@ -1146,10 +1142,20 @@ exec_setregs(struct thread *td, struct image_params *imgp, u_long stack)
 	else
 		mtx_unlock_spin(&dt_lock);
   
+	/*
+	 * Reset the fs and gs bases.  The values from the old address
+	 * space do not make sense for the new program.  In particular,
+	 * gsbase might be the TLS base for the old program but the new
+	 * program has no TLS now.
+	 */
+	set_fsbase(td, 0);
+	set_gsbase(td, 0);
+
+	saved_eflags = regs->tf_eflags & PSL_T;
 	bzero((char *)regs, sizeof(struct trapframe));
 	regs->tf_eip = imgp->entry_addr;
 	regs->tf_esp = stack;
-	regs->tf_eflags = PSL_USER | (regs->tf_eflags & PSL_T);
+	regs->tf_eflags = PSL_USER | saved_eflags;
 	regs->tf_ss = _udatasel;
 	regs->tf_ds = _udatasel;
 	regs->tf_es = _udatasel;
@@ -2076,6 +2082,12 @@ getmemsize(int first)
 	basemem = 0;
 
 	/*
+	 * Tell the physical memory allocator about pages used to store
+	 * the kernel and preloaded data.  See kmem_bootstrap_free().
+	 */
+	vm_phys_add_seg((vm_paddr_t)KERNLOAD, trunc_page(first));
+
+	/*
 	 * Check if the loader supplied an SMAP memory map.  If so,
 	 * use that and do not make any VM86 calls.
 	 */
@@ -2441,6 +2453,7 @@ init386(int first)
 	int gsel_tss, metadata_missing, x, pa;
 	struct pcpu *pc;
 	struct xstate_hdr *xhdr;
+	caddr_t kmdp;
 	int late_console;
 
 	thread0.td_kstack = proc0kstack;
@@ -2471,6 +2484,8 @@ init386(int first)
 		init_static_kenv((char *)bootinfo.bi_envp + KERNBASE, 0);
 	else
 		init_static_kenv(NULL, 0);
+
+	identify_hypervisor();
 
 	/* Init basic tunables, hz etc */
 	init_param1();
@@ -2577,7 +2592,7 @@ init386(int first)
 	    GSEL(GCODE_SEL, SEL_KPL));
 #endif
 #ifdef XENHVM
-	setidt(IDT_EVTCHN, &IDTVEC(xen_intr_upcall), SDT_SYS386IGT, SEL_UPL,
+	setidt(IDT_EVTCHN, &IDTVEC(xen_intr_upcall), SDT_SYS386IGT, SEL_KPL,
 	    GSEL(GCODE_SEL, SEL_KPL));
 #endif
 
@@ -2685,6 +2700,9 @@ init386(int first)
 		cninit();
 		i386_kdb_init();
 	}
+
+	kmdp = preload_search_by_type("elf kernel");
+	link_elf_ireloc(kmdp);
 
 	vm86_initialize();
 	getmemsize(first);
@@ -2903,14 +2921,21 @@ ptrace_set_pc(struct thread *td, u_long addr)
 int
 ptrace_single_step(struct thread *td)
 {
-	td->td_frame->tf_eflags |= PSL_T;
+
+	PROC_LOCK_ASSERT(td->td_proc, MA_OWNED);
+	if ((td->td_frame->tf_eflags & PSL_T) == 0) {
+		td->td_frame->tf_eflags |= PSL_T;
+		td->td_dbgflags |= TDB_STEP;
+	}
 	return (0);
 }
 
 int
 ptrace_clear_single_step(struct thread *td)
 {
+	PROC_LOCK_ASSERT(td->td_proc, MA_OWNED);
 	td->td_frame->tf_eflags &= ~PSL_T;
+	td->td_dbgflags &= ~TDB_STEP;
 	return (0);
 }
 
@@ -2998,6 +3023,7 @@ int
 set_fpregs(struct thread *td, struct fpreg *fpregs)
 {
 
+	critical_enter();
 	if (cpu_fxsr)
 		npx_set_fpregs_xmm((struct save87 *)fpregs,
 		    &get_pcb_user_save_td(td)->sv_xmm);
@@ -3005,6 +3031,7 @@ set_fpregs(struct thread *td, struct fpreg *fpregs)
 		bcopy(fpregs, &get_pcb_user_save_td(td)->sv_87,
 		    sizeof(*fpregs));
 	npxuserinited(td);
+	critical_exit();
 	return (0);
 }
 
@@ -3136,7 +3163,6 @@ static int
 set_fpcontext(struct thread *td, mcontext_t *mcp, char *xfpustate,
     size_t xfpustate_len)
 {
-	union savefpu *fpstate;
 	int error;
 
 	if (mcp->mc_fpformat == _MC_FPFMT_NODEV)
@@ -3150,10 +3176,8 @@ set_fpcontext(struct thread *td, mcontext_t *mcp, char *xfpustate,
 		error = 0;
 	} else if (mcp->mc_ownedfp == _MC_FPOWNED_FPU ||
 	    mcp->mc_ownedfp == _MC_FPOWNED_PCB) {
-		fpstate = (union savefpu *)&mcp->mc_fpstate;
-		if (cpu_fxsr)
-			fpstate->sv_xmm.sv_env.en_mxcsr &= cpu_mxcsr_mask;
-		error = npxsetregs(td, fpstate, xfpustate, xfpustate_len);
+		error = npxsetregs(td, (union savefpu *)&mcp->mc_fpstate,
+		    xfpustate, xfpustate_len);
 	} else
 		return (EINVAL);
 	return (error);
@@ -3297,14 +3321,23 @@ set_dbregs(struct thread *td, struct dbreg *dbregs)
  * breakpoint was in user space.  Return 0, otherwise.
  */
 int
-user_dbreg_trap(void)
+user_dbreg_trap(register_t dr6)
 {
-        u_int32_t dr7, dr6; /* debug registers dr6 and dr7 */
+        u_int32_t dr7;
         u_int32_t bp;       /* breakpoint bits extracted from dr6 */
         int nbp;            /* number of breakpoints that triggered */
         caddr_t addr[4];    /* breakpoint addresses */
         int i;
-        
+
+        bp = dr6 & DBREG_DR6_BMASK;
+        if (bp == 0) {
+                /*
+                 * None of the breakpoint bits are set meaning this
+                 * trap was not caused by any of the debug registers
+                 */
+                return 0;
+        }
+
         dr7 = rdr7();
         if ((dr7 & 0x000000ff) == 0) {
                 /*
@@ -3316,16 +3349,6 @@ user_dbreg_trap(void)
         }
 
         nbp = 0;
-        dr6 = rdr6();
-        bp = dr6 & 0x0000000f;
-
-        if (!bp) {
-                /*
-                 * None of the breakpoint bits are set meaning this
-                 * trap was not caused by any of the debug registers
-                 */
-                return 0;
-        }
 
         /*
          * at least one of the breakpoints were hit, check to see

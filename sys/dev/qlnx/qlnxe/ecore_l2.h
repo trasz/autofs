@@ -28,7 +28,6 @@
  *
  */
 
-
 #ifndef __ECORE_L2_H__
 #define __ECORE_L2_H__
 
@@ -87,6 +86,8 @@ struct ecore_queue_cid {
 	u32 cid;
 	u16 opaque_fid;
 
+	bool b_is_rx;
+
 	/* VFs queues are mapped differently, so we need to know the
 	 * relative queue associated with them [0-based].
 	 * Notice this is relevant on the *PF* queue-cid of its VF's queues,
@@ -119,6 +120,7 @@ void ecore_eth_queue_cid_release(struct ecore_hwfn *p_hwfn,
 struct ecore_queue_cid *
 ecore_eth_queue_to_cid(struct ecore_hwfn *p_hwfn, u16 opaque_fid,
 		       struct ecore_queue_start_common_params *p_params,
+		       bool b_is_rx,
 		       struct ecore_queue_cid_vf_params *p_vf_params);
 
 enum _ecore_status_t
@@ -164,31 +166,24 @@ ecore_eth_txq_start_ramrod(struct ecore_hwfn *p_hwfn,
 
 u8 ecore_mcast_bin_from_mac(u8 *mac);
 
-/**
- * @brief - ecore_configure_rfs_ntuple_filter
- *
- * This ramrod should be used to add or remove arfs hw filter
- *
- * @params p_hwfn
- * @params p_ptt
- * @params p_cb		Used for ECORE_SPQ_MODE_CB,where client would initialize
-			it with cookie and callback function address, if not
-			using this mode then client must pass NULL.
- * @params p_addr	p_addr is an actual packet header that needs to be
- *			filter. It has to mapped with IO to read prior to
- *			calling this, [contains 4 tuples- src ip, dest ip,
- *			src port, dest port].
- * @params length	length of p_addr header up to past the transport header.
- * @params qid		receive packet will be directed to this queue.
- * @params vport_id
- * @params b_is_add	flag to add or remove filter.
- *
- */
-enum _ecore_status_t
-ecore_configure_rfs_ntuple_filter(struct ecore_hwfn *p_hwfn,
-				  struct ecore_ptt *p_ptt,
-				  struct ecore_spq_comp_cb *p_cb,
-				  dma_addr_t p_addr, u16 length,
-				  u16 qid, u8 vport_id,
-				  bool b_is_add);
+enum _ecore_status_t ecore_set_rxq_coalesce(struct ecore_hwfn *p_hwfn,
+					    struct ecore_ptt *p_ptt,
+					    u16 coalesce,
+					    struct ecore_queue_cid *p_cid);
+
+enum _ecore_status_t ecore_set_txq_coalesce(struct ecore_hwfn *p_hwfn,
+					    struct ecore_ptt *p_ptt,
+					    u16 coalesce,
+					    struct ecore_queue_cid *p_cid);
+
+enum _ecore_status_t ecore_get_rxq_coalesce(struct ecore_hwfn *p_hwfn,
+					    struct ecore_ptt *p_ptt,
+					    struct ecore_queue_cid *p_cid,
+					    u16 *p_hw_coal);
+
+enum _ecore_status_t ecore_get_txq_coalesce(struct ecore_hwfn *p_hwfn,
+					    struct ecore_ptt *p_ptt,
+					    struct ecore_queue_cid *p_cid,
+					    u16 *p_hw_coal);
+
 #endif

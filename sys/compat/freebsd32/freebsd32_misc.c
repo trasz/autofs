@@ -30,6 +30,7 @@ __FBSDID("$FreeBSD$");
 #include "opt_compat.h"
 #include "opt_inet.h"
 #include "opt_inet6.h"
+#include "opt_ktrace.h"
 
 #define __ELF_WORD_SIZE 32
 
@@ -83,6 +84,9 @@ __FBSDID("$FreeBSD$");
 #include <sys/msg.h>
 #include <sys/sem.h>
 #include <sys/shm.h>
+#ifdef KTRACE
+#include <sys/ktrace.h>
+#endif
 
 #ifdef INET
 #include <netinet/in.h>
@@ -113,6 +117,7 @@ FEATURE(compat_freebsd_32bit, "Compatible with 32-bit FreeBSD");
 CTASSERT(sizeof(struct timeval32) == 8);
 CTASSERT(sizeof(struct timespec32) == 8);
 CTASSERT(sizeof(struct itimerval32) == 16);
+CTASSERT(sizeof(struct bintime32) == 12);
 #endif
 CTASSERT(sizeof(struct statfs32) == 256);
 #ifndef __mips__
@@ -658,6 +663,9 @@ freebsd32_kevent(struct thread *td, struct freebsd32_kevent_args *uap)
 		.k_copyout = freebsd32_kevent_copyout,
 		.k_copyin = freebsd32_kevent_copyin,
 	};
+#ifdef KTRACE
+	struct kevent32 *eventlist = uap->eventlist;
+#endif
 	int error;
 
 
@@ -670,8 +678,18 @@ freebsd32_kevent(struct thread *td, struct freebsd32_kevent_args *uap)
 		tsp = &ts;
 	} else
 		tsp = NULL;
+#ifdef KTRACE
+	if (KTRPOINT(td, KTR_STRUCT_ARRAY))
+		ktrstructarray("kevent32", UIO_USERSPACE, uap->changelist,
+		    uap->nchanges, sizeof(struct kevent32));
+#endif
 	error = kern_kevent(td, uap->fd, uap->nchanges, uap->nevents,
 	    &k_ops, tsp);
+#ifdef KTRACE
+	if (error == 0 && KTRPOINT(td, KTR_STRUCT_ARRAY))
+		ktrstructarray("kevent32", UIO_USERSPACE, eventlist,
+		    td->td_retval[0], sizeof(struct kevent32));
+#endif
 	return (error);
 }
 
@@ -887,12 +905,67 @@ freebsd32_copyoutmsghdr(struct msghdr *msg, struct msghdr32 *msg32)
 
 #define	FREEBSD32_CMSG_DATA(cmsg)	((unsigned char *)(cmsg) + \
 				 FREEBSD32_ALIGN(sizeof(struct cmsghdr)))
+
+static size_t
+freebsd32_cmsg_convert(const struct cmsghdr *cm, void *data, socklen_t datalen)
+{
+	size_t copylen;
+	union {
+		struct timespec32 ts;
+		struct timeval32 tv;
+		struct bintime32 bt;
+	} tmp32;
+
+	union {
+		struct timespec ts;
+		struct timeval tv;
+		struct bintime bt;
+	} *in;
+
+	in = data;
+	copylen = 0;
+	switch (cm->cmsg_level) {
+	case SOL_SOCKET:
+		switch (cm->cmsg_type) {
+		case SCM_TIMESTAMP:
+			TV_CP(*in, tmp32, tv);
+			copylen = sizeof(tmp32.tv);
+			break;
+
+		case SCM_BINTIME:
+			BT_CP(*in, tmp32, bt);
+			copylen = sizeof(tmp32.bt);
+			break;
+
+		case SCM_REALTIME:
+		case SCM_MONOTONIC:
+			TS_CP(*in, tmp32, ts);
+			copylen = sizeof(tmp32.ts);
+			break;
+
+		default:
+			break;
+		}
+
+	default:
+		break;
+	}
+
+	if (copylen == 0)
+		return (datalen);
+
+	KASSERT((datalen >= copylen), ("corrupted cmsghdr"));
+
+	bcopy(&tmp32, data, copylen);
+	return (copylen);
+}
+
 static int
 freebsd32_copy_msg_out(struct msghdr *msg, struct mbuf *control)
 {
 	struct cmsghdr *cm;
 	void *data;
-	socklen_t clen, datalen;
+	socklen_t clen, datalen, datalen_out, oldclen;
 	int error;
 	caddr_t ctlbuf;
 	int len, maxlen, copylen;
@@ -903,54 +976,52 @@ freebsd32_copy_msg_out(struct msghdr *msg, struct mbuf *control)
 	maxlen = msg->msg_controllen;
 	msg->msg_controllen = 0;
 
-	m = control;
 	ctlbuf = msg->msg_control;
-      
-	while (m && len > 0) {
+	for (m = control; m != NULL && len > 0; m = m->m_next) {
 		cm = mtod(m, struct cmsghdr *);
 		clen = m->m_len;
-
 		while (cm != NULL) {
-
 			if (sizeof(struct cmsghdr) > clen ||
 			    cm->cmsg_len > clen) {
 				error = EINVAL;
 				break;
-			}	
+			}
 
 			data   = CMSG_DATA(cm);
 			datalen = (caddr_t)cm + cm->cmsg_len - (caddr_t)data;
+			datalen_out = freebsd32_cmsg_convert(cm, data, datalen);
 
-			/* Adjust message length */
-			cm->cmsg_len = FREEBSD32_ALIGN(sizeof(struct cmsghdr)) +
-			    datalen;
-
-
-			/* Copy cmsghdr */
+			/*
+			 * Copy out the message header.  Preserve the native
+			 * message size in case we need to inspect the message
+			 * contents later.
+			 */
 			copylen = sizeof(struct cmsghdr);
 			if (len < copylen) {
 				msg->msg_flags |= MSG_CTRUNC;
-				copylen = len;
+				m_dispose_extcontrolm(m);
+				goto exit;
 			}
-
-			error = copyout(cm,ctlbuf,copylen);
-			if (error)
+			oldclen = cm->cmsg_len;
+			cm->cmsg_len = FREEBSD32_ALIGN(sizeof(struct cmsghdr)) +
+			    datalen_out;
+			error = copyout(cm, ctlbuf, copylen);
+			cm->cmsg_len = oldclen;
+			if (error != 0)
 				goto exit;
 
 			ctlbuf += FREEBSD32_ALIGN(copylen);
 			len    -= FREEBSD32_ALIGN(copylen);
 
-			if (len <= 0)
-				break;
-
-			/* Copy data */
-			copylen = datalen;
+			copylen = datalen_out;
 			if (len < copylen) {
 				msg->msg_flags |= MSG_CTRUNC;
-				copylen = len;
+				m_dispose_extcontrolm(m);
+				break;
 			}
 
-			error = copyout(data,ctlbuf,copylen);
+			/* Copy out the message data. */
+			error = copyout(data, ctlbuf, copylen);
 			if (error)
 				goto exit;
 
@@ -960,20 +1031,23 @@ freebsd32_copy_msg_out(struct msghdr *msg, struct mbuf *control)
 			if (CMSG_SPACE(datalen) < clen) {
 				clen -= CMSG_SPACE(datalen);
 				cm = (struct cmsghdr *)
-					((caddr_t)cm + CMSG_SPACE(datalen));
+				    ((caddr_t)cm + CMSG_SPACE(datalen));
 			} else {
 				clen = 0;
 				cm = NULL;
 			}
-		}	
-		m = m->m_next;
+
+			msg->msg_controllen += FREEBSD32_ALIGN(sizeof(*cm)) +
+			    datalen_out;
+		}
+	}
+	if (len == 0 && m != NULL) {
+		msg->msg_flags |= MSG_CTRUNC;
+		m_dispose_extcontrolm(m);
 	}
 
-	msg->msg_controllen = (len <= 0) ? maxlen :  ctlbuf - (caddr_t)msg->msg_control;
-	
 exit:
 	return (error);
-
 }
 
 int
@@ -1010,19 +1084,22 @@ freebsd32_recvmsg(td, uap)
 	error = kern_recvit(td, uap->s, &msg, UIO_USERSPACE, controlp);
 	if (error == 0) {
 		msg.msg_iov = uiov;
-		
+
 		if (control != NULL)
 			error = freebsd32_copy_msg_out(&msg, control);
 		else
 			msg.msg_controllen = 0;
-		
+
 		if (error == 0)
 			error = freebsd32_copyoutmsghdr(&msg, uap->msg);
 	}
 	free(iov, M_IOV);
 
-	if (control != NULL)
+	if (control != NULL) {
+		if (error != 0)
+			m_dispose_extcontrolm(control);
 		m_freem(control);
+	}
 
 	return (error);
 }
@@ -2868,33 +2945,21 @@ freebsd32_copyout_strings(struct image_params *imgp)
 	destp -= ARG_MAX - imgp->args->stringspace;
 	destp = rounddown2(destp, sizeof(uint32_t));
 
-	/*
-	 * If we have a valid auxargs ptr, prepare some room
-	 * on the stack.
-	 */
+	vectp = (uint32_t *)destp;
 	if (imgp->auxargs) {
 		/*
-		 * 'AT_COUNT*2' is size for the ELF Auxargs data. This is for
-		 * lower compatibility.
+		 * Allocate room on the stack for the ELF auxargs
+		 * array.  It has up to AT_COUNT entries.
 		 */
-		imgp->auxarg_size = (imgp->auxarg_size) ? imgp->auxarg_size
-			: (AT_COUNT * 2);
-		/*
-		 * The '+ 2' is for the null pointers at the end of each of
-		 * the arg and env vector sets,and imgp->auxarg_size is room
-		 * for argument of Runtime loader.
-		 */
-		vectp = (u_int32_t *) (destp - (imgp->args->argc +
-		    imgp->args->envc + 2 + imgp->auxarg_size + execpath_len) *
-		    sizeof(u_int32_t));
-	} else {
-		/*
-		 * The '+ 2' is for the null pointers at the end of each of
-		 * the arg and env vector sets
-		 */
-		vectp = (u_int32_t *)(destp - (imgp->args->argc +
-		    imgp->args->envc + 2) * sizeof(u_int32_t));
+		vectp -= howmany(AT_COUNT * sizeof(Elf32_Auxinfo),
+		    sizeof(*vectp));
 	}
+
+	/*
+	 * Allocate room for the argv[] and env vectors including the
+	 * terminating NULL pointers.
+	 */
+	vectp -= imgp->args->argc + 1 + imgp->args->envc + 1;
 
 	/*
 	 * vectp also becomes our initial stack base
@@ -2950,8 +3015,8 @@ freebsd32_copyout_strings(struct image_params *imgp)
 int
 freebsd32_kldstat(struct thread *td, struct freebsd32_kldstat_args *uap)
 {
-	struct kld_file_stat stat;
-	struct kld32_file_stat stat32;
+	struct kld_file_stat *stat;
+	struct kld32_file_stat *stat32;
 	int error, version;
 
 	if ((error = copyin(&uap->stat->version, &version, sizeof(version)))
@@ -2961,17 +3026,23 @@ freebsd32_kldstat(struct thread *td, struct freebsd32_kldstat_args *uap)
 	    version != sizeof(struct kld32_file_stat))
 		return (EINVAL);
 
-	error = kern_kldstat(td, uap->fileid, &stat);
-	if (error != 0)
-		return (error);
-
-	bcopy(&stat.name[0], &stat32.name[0], sizeof(stat.name));
-	CP(stat, stat32, refs);
-	CP(stat, stat32, id);
-	PTROUT_CP(stat, stat32, address);
-	CP(stat, stat32, size);
-	bcopy(&stat.pathname[0], &stat32.pathname[0], sizeof(stat.pathname));
-	return (copyout(&stat32, uap->stat, version));
+	stat = malloc(sizeof(*stat), M_TEMP, M_WAITOK | M_ZERO);
+	stat32 = malloc(sizeof(*stat32), M_TEMP, M_WAITOK | M_ZERO);
+	error = kern_kldstat(td, uap->fileid, stat);
+	if (error == 0) {
+		bcopy(&stat->name[0], &stat32->name[0], sizeof(stat->name));
+		CP(*stat, *stat32, refs);
+		CP(*stat, *stat32, id);
+		PTROUT_CP(*stat, *stat32, address);
+		CP(*stat, *stat32, size);
+		bcopy(&stat->pathname[0], &stat32->pathname[0],
+		    sizeof(stat->pathname));
+		stat32->version  = version;
+		error = copyout(stat32, uap->stat, version);
+	}
+	free(stat, M_TEMP);
+	free(stat32, M_TEMP);
+	return (error);
 }
 
 int
@@ -3034,7 +3105,7 @@ freebsd32_procctl(struct thread *td, struct freebsd32_procctl_args *uap)
 	union {
 		struct procctl_reaper_pids32 rp;
 	} x32;
-	int error, error1, flags;
+	int error, error1, flags, signum;
 
 	switch (uap->com) {
 	case PROC_SPROTECT:
@@ -3072,6 +3143,15 @@ freebsd32_procctl(struct thread *td, struct freebsd32_procctl_args *uap)
 	case PROC_TRAPCAP_STATUS:
 		data = &flags;
 		break;
+	case PROC_PDEATHSIG_CTL:
+		error = copyin(uap->data, &signum, sizeof(signum));
+		if (error != 0)
+			return (error);
+		data = &signum;
+		break;
+	case PROC_PDEATHSIG_STATUS:
+		data = &signum;
+		break;
 	default:
 		return (EINVAL);
 	}
@@ -3091,6 +3171,10 @@ freebsd32_procctl(struct thread *td, struct freebsd32_procctl_args *uap)
 	case PROC_TRAPCAP_STATUS:
 		if (error == 0)
 			error = copyout(&flags, uap->data, sizeof(flags));
+		break;
+	case PROC_PDEATHSIG_STATUS:
+		if (error == 0)
+			error = copyout(&signum, uap->data, sizeof(signum));
 		break;
 	}
 	return (error);
@@ -3150,4 +3234,21 @@ freebsd32_ppoll(struct thread *td, struct freebsd32_ppoll_args *uap)
 		ssp = NULL;
 
 	return (kern_poll(td, uap->fds, uap->nfds, tsp, ssp));
+}
+
+int
+freebsd32_sched_rr_get_interval(struct thread *td,
+    struct freebsd32_sched_rr_get_interval_args *uap)
+{
+	struct timespec ts;
+	struct timespec32 ts32;
+	int error;
+
+	error = kern_sched_rr_get_interval(td, uap->pid, &ts);
+	if (error == 0) {
+		CP(ts, ts32, tv_sec);
+		CP(ts, ts32, tv_nsec);
+		error = copyout(&ts32, uap->interval, sizeof(ts32));
+	}
+	return (error);
 }

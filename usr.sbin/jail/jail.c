@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 1999 Poul-Henning Kamp.
  * Copyright (c) 2009-2012 James Gritton
  * All rights reserved.
@@ -800,8 +802,10 @@ rdtun_params(struct cfjail *j, int dofail)
 		exit(1);
 	}
 	for (jp = j->jp; jp < j->jp + j->njp; jp++)
-		if (JP_RDTUN(jp) && strcmp(jp->jp_name, "jid"))
+		if (JP_RDTUN(jp) && strcmp(jp->jp_name, "jid")) {
 			*++rtjp = *jp;
+			rtjp->jp_value = NULL;
+		}
 	rval = 0;
 	if (jailparam_get(rtparams, nrt,
 	    bool_param(j->intparams[IP_ALLOW_DYING]) ? JAIL_DYING : 0) > 0) {
@@ -812,8 +816,11 @@ rdtun_params(struct cfjail *j, int dofail)
 				    jp->jp_valuelen == 0 &&
 				    *(int *)jp->jp_value) &&
 				    !(rtjp->jp_valuelen == jp->jp_valuelen &&
-				    !memcmp(rtjp->jp_value, jp->jp_value,
-				    jp->jp_valuelen))) {
+				    !((jp->jp_ctltype & CTLTYPE) ==
+				    CTLTYPE_STRING ? strncmp(rtjp->jp_value,
+				    jp->jp_value, jp->jp_valuelen) :
+				    memcmp(rtjp->jp_value, jp->jp_value,
+				    jp->jp_valuelen)))) {
 					if (dofail) {
 						jail_warnx(j, "%s cannot be "
 						    "changed after creation",

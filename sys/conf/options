@@ -165,6 +165,7 @@ MAC_STUB	opt_dontuse.h
 MAC_TEST	opt_dontuse.h
 MD_ROOT		opt_md.h
 MD_ROOT_FSTYPE	opt_md.h
+MD_ROOT_READONLY	opt_md.h
 MD_ROOT_SIZE	opt_md.h
 MFI_DEBUG	opt_mfi.h
 MFI_DECODE_LOG	opt_mfi.h
@@ -175,6 +176,7 @@ NO_ADAPTIVE_MUTEXES	opt_adaptive_mutexes.h
 NO_ADAPTIVE_RWLOCKS
 NO_ADAPTIVE_SX
 NO_EVENTTIMERS		opt_timer.h
+NO_OBSOLETE_CODE	opt_global.h
 NO_SYSCTL_DESCR	opt_global.h
 NSWBUF_MIN	opt_swap.h
 MBUF_PACKET_ZONE_DISABLE	opt_global.h
@@ -460,7 +462,6 @@ FLOWTABLE_HASH_ALL	opt_route.h
 #
 SCTP			opt_sctp.h
 SCTP_DEBUG		opt_sctp.h # Enable debug printfs
-SCTP_WITH_NO_CSUM	opt_sctp.h # Use this at your peril
 SCTP_LOCK_LOGGING	opt_sctp.h # Log to KTR lock activity
 SCTP_MBUF_LOGGING	opt_sctp.h # Log to KTR general mbuf aloc/free
 SCTP_MBCNT_LOGGING	opt_sctp.h # Log to KTR mbcnt activity
@@ -687,7 +688,7 @@ INIT_PATH
 
 ROOTDEVNAME
 
-FDC_DEBUG		opt_fdc.h
+FDC_DEBUG 		opt_fdc.h
 PCFCLOCK_VERBOSE	opt_pcfclock.h
 PCFCLOCK_MAX_RETRIES	opt_pcfclock.h
 
@@ -800,6 +801,8 @@ TERMINAL_NORM_ATTR	opt_teken.h
 
 # options for printf
 PRINTF_BUFR_SIZE	opt_printf.h
+BOOT_TAG		opt_printf.h
+BOOT_TAG_SZ		opt_printf.h
 
 # kbd options
 KBD_DISABLE_KEYMAP_LOAD	opt_kbd.h
@@ -1000,3 +1003,6 @@ UINPUT_DEBUG	opt_evdev.h
 
 # Hyper-V network driver
 HN_DEBUG	opt_hn.h
+
+# NVME options
+NVME_USE_NVD	opt_nvme.h

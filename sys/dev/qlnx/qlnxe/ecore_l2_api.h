@@ -35,6 +35,7 @@
 #include "ecore_sp_api.h"
 #include "ecore_int_api.h"
 
+#ifndef __EXTRACT__LINUX__
 enum ecore_rss_caps {
 	ECORE_RSS_IPV4		= 0x1,
 	ECORE_RSS_IPV6		= 0x2,
@@ -51,12 +52,25 @@ enum ecore_rss_caps {
 #define ECORE_MAX_PHC_DRIFT_PPB	291666666
 
 enum ecore_ptp_filter_type {
-	ECORE_PTP_FILTER_L2,
-	ECORE_PTP_FILTER_IPV4,
-	ECORE_PTP_FILTER_IPV4_IPV6,
-	ECORE_PTP_FILTER_L2_IPV4_IPV6
+	ECORE_PTP_FILTER_NONE,
+	ECORE_PTP_FILTER_ALL,
+	ECORE_PTP_FILTER_V1_L4_EVENT,
+	ECORE_PTP_FILTER_V1_L4_GEN,
+	ECORE_PTP_FILTER_V2_L4_EVENT,
+	ECORE_PTP_FILTER_V2_L4_GEN,
+	ECORE_PTP_FILTER_V2_L2_EVENT,
+	ECORE_PTP_FILTER_V2_L2_GEN,
+	ECORE_PTP_FILTER_V2_EVENT,
+	ECORE_PTP_FILTER_V2_GEN
 };
 
+enum ecore_ptp_hwtstamp_tx_type {
+	ECORE_PTP_HWTSTAMP_TX_OFF,
+	ECORE_PTP_HWTSTAMP_TX_ON,
+};
+#endif
+
+#ifndef __EXTRACT__LINUX__
 struct ecore_queue_start_common_params {
 	/* Should always be relative to entity sending this. */
 	u8 vport_id;
@@ -67,6 +81,8 @@ struct ecore_queue_start_common_params {
 
 	struct ecore_sb_info *p_sb;
 	u8 sb_idx;
+
+	u8 tc;
 };
 
 struct ecore_rxq_start_ret_params {
@@ -78,6 +94,7 @@ struct ecore_txq_start_ret_params {
 	void OSAL_IOMEM *p_doorbell;
 	void *p_handle;
 };
+#endif
 
 struct ecore_rss_params {
 	u8 update_rss_config;
@@ -169,12 +186,21 @@ struct ecore_filter_accept_flags {
 #define ECORE_ACCEPT_BCAST		0x20
 };
 
+#ifndef __EXTRACT__LINUX__
+enum ecore_filter_config_mode {
+	ECORE_FILTER_CONFIG_MODE_DISABLE,
+	ECORE_FILTER_CONFIG_MODE_5_TUPLE,
+	ECORE_FILTER_CONFIG_MODE_L4_PORT,
+	ECORE_FILTER_CONFIG_MODE_IP_DEST,
+};
+#endif
+
 struct ecore_arfs_config_params {
 	bool tcp;
 	bool udp;
 	bool ipv4;
 	bool ipv6;
-	bool arfs_enable;	/* Enable or disable arfs mode */
+	enum ecore_filter_config_mode mode;
 };
 
 /* Add / remove / move / remove-all unicast MAC-VLAN filters.
@@ -246,7 +272,7 @@ ecore_eth_rx_queue_start(struct ecore_hwfn *p_hwfn,
  *				different from the RXQ opaque
  *				otherwise on CQe.
  * @param cqe_completion	If True completion will be
- *				receive on CQe.
+ *				recieve on CQe.
  * @return enum _ecore_status_t
  */
 enum _ecore_status_t
@@ -360,7 +386,7 @@ struct ecore_sp_vport_update_params {
 	u8			anti_spoofing_en;
 	u8			update_accept_any_vlan_flg;
 	u8			accept_any_vlan;
-	unsigned long		bins[8];
+	u32			bins[8];
 	struct ecore_rss_params	*rss_params;
 	struct ecore_filter_accept_flags accept_flags;
 	struct ecore_sge_tpa_params *sge_tpa_params;
@@ -436,6 +462,27 @@ ecore_sp_eth_rx_queues_update(struct ecore_hwfn *p_hwfn,
 			      enum spq_mode comp_mode,
 			      struct ecore_spq_comp_cb *p_comp_data);
 
+/**
+ * @brief ecore_sp_eth_rx_queues_set_default -
+ *
+ * This ramrod sets RSS RX queue as default one.
+ *
+ * @note Final phase API.
+ *
+ * @param p_hwfn
+ * @param p_rxq_handlers	queue handlers to be updated.
+ * @param comp_mode
+ * @param p_comp_data
+ *
+ * @return enum _ecore_status_t
+ */
+
+enum _ecore_status_t
+ecore_sp_eth_rx_queues_set_default(struct ecore_hwfn *p_hwfn,
+				   void *p_rxq_handler,
+				   enum spq_mode comp_mode,
+				   struct ecore_spq_comp_cb *p_comp_data);
+
 void __ecore_get_vport_stats(struct ecore_hwfn *p_hwfn,
 			     struct ecore_ptt *p_ptt,
 			     struct ecore_eth_stats *stats,
@@ -460,4 +507,44 @@ void ecore_reset_vport_stats(struct ecore_dev *p_dev);
 void ecore_arfs_mode_configure(struct ecore_hwfn *p_hwfn,
 			       struct ecore_ptt *p_ptt,
 			       struct ecore_arfs_config_params *p_cfg_params);
+
+#ifndef __EXTRACT__LINUX__
+struct ecore_ntuple_filter_params {
+	/* Physically mapped address containing header of buffer to be used
+	 * as filter.
+	 */
+	dma_addr_t addr;
+
+	/* Length of header in bytes */
+	u16 length;
+
+	/* Relative queue-id to receive classified packet */
+#define ECORE_RFS_NTUPLE_QID_RSS ((u16)-1)
+	u16 qid;
+
+	/* Identifier can either be according to vport-id or vfid */
+	bool b_is_vf;
+	u8 vport_id;
+	u8 vf_id;
+
+	/* true iff this filter is to be added. Else to be removed */
+	bool b_is_add;
+};
+#endif
+
+/**
+ * @brief - ecore_configure_rfs_ntuple_filter
+ *
+ * This ramrod should be used to add or remove arfs hw filter
+ *
+ * @params p_hwfn
+ * @params p_cb		Used for ECORE_SPQ_MODE_CB,where client would initialize
+ *			it with cookie and callback function address, if not
+ *			using this mode then client must pass NULL.
+ * @params p_params
+ */
+enum _ecore_status_t
+ecore_configure_rfs_ntuple_filter(struct ecore_hwfn *p_hwfn,
+				  struct ecore_spq_comp_cb *p_cb,
+				  struct ecore_ntuple_filter_params *p_params);
 #endif

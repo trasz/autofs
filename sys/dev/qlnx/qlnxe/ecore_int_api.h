@@ -28,10 +28,12 @@
  *
  */
 
-
 #ifndef __ECORE_INT_API_H__
 #define __ECORE_INT_API_H__
 
+#include "common_hsi.h"
+
+#ifndef __EXTRACT__LINUX__
 #define ECORE_SB_IDX		0x0002
 
 #define RX_PI		0
@@ -48,7 +50,7 @@ enum ecore_int_mode {
 #endif
 
 struct ecore_sb_info {
-	struct status_block *sb_virt;
+	struct status_block_e4 *sb_virt;
 	dma_addr_t sb_phys;
 	u32 sb_ack; /* Last given ack */
 	u16 igu_sb_id;
@@ -66,7 +68,7 @@ struct ecore_sb_info {
 struct ecore_sb_info_dbg {
 	u32 igu_prod;
 	u32 igu_cons;
-	u16 pi[PIS_PER_SB];
+	u16 pi[PIS_PER_SB_E4];
 };
 
 struct ecore_sb_cnt_info {
@@ -89,7 +91,7 @@ static OSAL_INLINE u16 ecore_sb_update_sb_idx(struct ecore_sb_info *sb_info)
 	// barrier(); /* status block is written to by the chip */
 	// FIXME: need some sort of barrier.
 	prod = OSAL_LE32_TO_CPU(sb_info->sb_virt->prod_index) &
-	       STATUS_BLOCK_PROD_INDEX_MASK;
+	       STATUS_BLOCK_E4_PROD_INDEX_MASK;
 	if (sb_info->sb_ack != prod) {
 		sb_info->sb_ack = prod;
 		rc |= ECORE_SB_IDX;
@@ -117,18 +119,28 @@ static OSAL_INLINE void ecore_sb_ack(struct ecore_sb_info *sb_info,
 {
 	struct igu_prod_cons_update igu_ack = { 0 };
 
+#ifndef ECORE_CONFIG_DIRECT_HWFN
+	u32 val;
+#endif
+
+#ifndef LINUX_REMOVE
+	if (sb_info->p_dev->int_mode == ECORE_INT_MODE_POLL)
+		return;
+#endif
 	igu_ack.sb_id_and_flags =
-		((sb_info->sb_ack << IGU_PROD_CONS_UPDATE_SB_INDEX_SHIFT) |
+		 OSAL_CPU_TO_LE32((sb_info->sb_ack <<
+		 IGU_PROD_CONS_UPDATE_SB_INDEX_SHIFT) |
 		 (upd_flg << IGU_PROD_CONS_UPDATE_UPDATE_FLAG_SHIFT) |
 		 (int_cmd << IGU_PROD_CONS_UPDATE_ENABLE_INT_SHIFT) |
 		 (IGU_SEG_ACCESS_REG <<
-		  IGU_PROD_CONS_UPDATE_SEGMENT_ACCESS_SHIFT));
+		 IGU_PROD_CONS_UPDATE_SEGMENT_ACCESS_SHIFT));
 
 #ifdef ECORE_CONFIG_DIRECT_HWFN
 	DIRECT_REG_WR(sb_info->p_hwfn, sb_info->igu_addr,
 		      igu_ack.sb_id_and_flags);
 #else
-	DIRECT_REG_WR(OSAL_NULL, sb_info->igu_addr, igu_ack.sb_id_and_flags);
+	val = OSAL_LE32_TO_CPU(igu_ack.sb_id_and_flags);
+	DIRECT_REG_WR(OSAL_NULL, sb_info->igu_addr, val);
 #endif
 	/* Both segments (interrupts & acks) are written to same place address;
 	 * Need to guarantee all commands will be received (in-order) by HW.
@@ -167,6 +179,7 @@ static OSAL_INLINE void internal_ram_wr(void OSAL_IOMEM *addr,
 {
 	__internal_ram_wr(OSAL_NULL, addr, size, data);
 }
+#endif
 #endif
 
 struct ecore_hwfn;

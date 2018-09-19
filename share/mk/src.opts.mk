@@ -62,6 +62,7 @@ __DEFAULT_YES_OPTIONS = \
     BOOTPARAMD \
     BOOTPD \
     BSD_CPIO \
+    BSD_GREP_FASTMATCH \
     BSDINSTALL \
     BSNMP \
     BZIP2 \
@@ -99,6 +100,8 @@ __DEFAULT_YES_OPTIONS = \
     GCOV \
     GDB \
     GNU \
+    GNU_DIFF \
+    GNU_GREP \
     GNU_GREP_COMPAT \
     GPIO \
     GPL_DTC \
@@ -122,6 +125,9 @@ __DEFAULT_YES_OPTIONS = \
     LIB32 \
     LIBPTHREAD \
     LIBTHR \
+    LOADER_GELI \
+    LOADER_OFW \
+    LOADER_UBOOT \
     LOCALES \
     LOCATE \
     LPR \
@@ -186,14 +192,19 @@ __DEFAULT_NO_OPTIONS = \
     EISA \
     HESIOD \
     LIBSOFT \
+    LINT \
+    LOADER_FIREWIRE \
+    LOADER_FORCE_LE \
     NAND \
-    OFED \
+    OFED_EXTRA \
     OPENLDAP \
     REPRODUCIBLE_BUILD \
     RPCBIND_WARMSTART_SUPPORT \
     SHARED_TOOLCHAIN \
     SORT_THREADS \
     SVN \
+    ZONEINFO_LEAPSECONDS_SUPPORT \
+    ZONEINFO_OLD_TIMEZONES_SUPPORT \
 
 
 #
@@ -225,17 +236,23 @@ __TT=${MACHINE}
     ${__T} == "amd64" || ${__TT} == "arm" || ${__T} == "i386")
 # Clang is enabled, and will be installed as the default /usr/bin/cc.
 __DEFAULT_YES_OPTIONS+=CLANG CLANG_BOOTSTRAP CLANG_FULL CLANG_IS_CC LLD
+__DEFAULT_YES_OPTIONS+=LLVM_TARGET_AARCH64 LLVM_TARGET_ARM LLVM_TARGET_MIPS
+__DEFAULT_YES_OPTIONS+=LLVM_TARGET_POWERPC LLVM_TARGET_SPARC LLVM_TARGET_X86
 __DEFAULT_NO_OPTIONS+=GCC GCC_BOOTSTRAP GNUCXX
 .elif ${COMPILER_FEATURES:Mc++11} && ${__T} != "riscv64" && ${__T} != "sparc64"
 # If an external compiler that supports C++11 is used as ${CC} and Clang
 # supports the target, then Clang is enabled but GCC is installed as the
 # default /usr/bin/cc.
 __DEFAULT_YES_OPTIONS+=CLANG CLANG_FULL GCC GCC_BOOTSTRAP GNUCXX
+__DEFAULT_YES_OPTIONS+=LLVM_TARGET_AARCH64 LLVM_TARGET_ARM LLVM_TARGET_MIPS
+__DEFAULT_YES_OPTIONS+=LLVM_TARGET_POWERPC LLVM_TARGET_SPARC LLVM_TARGET_X86
 __DEFAULT_NO_OPTIONS+=CLANG_BOOTSTRAP CLANG_IS_CC LLD
 .else
 # Everything else disables Clang, and uses GCC instead.
 __DEFAULT_YES_OPTIONS+=GCC GCC_BOOTSTRAP GNUCXX
 __DEFAULT_NO_OPTIONS+=CLANG CLANG_BOOTSTRAP CLANG_FULL CLANG_IS_CC LLD
+__DEFAULT_NO_OPTIONS+=LLVM_TARGET_AARCH64 LLVM_TARGET_ARM LLVM_TARGET_MIPS
+__DEFAULT_NO_OPTIONS+=LLVM_TARGET_POWERPC LLVM_TARGET_SPARC LLVM_TARGET_X86
 .endif
 # In-tree binutils/gcc are older versions without modern architecture support.
 .if ${__T} == "aarch64" || ${__T} == "riscv64"
@@ -267,15 +284,41 @@ BROKEN_OPTIONS+=LLDB
 .if ${__T} != "armv6"
 BROKEN_OPTIONS+=LIBSOFT
 .endif
-.if ${__T:Mmips*} || ${__T:Mpowerpc*} || ${__T:Msparc64} || ${__T:Mriscv*}
+# EFI doesn't exist on mips, pc98, powerpc, sparc or riscv.
+.if ${__T:Mmips*} || ${__TT:Mpc98*} || ${__T:Mpowerpc*} || ${__T:Msparc64} || \
+    ${__T:Mriscv*}
 BROKEN_OPTIONS+=EFI
 .endif
+# GELI isn't supported on !x86
+.if ${__T} != "i386" && ${__T} != "amd64"
+BROKEN_OPTIONS+=LOADER_GELI
+.endif
+# OFW is only for powerpc and sparc64, exclude others
+.if ${__T:Mpowerpc*} == "" && ${__T:Msparc64} == ""
+BROKEN_OPTIONS+=LOADER_OFW
+.endif
+# UBOOT is only for arm, mips and powerpc, exclude others
+.if ${__T:Marm*} == "" && ${__T:Mmips*} == "" && ${__T:Mpowerpc*} == ""
+BROKEN_OPTIONS+=LOADER_UBOOT
+.endif
 
+.if ${__T:Mmips64*}
+# profiling won't work on MIPS64 because there is only assembly for o32
+BROKEN_OPTIONS+=PROFILE
+.endif
 .if ${__T} == "aarch64" || ${__T} == "amd64" || ${__T} == "i386" || \
     ${__T} == "powerpc64" || ${__T} == "sparc64"
 __DEFAULT_YES_OPTIONS+=CXGBETOOL
+__DEFAULT_YES_OPTIONS+=MLX5TOOL
 .else
 __DEFAULT_NO_OPTIONS+=CXGBETOOL
+__DEFAULT_NO_OPTIONS+=MLX5TOOL
+.endif
+
+.if ${__T} == "amd64"
+__DEFAULT_YES_OPTIONS+=OFED
+.else
+__DEFAULT_NO_OPTIONS+=OFED
 .endif
 
 .include <bsd.mkopt.mk>
@@ -356,9 +399,17 @@ MK_ATM:=	no
 MK_BLUETOOTH:=	no
 .endif
 
+.if ${MK_NLS} == "no"
+MK_NLS_CATALOGS:= no
+.endif
+
 .if ${MK_OPENSSL} == "no"
 MK_OPENSSH:=	no
 MK_KERBEROS:=	no
+.endif
+
+.if ${MK_OFED} == "no"
+MK_OFED_EXTRA:=	no
 .endif
 
 .if ${MK_PF} == "no"
@@ -373,11 +424,17 @@ MK_DTRACE_TESTS:= no
 MK_GROFF:=	no
 .endif
 
+.if ${MK_ZONEINFO} == "no"
+MK_ZONEINFO_LEAPSECONDS_SUPPORT:= no
+MK_ZONEINFO_OLD_TIMEZONES_SUPPORT:= no
+.endif
+
 .if ${MK_CROSS_COMPILER} == "no"
 MK_BINUTILS_BOOTSTRAP:= no
 MK_CLANG_BOOTSTRAP:= no
 MK_ELFTOOLCHAIN_BOOTSTRAP:= no
 MK_GCC_BOOTSTRAP:= no
+MK_LLD_BOOTSTRAP:= no
 .endif
 
 .if ${MK_META_MODE} == "yes"

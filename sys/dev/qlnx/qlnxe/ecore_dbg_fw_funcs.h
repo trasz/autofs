@@ -28,7 +28,6 @@
  *
  */
 
-
 #ifndef _DBG_FW_FUNCS_H
 #define _DBG_FW_FUNCS_H
 /**************************** Public Functions *******************************/
@@ -68,6 +67,21 @@ u32 ecore_dbg_get_fw_func_ver(void);
 * @return the chip ID.
 */
 enum chip_ids ecore_dbg_get_chip_id(struct ecore_hwfn *p_hwfn);
+
+/**
+* @brief ecore_read_regs - Reads registers into a buffer (using GRC).
+*
+* @param p_hwfn -	HW device data
+* @param p_ptt -	Ptt window used for writing the registers.
+* @param buf -	Destination buffer.
+* @param addr -	Source GRC address in dwords.
+* @param len -	Number of registers to read.
+*/
+void ecore_read_regs(struct ecore_hwfn *p_hwfn,
+					 struct ecore_ptt *p_ptt,
+					 u32 *buf,
+					 u32 addr,
+					 u32 len);
 
 /**
  * @brief ecore_dbg_bus_reset - Resets the Debug block.
@@ -179,7 +193,6 @@ enum dbg_status ecore_dbg_bus_set_nw_output(struct ecore_hwfn *p_hwfn,
  * unit is 2 dwords (64 bits).
  *
  * @param p_hwfn -		HW device data
- * @param p_ptt -		Ptt window used for writing the registers.
  * @param block -	block to be enabled.
  * @param line_num -	debug line number to select.
  * @param cycle_en -	4-bit value. If bit i is set, unit i is enabled.
@@ -200,7 +213,6 @@ enum dbg_status ecore_dbg_bus_set_nw_output(struct ecore_hwfn *p_hwfn,
  * Otherwise, returns ok.
  */
 enum dbg_status ecore_dbg_bus_enable_block(struct ecore_hwfn *p_hwfn,
-										   struct ecore_ptt *p_ptt,
 										   enum block_id block,
 										   u8 line_num,
 										   u8 cycle_en,

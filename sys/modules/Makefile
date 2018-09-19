@@ -36,6 +36,7 @@ SUBDIR=	\
 	alq \
 	${_amd_ecc_inject} \
 	${_amdsbwd} \
+	${_amdsmn} \
 	${_amdtemp} \
 	amr \
 	${_an} \
@@ -63,6 +64,7 @@ SUBDIR=	\
 	bwn \
 	bwn_pci \
 	${_bytgpio} \
+	${_chvgpio} \
 	cam \
 	${_canbepm} \
 	${_canbus} \
@@ -110,6 +112,7 @@ SUBDIR=	\
 	${_efirt} \
 	${_elink} \
 	${_em} \
+	${_ena} \
 	en \
 	${_ep} \
 	${_epic} \
@@ -123,6 +126,7 @@ SUBDIR=	\
 	fdc \
 	fdescfs \
 	${_fe} \
+	${_ffec} \
 	filemon \
 	firewire \
 	firmware \
@@ -220,6 +224,7 @@ SUBDIR=	\
 	${_linux_common} \
 	${_linux64} \
 	linuxkpi \
+	${_lio} \
 	lmc \
 	lpt \
 	mac_biba \
@@ -243,9 +248,10 @@ SUBDIR=	\
 	mlx \
 	${_mlx4} \
 	${_mlx4ib} \
-	${_mlxen} \
+	${_mlx4en} \
 	${_mlx5} \
 	${_mlx5en} \
+	${_mlx5ib} \
 	${_mly} \
 	mmc \
 	mmcsd \
@@ -289,6 +295,7 @@ SUBDIR=	\
 	${_nvram} \
 	${_nxge} \
 	oce \
+	${_ocs_fc} \
 	otus \
 	${_otusfw} \
 	ow \
@@ -350,12 +357,14 @@ SUBDIR=	\
 	siis \
 	sis \
 	sk \
+	${_smartpqi} \
 	smbfs \
 	sn \
 	${_snc} \
 	snp \
 	sound \
 	${_speaker} \
+	spi \
 	${_splash} \
 	${_sppp} \
 	ste \
@@ -565,7 +574,9 @@ _an=		an
 _aout=		aout
 _bios=		bios
 _bktr=		bktr
+.if ${MK_SOURCELESS_UCODE} != "no"
 _bxe=		bxe
+.endif
 _cardbus=	cardbus
 _cbb=		cbb
 _cpuctl=	cpuctl
@@ -576,6 +587,7 @@ _drm=		drm
 _drm2=		drm2
 _ed=		ed
 _em=		em
+_ena=		ena
 _ep=		ep
 _et=		et
 _exca=		exca
@@ -595,8 +607,12 @@ _ixv=		ixv
 _linprocfs=	linprocfs
 _linsysfs=	linsysfs
 _linux=		linux
+.if ${MK_SOURCELESS_UCODE} != "no"
+_lio=		lio
+.endif
 _nctgpio=	nctgpio
 _ndis=		ndis
+_ocs_fc=	ocs_fc
 _pccard=	pccard
 .if ${MK_OFED} != "no" || defined(ALL_MODULES)
 _rdma=		rdma
@@ -617,14 +633,18 @@ _aac=		aac
 _aacraid=	aacraid
 _acpi=		acpi
 .if ${MK_CRYPT} != "no" || defined(ALL_MODULES)
+.if ${COMPILER_TYPE} != "gcc" || ${COMPILER_VERSION} > 40201
 _aesni=		aesni
+.endif
 .endif
 _amd_ecc_inject=amd_ecc_inject
 _amdsbwd=	amdsbwd
+_amdsmn=	amdsmn
 _amdtemp=	amdtemp
 _arcmsr=	arcmsr
 _asmc=		asmc
 _bytgpio=	bytgpio
+_chvgpio=	chvgpio
 _ciss=		ciss
 _chromebook_platform=	chromebook_platform
 _cmx=		cmx
@@ -657,20 +677,19 @@ _iwifw=		iwifw
 _iwmfw=		iwmfw
 _iwnfw=		iwnfw
 .endif
-.if ${MK_OFED} != "no" || defined(ALL_MODULES)
 _mlx4=		mlx4
-_mlx4ib=	mlx4ib
-_mlxen=		mlxen
-.endif
 _mlx5=		mlx5
 .if (${MK_INET_SUPPORT} != "no" && ${MK_INET6_SUPPORT} != "no") || \
 	defined(ALL_MODULES)
+_mlx4en=	mlx4en
 _mlx5en=	mlx5en
 .endif
-_mly=		mly
 .if ${MK_OFED} != "no" || defined(ALL_MODULES)
 _mthca=		mthca
+_mlx4ib=	mlx4ib
+_mlx5ib=	mlx5ib
 .endif
+_mly=		mly
 _nfe=		nfe
 _nvd=		nvd
 _nvme=		nvme
@@ -707,9 +726,12 @@ _ntb=		ntb
 _pms=		pms
 _qlxge=		qlxge
 _qlxgb=		qlxgb
+.if ${MK_SOURCELESS_UCODE} != "no"
 _qlxgbe=	qlxgbe
 _qlnx=		qlnx
+.endif
 _sfxge=		sfxge
+_smartpqi=	smartpqi
 
 .if ${MK_BHYVE} != "no" || defined(ALL_MODULES)
 _vmm=		vmm
@@ -783,6 +805,7 @@ _cpufreq=	cpufreq
 _drm=		drm
 _exca=		exca
 _nvram=		powermac_nvram
+_ffec=		ffec
 _pccard=	pccard
 _wi=		wi
 .endif

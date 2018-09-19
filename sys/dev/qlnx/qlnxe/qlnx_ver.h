@@ -37,7 +37,7 @@
  * version numbers
  */
 
-#define QLNX_VERSION_MAJOR      1
-#define QLNX_VERSION_MINOR      3
-#define QLNX_VERSION_BUILD      0
+#define QLNX_VERSION_MAJOR      2
+#define QLNX_VERSION_MINOR      0
+#define QLNX_VERSION_BUILD      112
 

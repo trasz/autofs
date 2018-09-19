@@ -31,7 +31,9 @@
 #ifndef __ECORE_RDMA_API_H__
 #define __ECORE_RDMA_API_H__
 
+#ifndef ETH_ALEN
 #define ETH_ALEN 6
+#endif
 
 
 enum ecore_roce_ll2_tx_dest

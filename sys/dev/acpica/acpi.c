@@ -53,6 +53,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/timetc.h>
 
 #if defined(__i386__) || defined(__amd64__)
+#include <machine/clock.h>
 #include <machine/pci_cfgreg.h>
 #endif
 #include <machine/resource.h>
@@ -291,7 +292,7 @@ SYSCTL_INT(_debug_acpi, OID_AUTO, reset_clock, CTLFLAG_RW,
 /* Allow users to override quirks. */
 TUNABLE_INT("debug.acpi.quirks", &acpi_quirks);
 
-static int acpi_susp_bounce;
+int acpi_susp_bounce;
 SYSCTL_INT(_debug_acpi, OID_AUTO, suspend_bounce, CTLFLAG_RW,
     &acpi_susp_bounce, 0, "Don't actually suspend, just test devices.");
 
@@ -337,6 +338,15 @@ acpi_Startup(void)
     if (started)
 	return_VALUE (AE_OK);
     started = 1;
+
+    /*
+     * Initialize the ACPICA subsystem.
+     */
+    if (ACPI_FAILURE(status = AcpiInitializeSubsystem())) {
+	printf("ACPI: Could not initialize Subsystem: %s\n",
+	    AcpiFormatException(status));
+	return_VALUE (status);
+    }
 
     /*
      * Pre-allocate space for RSDT/XSDT and DSDT tables and allow resizing
@@ -484,14 +494,6 @@ acpi_attach(device_t dev)
     AcpiDbgLayer = 0;
     AcpiDbgLevel = 0;
 #endif
-
-    /* Start up the ACPI CA subsystem. */
-    status = AcpiInitializeSubsystem();
-    if (ACPI_FAILURE(status)) {
-	device_printf(dev, "Could not initialize Subsystem: %s\n",
-		      AcpiFormatException(status));
-	goto out;
-    }
 
     /* Override OS interfaces if the user requested. */
     acpi_reset_interfaces(dev);
@@ -2897,10 +2899,6 @@ acpi_EnterSleepState(struct acpi_softc *sc, int state)
     }
     slp_state = ACPI_SS_DEV_SUSPEND;
 
-    /* If testing device suspend only, back out of everything here. */
-    if (acpi_susp_bounce)
-	goto backout;
-
     status = AcpiEnterSleepStatePrep(state);
     if (ACPI_FAILURE(status)) {
 	device_printf(sc->acpi_dev, "AcpiEnterSleepStatePrep failed - %s\n",
@@ -2912,6 +2910,7 @@ acpi_EnterSleepState(struct acpi_softc *sc, int state)
     if (sc->acpi_sleep_delay > 0)
 	DELAY(sc->acpi_sleep_delay * 1000000);
 
+    suspendclock();
     intr = intr_disable();
     if (state != ACPI_STATE_S1) {
 	sleep_result = acpi_sleep_machdep(sc, state);
@@ -2928,8 +2927,6 @@ acpi_EnterSleepState(struct acpi_softc *sc, int state)
 	 */
 	if (sleep_result == 1 && state != ACPI_STATE_S4)
 	    AcpiWriteBitRegister(ACPI_BITREG_SCI_ENABLE, ACPI_ENABLE_EVENT);
-
-	AcpiLeaveSleepStatePrep(state);
 
 	if (sleep_result == 1 && state == ACPI_STATE_S3) {
 	    /*
@@ -2959,6 +2956,8 @@ acpi_EnterSleepState(struct acpi_softc *sc, int state)
 	/* call acpi_wakeup_machdep() again with interrupt enabled */
 	acpi_wakeup_machdep(sc, state, sleep_result, 1);
 
+	AcpiLeaveSleepStatePrep(state);
+
 	if (sleep_result == -1)
 		goto backout;
 
@@ -2967,8 +2966,8 @@ acpi_EnterSleepState(struct acpi_softc *sc, int state)
 	    AcpiEnable();
     } else {
 	status = AcpiEnterSleepState(state);
-	AcpiLeaveSleepStatePrep(state);
 	intr_restore(intr);
+	AcpiLeaveSleepStatePrep(state);
 	if (ACPI_FAILURE(status)) {
 	    device_printf(sc->acpi_dev, "AcpiEnterSleepState failed - %s\n",
 			  AcpiFormatException(status));
@@ -2982,6 +2981,8 @@ acpi_EnterSleepState(struct acpi_softc *sc, int state)
      * process.  This handles both the error and success cases.
      */
 backout:
+    if (slp_state >= ACPI_SS_SLP_PREP)
+	resumeclock();
     if (slp_state >= ACPI_SS_GPE_SET) {
 	acpi_wake_prep_walk(state);
 	sc->acpi_sstate = ACPI_STATE_S0;
@@ -2991,6 +2992,10 @@ backout:
     if (slp_state >= ACPI_SS_SLP_PREP)
 	AcpiLeaveSleepState(state);
     if (slp_state >= ACPI_SS_SLEPT) {
+#if defined(__i386__) || defined(__amd64__)
+	/* NB: we are still using ACPI timecounter at this point. */
+	resume_TSC();
+#endif
 	acpi_resync_clock(sc);
 	acpi_enable_fixed_events(sc);
     }

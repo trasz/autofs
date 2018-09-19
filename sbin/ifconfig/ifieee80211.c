@@ -1,4 +1,6 @@
-/*
+/*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright 2001 The Aerospace Corporation.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -88,6 +90,8 @@
 #include <unistd.h>
 #include <stdarg.h>
 #include <stddef.h>		/* NB: for offsetof */
+#include <locale.h>
+#include <langinfo.h>
 
 #include "ifconfig.h"
 
@@ -1081,6 +1085,7 @@ set80211chanlist(const char *val, int d, int s, const struct afswtch *rafp)
 		cp = tp;
 	}
 	set80211(s, IEEE80211_IOC_CHANLIST, 0, sizeof(chanlist), &chanlist);
+	free(temp);
 }
 
 static void
@@ -2997,6 +3002,14 @@ printwpsie(const char *tag, const u_int8_t *ie, size_t ielen, int maxlen)
 			uint16_t tlv_type = BE_READ_2(ie);
 			uint16_t tlv_len  = BE_READ_2(ie + 2);
 
+			/* some devices broadcast invalid WPS frames */
+			if (tlv_len > len) {
+				printf("bad frame length tlv_type=0x%02x "
+				    "tlv_len=%d len=%d", tlv_type, tlv_len,
+				    len);
+				break;
+			}
+
 			ie += 4, len -= 4;
 
 			switch (tlv_type) {
@@ -3290,8 +3303,8 @@ printmimo(const struct ieee80211_mimo_info *mi)
 	/* NB: don't muddy display unless there's something to show */
 	if (mi->rssi[0] != 0 || mi->rssi[1] != 0 || mi->rssi[2] != 0) {
 		/* XXX ignore EVM for now */
-		printf(" (rssi %d:%d:%d nf %d:%d:%d)",
-		    mi->rssi[0], mi->rssi[1], mi->rssi[2],
+		printf(" (rssi %.1f:%.1f:%.1f nf %d:%d:%d)",
+		    mi->rssi[0] / 2.0, mi->rssi[1] / 2.0, mi->rssi[2] / 2.0,
 		    mi->noise[0], mi->noise[1], mi->noise[2]);
 	}
 }
@@ -5120,16 +5133,21 @@ print_string(const u_int8_t *buf, int len)
 {
 	int i;
 	int hasspc;
+	int utf8;
 
 	i = 0;
 	hasspc = 0;
+
+	setlocale(LC_CTYPE, "");
+	utf8 = strncmp("UTF-8", nl_langinfo(CODESET), 5) == 0;
+
 	for (; i < len; i++) {
-		if (!isprint(buf[i]) && buf[i] != '\0')
+		if (!isprint(buf[i]) && buf[i] != '\0' && !utf8)
 			break;
 		if (isspace(buf[i]))
 			hasspc++;
 	}
-	if (i == len) {
+	if (i == len || utf8) {
 		if (hasspc || len == 0 || buf[0] == '\0')
 			printf("\"%.*s\"", len, buf);
 		else

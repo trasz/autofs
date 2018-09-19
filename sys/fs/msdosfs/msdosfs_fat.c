@@ -389,7 +389,7 @@ usemap_alloc(struct msdosfsmount *pmp, u_long cn)
 	KASSERT((pmp->pm_inusemap[cn / N_INUSEBITS] & (1 << (cn % N_INUSEBITS)))
 	    == 0, ("Allocating used sector %ld %ld %x", cn, cn % N_INUSEBITS,
 		(unsigned)pmp->pm_inusemap[cn / N_INUSEBITS]));
-	pmp->pm_inusemap[cn / N_INUSEBITS] |= 1 << (cn % N_INUSEBITS);
+	pmp->pm_inusemap[cn / N_INUSEBITS] |= 1U << (cn % N_INUSEBITS);
 	KASSERT(pmp->pm_freeclustercount > 0, ("usemap_alloc: too little"));
 	pmp->pm_freeclustercount--;
 	pmp->pm_flags |= MSDOSFS_FSIMOD;
@@ -410,7 +410,7 @@ usemap_free(struct msdosfsmount *pmp, u_long cn)
 	KASSERT((pmp->pm_inusemap[cn / N_INUSEBITS] & (1 << (cn % N_INUSEBITS)))
 	    != 0, ("Freeing unused sector %ld %ld %x", cn, cn % N_INUSEBITS,
 		(unsigned)pmp->pm_inusemap[cn / N_INUSEBITS]));
-	pmp->pm_inusemap[cn / N_INUSEBITS] &= ~(1 << (cn % N_INUSEBITS));
+	pmp->pm_inusemap[cn / N_INUSEBITS] &= ~(1U << (cn % N_INUSEBITS));
 }
 
 int
@@ -773,7 +773,7 @@ clusteralloc1(struct msdosfsmount *pmp, u_long start, u_long count,
 	for (cn = newst; cn <= pmp->pm_maxcluster;) {
 		idx = cn / N_INUSEBITS;
 		map = pmp->pm_inusemap[idx];
-		map |= (1 << (cn % N_INUSEBITS)) - 1;
+		map |= (1U << (cn % N_INUSEBITS)) - 1;
 		if (map != FULL_RUN) {
 			cn = idx * N_INUSEBITS + ffs(map ^ FULL_RUN) - 1;
 			if ((l = chainlength(pmp, cn, count)) >= count)
@@ -790,7 +790,7 @@ clusteralloc1(struct msdosfsmount *pmp, u_long start, u_long count,
 	for (cn = 0; cn < newst;) {
 		idx = cn / N_INUSEBITS;
 		map = pmp->pm_inusemap[idx];
-		map |= (1 << (cn % N_INUSEBITS)) - 1;
+		map |= (1U << (cn % N_INUSEBITS)) - 1;
 		if (map != FULL_RUN) {
 			cn = idx * N_INUSEBITS + ffs(map ^ FULL_RUN) - 1;
 			if ((l = chainlength(pmp, cn, count)) >= count)
@@ -888,12 +888,12 @@ freeclusterchain(struct msdosfsmount *pmp, u_long cluster)
 int
 fillinusemap(struct msdosfsmount *pmp)
 {
-	struct buf *bp = NULL;
-	u_long cn, readcn;
+	struct buf *bp;
+	u_long bn, bo, bsize, byteoffset, cn, readcn;
 	int error;
-	u_long bn, bo, bsize, byteoffset;
 
 	MSDOSFS_ASSERT_MP_LOCKED(pmp);
+	bp = NULL;
 
 	/*
 	 * Mark all clusters in use, we mark the free ones in the fat scan
@@ -908,19 +908,17 @@ fillinusemap(struct msdosfsmount *pmp)
 	 * zero.  These represent free clusters.
 	 */
 	pmp->pm_freeclustercount = 0;
-	for (cn = CLUST_FIRST; cn <= pmp->pm_maxcluster; cn++) {
+	for (cn = 0; cn <= pmp->pm_maxcluster; cn++) {
 		byteoffset = FATOFS(pmp, cn);
 		bo = byteoffset % pmp->pm_fatblocksize;
-		if (!bo || !bp) {
+		if (bo == 0) {
 			/* Read new FAT block */
-			if (bp)
+			if (bp != NULL)
 				brelse(bp);
 			fatblock(pmp, byteoffset, &bn, &bsize, NULL);
 			error = bread(pmp->pm_devvp, bn, bsize, NOCRED, &bp);
-			if (error) {
-				brelse(bp);
+			if (error != 0)
 				return (error);
-			}
 		}
 		if (FAT32(pmp))
 			readcn = getulong(&bp->b_data[bo]);
@@ -930,7 +928,19 @@ fillinusemap(struct msdosfsmount *pmp)
 			readcn >>= 4;
 		readcn &= pmp->pm_fatmask;
 
-		if (readcn == CLUST_FREE)
+		/*
+		 * Check if the FAT ID matches the BPB's media descriptor and
+		 * all other bits are set to 1.
+		 */
+		if (cn == 0 && readcn != ((pmp->pm_fatmask & 0xffffff00) |
+		    pmp->pm_bpb.bpbMedia)) {
+#ifdef MSDOSFS_DEBUG
+			printf("mountmsdosfs(): Media descriptor in BPB"
+			    "does not match FAT ID\n");
+#endif
+			brelse(bp);
+			return (EINVAL);
+		} else if (readcn == CLUST_FREE)
 			usemap_free(pmp, cn);
 	}
 	if (bp != NULL)
@@ -938,7 +948,7 @@ fillinusemap(struct msdosfsmount *pmp)
 
 	for (cn = pmp->pm_maxcluster + 1; cn < (pmp->pm_maxcluster +
 	    N_INUSEBITS) / N_INUSEBITS; cn++)
-		pmp->pm_inusemap[cn / N_INUSEBITS] |= 1 << (cn % N_INUSEBITS);
+		pmp->pm_inusemap[cn / N_INUSEBITS] |= 1U << (cn % N_INUSEBITS);
 
 	return (0);
 }

@@ -98,7 +98,7 @@ tcpmod_setmss(struct mbuf **mp, struct tcphdr *tcp, int tlen, uint16_t mss)
 			ret = 0; /* report success */
 			bcopy(cp + 2, &oldmss, sizeof(oldmss));
 			/* Do not update lower MSS value */
-			if (oldmss <= mss)
+			if (ntohs(oldmss) <= ntohs(mss))
 				break;
 			bcopy(&mss, cp + 2, sizeof(mss));
 			/* Update checksum if it is not delayed. */
@@ -137,7 +137,7 @@ tcpmod_ipv6_setmss(struct mbuf **mp, uint16_t mss)
 	    proto == IPPROTO_DSTOPTS) {
 		hbh = mtodo(*mp, hlen);
 		proto = hbh->ip6h_nxt;
-		hlen += hbh->ip6h_len << 3;
+		hlen += (hbh->ip6h_len + 1) << 3;
 	}
 	tcp = mtodo(*mp, hlen);
 	plen = (*mp)->m_pkthdr.len - hlen;

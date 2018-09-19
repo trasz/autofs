@@ -865,7 +865,7 @@ pfsync_in_upd(struct pfsync_pkt *pkt, struct mbuf *m, int offset, int count)
 		st = pf_find_state_byid(sp->id, sp->creatorid);
 		if (st == NULL) {
 			/* insert the update */
-			if (pfsync_state_import(sp, 0))
+			if (pfsync_state_import(sp, pkt->flags))
 				V_pfsyncstats.pfsyncs_badstate++;
 			continue;
 		}
@@ -1317,7 +1317,8 @@ pfsyncioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 		pfsyncr.pfsyncr_defer = (PFSYNCF_DEFER ==
 		    (sc->sc_flags & PFSYNCF_DEFER));
 		PFSYNC_UNLOCK(sc);
-		return (copyout(&pfsyncr, ifr->ifr_data, sizeof(pfsyncr)));
+		return (copyout(&pfsyncr, ifr_data_get_ptr(ifr),
+		    sizeof(pfsyncr)));
 
 	case SIOCSETPFSYNC:
 	    {
@@ -1328,7 +1329,8 @@ pfsyncioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 
 		if ((error = priv_check(curthread, PRIV_NETINET_PF)) != 0)
 			return (error);
-		if ((error = copyin(ifr->ifr_data, &pfsyncr, sizeof(pfsyncr))))
+		if ((error = copyin(ifr_data_get_ptr(ifr), &pfsyncr,
+		    sizeof(pfsyncr))))
 			return (error);
 
 		if (pfsyncr.pfsyncr_maxupdates > 255)

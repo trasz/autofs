@@ -257,7 +257,7 @@ trap(struct trapframe *tf)
 	struct thread *td;
 	struct proc *p;
 	int error;
-	int sig;
+	int sig, ucode;
 	register_t addr;
 	ksiginfo_t ksi;
 
@@ -277,6 +277,7 @@ trap(struct trapframe *tf)
 		td->td_pticks = 0;
 		td->td_frame = tf;
 		addr = tf->tf_tpc;
+		ucode = (int)tf->tf_type; /* XXX not POSIX */
 		if (td->td_cowgen != p->p_cowgen)
 			thread_cow_update(td);
 
@@ -300,6 +301,10 @@ trap(struct trapframe *tf)
 		case T_CORRECTED_ECC_ERROR:
 			sig = trap_cecc();
 			break;
+		case T_BREAKPOINT:
+			sig = SIGTRAP;
+			ucode = TRAP_BRKPT;
+			break;
 		default:
 			if (tf->tf_type > T_MAX)
 				panic("trap: bad trap type %#lx (user)",
@@ -322,7 +327,7 @@ trap(struct trapframe *tf)
 				kdb_enter(KDB_WHY_TRAPSIG, "trapsig");
 			ksiginfo_init_trap(&ksi);
 			ksi.ksi_signo = sig;
-			ksi.ksi_code = (int)tf->tf_type; /* XXX not POSIX */
+			ksi.ksi_code = ucode;
 			ksi.ksi_addr = (void *)addr;
 			ksi.ksi_trapno = (int)tf->tf_type;
 			trapsignal(td, &ksi);
@@ -538,17 +543,19 @@ trap_pfault(struct thread *td, struct trapframe *tf)
 #define	REG_MAXARGS	6
 
 int
-cpu_fetch_syscall_args(struct thread *td, struct syscall_args *sa)
+cpu_fetch_syscall_args(struct thread *td)
 {
 	struct trapframe *tf;
 	struct proc *p;
 	register_t *argp;
+	struct syscall_args *sa;
 	int reg;
 	int regcnt;
 	int error;
 
 	p = td->td_proc;
 	tf = td->td_frame;
+	sa = &td->td_sa;
 	reg = 0;
 	regcnt = REG_MAXARGS;
 
@@ -596,7 +603,6 @@ void
 syscall(struct trapframe *tf)
 {
 	struct thread *td;
-	struct syscall_args sa;
 	int error;
 
 	td = curthread;
@@ -612,6 +618,6 @@ syscall(struct trapframe *tf)
 	td->td_pcb->pcb_tpc = tf->tf_tpc;
 	TF_DONE(tf);
 
-	error = syscallenter(td, &sa);
-	syscallret(td, error, &sa);
+	error = syscallenter(td);
+	syscallret(td, error);
 }

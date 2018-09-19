@@ -78,6 +78,15 @@ struct itimerspec32 {
 	TS_CP((src), (dst), it_value);		\
 } while (0)
 
+struct bintime32 {
+	uint32_t sec;
+	uint32_t frac[2];
+};
+#define BT_CP(src, dst, fld) do {				\
+	CP((src).fld, (dst).fld, sec);				\
+	*(uint64_t *)&(dst).fld.frac[0] = (src).fld.frac;	\
+} while (0)
+
 struct rusage32 {
 	struct timeval32 ru_utime;
 	struct timeval32 ru_stime;
@@ -133,15 +142,6 @@ struct statfs32 {
 	char	f_mntfromname[FREEBSD4_MNAMELEN];
 	int16_t	f_spares2 __packed;
 	int32_t f_spare[2];
-};
-
-struct kevent32 {
-	u_int32_t	ident;		/* identifier for this event */
-	short		filter;		/* filter for event */
-	u_short		flags;
-	u_int		fflags;
-	int32_t		data;
-	u_int32_t	udata;		/* opaque user data identifier */
 };
 
 struct iovec32 {

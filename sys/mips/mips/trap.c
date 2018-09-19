@@ -339,12 +339,16 @@ static int emulate_unaligned_access(struct trapframe *frame, int mode);
 extern void fswintrberr(void); /* XXX */
 
 int
-cpu_fetch_syscall_args(struct thread *td, struct syscall_args *sa)
+cpu_fetch_syscall_args(struct thread *td)
 {
-	struct trapframe *locr0 = td->td_frame;
+	struct trapframe *locr0;
 	struct sysentvec *se;
+	struct syscall_args *sa;
 	int error, nsaved;
 
+	locr0 = td->td_frame;
+	sa = &td->td_sa;
+	
 	bzero(sa->args, sizeof(sa->args));
 
 	/* compute next PC after syscall instruction */
@@ -529,7 +533,12 @@ trap(struct trapframe *trapframe)
 	register_t *frame_regs;
 
 	trapdebug_enter(trapframe, 0);
-	
+#ifdef KDB
+	if (kdb_active) {
+		kdb_reenter();
+		return (0);
+	}
+#endif
 	type = (trapframe->cause & MIPS_CR_EXC_CODE) >> MIPS_CR_EXC_CODE_SHIFT;
 	if (TRAPF_USERMODE(trapframe)) {
 		type |= T_USER;
@@ -786,19 +795,18 @@ dofault:
 
 	case T_SYSCALL + T_USER:
 		{
-			struct syscall_args sa;
 			int error;
 
-			sa.trapframe = trapframe;
-			error = syscallenter(td, &sa);
+			td->td_sa.trapframe = trapframe;
+			error = syscallenter(td);
 
 #if !defined(SMP) && (defined(DDB) || defined(DEBUG))
 			if (trp == trapdebug)
-				trapdebug[TRAPSIZE - 1].code = sa.code;
+				trapdebug[TRAPSIZE - 1].code = td->td_sa.code;
 			else
-				trp[-1].code = sa.code;
+				trp[-1].code = td->td_sa.code;
 #endif
-			trapdebug_enter(td->td_frame, -sa.code);
+			trapdebug_enter(td->td_frame, -td->td_sa.code);
 
 			/*
 			 * The sync'ing of I & D caches for SYS_ptrace() is
@@ -806,7 +814,7 @@ dofault:
 			 * instead of being done here under a special check
 			 * for SYS_ptrace().
 			 */
-			syscallret(td, error, &sa);
+			syscallret(td, error);
 			return (trapframe->pc);
 		}
 
@@ -844,17 +852,19 @@ dofault:
 			if (td->td_md.md_ss_addr != va ||
 			    instr != MIPS_BREAK_SSTEP) {
 				i = SIGTRAP;
+				ucode = TRAP_BRKPT;
 				addr = trapframe->pc;
 				break;
 			}
 			/*
 			 * The restoration of the original instruction and
-			 * the clearing of the berakpoint will be done later
+			 * the clearing of the breakpoint will be done later
 			 * by the call to ptrace_clear_single_step() in
 			 * issignal() when SIGTRAP is processed.
 			 */
 			addr = trapframe->pc;
 			i = SIGTRAP;
+			ucode = TRAP_TRACE;
 			break;
 		}
 
@@ -869,6 +879,7 @@ dofault:
 				va += sizeof(int);
 			printf("watch exception @ %p\n", (void *)va);
 			i = SIGTRAP;
+			ucode = TRAP_BRKPT;
 			addr = va;
 			break;
 		}
@@ -1101,8 +1112,10 @@ err:
 #endif
 
 #ifdef KDB
-		if (debugger_on_panic || kdb_active) {
+		if (debugger_on_panic) {
+			kdb_why = KDB_WHY_TRAP;
 			kdb_trap(type, 0, trapframe);
+			kdb_why = KDB_WHY_UNSET;
 		}
 #endif
 		panic("trap");

@@ -71,6 +71,7 @@
 /* Our various interpretations of the above */
 #define PG_W		PG_AVAIL1	/* "Wired" pseudoflag */
 #define	PG_MANAGED	PG_AVAIL2
+#define	PG_PROMOTED	PG_AVAIL3	/* PDE only */
 #if defined(PAE) || defined(PAE_TABLES)
 #define	PG_FRAME	(0x000ffffffffff000ull)
 #define	PG_PS_FRAME	(0x000fffffffe00000ull)
@@ -372,6 +373,7 @@ extern vm_offset_t virtual_end;
  * is called: pmap_kenter(), pmap_kextract(), pmap_kremove(), vtophys(), and
  * vtopte().
  */
+void	pmap_activate_boot(pmap_t pmap);
 void	pmap_bootstrap(vm_paddr_t);
 int	pmap_cache_bits(int mode, boolean_t is_pde);
 int	pmap_change_attr(vm_offset_t, vm_size_t, int);

@@ -65,6 +65,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/jail.h>
 #include <sys/pioctl.h>
 #include <sys/racct.h>
+#include <sys/rctl.h>
 #include <sys/resourcevar.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
@@ -300,7 +301,7 @@ struct getgroups_args {
 };
 #endif
 int
-sys_getgroups(struct thread *td, register struct getgroups_args *uap)
+sys_getgroups(struct thread *td, struct getgroups_args *uap)
 {
 	struct ucred *cred;
 	u_int ngrp;
@@ -329,7 +330,7 @@ struct setsid_args {
 #endif
 /* ARGSUSED */
 int
-sys_setsid(register struct thread *td, struct setsid_args *uap)
+sys_setsid(struct thread *td, struct setsid_args *uap)
 {
 	struct pgrp *pgrp;
 	int error;
@@ -387,11 +388,11 @@ struct setpgid_args {
 #endif
 /* ARGSUSED */
 int
-sys_setpgid(struct thread *td, register struct setpgid_args *uap)
+sys_setpgid(struct thread *td, struct setpgid_args *uap)
 {
 	struct proc *curp = td->td_proc;
-	register struct proc *targp;	/* target process */
-	register struct pgrp *pgrp;	/* target pgrp */
+	struct proc *targp;	/* target process */
+	struct pgrp *pgrp;	/* target pgrp */
 	int error;
 	struct pgrp *newpgrp;
 
@@ -579,9 +580,14 @@ sys_setuid(struct thread *td, struct setuid_args *uap)
 		setsugid(p);
 	}
 	proc_set_cred(p, newcred);
-	PROC_UNLOCK(p);
 #ifdef RACCT
 	racct_proc_ucred_changed(p, oldcred, newcred);
+	crhold(newcred);
+#endif
+	PROC_UNLOCK(p);
+#ifdef RCTL
+	rctl_proc_ucred_changed(p, newcred);
+	crfree(newcred);
 #endif
 	uifree(uip);
 	crfree(oldcred);
@@ -882,7 +888,7 @@ struct setreuid_args {
 #endif
 /* ARGSUSED */
 int
-sys_setreuid(register struct thread *td, struct setreuid_args *uap)
+sys_setreuid(struct thread *td, struct setreuid_args *uap)
 {
 	struct proc *p = td->td_proc;
 	struct ucred *newcred, *oldcred;
@@ -927,9 +933,14 @@ sys_setreuid(register struct thread *td, struct setreuid_args *uap)
 		setsugid(p);
 	}
 	proc_set_cred(p, newcred);
-	PROC_UNLOCK(p);
 #ifdef RACCT
 	racct_proc_ucred_changed(p, oldcred, newcred);
+	crhold(newcred);
+#endif
+	PROC_UNLOCK(p);
+#ifdef RCTL
+	rctl_proc_ucred_changed(p, newcred);
+	crfree(newcred);
 #endif
 	uifree(ruip);
 	uifree(euip);
@@ -952,7 +963,7 @@ struct setregid_args {
 #endif
 /* ARGSUSED */
 int
-sys_setregid(register struct thread *td, struct setregid_args *uap)
+sys_setregid(struct thread *td, struct setregid_args *uap)
 {
 	struct proc *p = td->td_proc;
 	struct ucred *newcred, *oldcred;
@@ -1017,7 +1028,7 @@ struct setresuid_args {
 #endif
 /* ARGSUSED */
 int
-sys_setresuid(register struct thread *td, struct setresuid_args *uap)
+sys_setresuid(struct thread *td, struct setresuid_args *uap)
 {
 	struct proc *p = td->td_proc;
 	struct ucred *newcred, *oldcred;
@@ -1068,9 +1079,14 @@ sys_setresuid(register struct thread *td, struct setresuid_args *uap)
 		setsugid(p);
 	}
 	proc_set_cred(p, newcred);
-	PROC_UNLOCK(p);
 #ifdef RACCT
 	racct_proc_ucred_changed(p, oldcred, newcred);
+	crhold(newcred);
+#endif
+	PROC_UNLOCK(p);
+#ifdef RCTL
+	rctl_proc_ucred_changed(p, newcred);
+	crfree(newcred);
 #endif
 	uifree(ruip);
 	uifree(euip);
@@ -1099,7 +1115,7 @@ struct setresgid_args {
 #endif
 /* ARGSUSED */
 int
-sys_setresgid(register struct thread *td, struct setresgid_args *uap)
+sys_setresgid(struct thread *td, struct setresgid_args *uap)
 {
 	struct proc *p = td->td_proc;
 	struct ucred *newcred, *oldcred;
@@ -1166,7 +1182,7 @@ struct getresuid_args {
 #endif
 /* ARGSUSED */
 int
-sys_getresuid(register struct thread *td, struct getresuid_args *uap)
+sys_getresuid(struct thread *td, struct getresuid_args *uap)
 {
 	struct ucred *cred;
 	int error1 = 0, error2 = 0, error3 = 0;
@@ -1193,7 +1209,7 @@ struct getresgid_args {
 #endif
 /* ARGSUSED */
 int
-sys_getresgid(register struct thread *td, struct getresgid_args *uap)
+sys_getresgid(struct thread *td, struct getresgid_args *uap)
 {
 	struct ucred *cred;
 	int error1 = 0, error2 = 0, error3 = 0;
@@ -1218,7 +1234,7 @@ struct issetugid_args {
 #endif
 /* ARGSUSED */
 int
-sys_issetugid(register struct thread *td, struct issetugid_args *uap)
+sys_issetugid(struct thread *td, struct issetugid_args *uap)
 {
 	struct proc *p = td->td_proc;
 
@@ -1811,7 +1827,7 @@ p_canwait(struct thread *td, struct proc *p)
 struct ucred *
 crget(void)
 {
-	register struct ucred *cr;
+	struct ucred *cr;
 
 	cr = malloc(sizeof(*cr), M_CRED, M_WAITOK | M_ZERO);
 	refcount_init(&cr->cr_ref, 1);

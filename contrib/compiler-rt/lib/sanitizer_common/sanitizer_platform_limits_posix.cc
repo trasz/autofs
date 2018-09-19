@@ -25,7 +25,6 @@
 #endif
 #include <arpa/inet.h>
 #include <dirent.h>
-#include <errno.h>
 #include <grp.h>
 #include <limits.h>
 #include <net/if.h>
@@ -160,7 +159,6 @@ typedef struct user_fpregs elf_fpregset_t;
 # include <sys/procfs.h>
 #endif
 #include <sys/user.h>
-#include <sys/ustat.h>
 #include <linux/cyclades.h>
 #include <linux/if_eql.h>
 #include <linux/if_plip.h>
@@ -211,6 +209,7 @@ namespace __sanitizer {
   unsigned struct_sigaction_sz = sizeof(struct sigaction);
   unsigned struct_itimerval_sz = sizeof(struct itimerval);
   unsigned pthread_t_sz = sizeof(pthread_t);
+  unsigned pthread_mutex_t_sz = sizeof(pthread_mutex_t);
   unsigned pthread_cond_t_sz = sizeof(pthread_cond_t);
   unsigned pid_t_sz = sizeof(pid_t);
   unsigned timeval_sz = sizeof(timeval);
@@ -253,7 +252,19 @@ namespace __sanitizer {
 #endif // SANITIZER_LINUX || SANITIZER_FREEBSD
 
 #if SANITIZER_LINUX && !SANITIZER_ANDROID
-  unsigned struct_ustat_sz = sizeof(struct ustat);
+  // Use pre-computed size of struct ustat to avoid <sys/ustat.h> which
+  // has been removed from glibc 2.28.
+#if defined(__aarch64__) || defined(__s390x__) || defined (__mips64) \
+  || defined(__powerpc64__) || defined(__arch64__) || defined(__sparcv9) \
+  || defined(__x86_64__)
+#define SIZEOF_STRUCT_USTAT 32
+#elif defined(__arm__) || defined(__i386__) || defined(__mips__) \
+  || defined(__powerpc__) || defined(__s390__)
+#define SIZEOF_STRUCT_USTAT 20
+#else
+#error Unknown size of struct ustat
+#endif
+  unsigned struct_ustat_sz = SIZEOF_STRUCT_USTAT;
   unsigned struct_rlimit64_sz = sizeof(struct rlimit64);
   unsigned struct_statvfs64_sz = sizeof(struct statvfs64);
 #endif // SANITIZER_LINUX && !SANITIZER_ANDROID
@@ -265,9 +276,10 @@ namespace __sanitizer {
   unsigned struct_statvfs_sz = sizeof(struct statvfs);
 #endif // (SANITIZER_LINUX || SANITIZER_FREEBSD) && !SANITIZER_ANDROID
 
-  uptr sig_ign = (uptr)SIG_IGN;
-  uptr sig_dfl = (uptr)SIG_DFL;
-  uptr sa_siginfo = (uptr)SA_SIGINFO;
+  const uptr sig_ign = (uptr)SIG_IGN;
+  const uptr sig_dfl = (uptr)SIG_DFL;
+  const uptr sig_err = (uptr)SIG_ERR;
+  const uptr sa_siginfo = (uptr)SA_SIGINFO;
 
 #if SANITIZER_LINUX
   int e_tabsz = (int)E_TABSZ;
@@ -930,14 +942,6 @@ unsigned struct_ElfW_Phdr_sz = sizeof(Elf_Phdr);
   unsigned IOCTL_SNDCTL_DSP_GETISPACE = SNDCTL_DSP_GETISPACE;
   unsigned IOCTL_SNDCTL_DSP_GETOSPACE = SNDCTL_DSP_GETOSPACE;
 #endif // (SANITIZER_LINUX || SANITIZER_FREEBSD) && !SANITIZER_ANDROID
-
-  const int errno_EINVAL = EINVAL;
-// EOWNERDEAD is not present in some older platforms.
-#if defined(EOWNERDEAD)
-  const int errno_EOWNERDEAD = EOWNERDEAD;
-#else
-  const int errno_EOWNERDEAD = -1;
-#endif
 
   const int si_SEGV_MAPERR = SEGV_MAPERR;
   const int si_SEGV_ACCERR = SEGV_ACCERR;

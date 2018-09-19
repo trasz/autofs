@@ -92,7 +92,7 @@ struct ecore_fcoe_pf_params {
 struct ecore_iscsi_pf_params {
 
 	u64		glbl_q_params_addr;
-	u64		bdq_pbl_base_addr[2];
+	u64		bdq_pbl_base_addr[3];
 	u16		cq_num_entries;
 	u16		cmdq_num_entries;
 	u32		two_msl_timer;
@@ -106,8 +106,8 @@ struct ecore_iscsi_pf_params {
 
 	/* The following parameters are used during protocol-init */
 	u16		half_way_close_timeout;
-	u16		bdq_xoff_threshold[2];
-	u16		bdq_xon_threshold[2];
+	u16		bdq_xoff_threshold[3];
+	u16		bdq_xon_threshold[3];
 	u16		cmdq_xoff_threshold;
 	u16		cmdq_xon_threshold;
 	u16		rq_buffer_size;
@@ -123,10 +123,12 @@ struct ecore_iscsi_pf_params {
 	u8		gl_cmd_pi;
 	u8		debug_mode;
 	u8		ll2_ooo_queue_id;
-	u8		ooo_enable;
 
 	u8		is_target;
-	u8		bdq_pbl_num_entries[2];
+	u8		is_soc_en;
+	u8		soc_num_of_blocks_log;
+	u8		bdq_pbl_num_entries[3];
+	u8		disable_stats_collection;
 };
 
 enum ecore_rdma_protocol {
@@ -142,7 +144,8 @@ struct ecore_rdma_pf_params {
 	 */
 	u32		min_dpis;	/* number of requested DPIs */
 	u32		num_qps;	/* number of requested Queue Pairs */
-	u32		num_srqs;	/* number of requested SRQ */
+	u32		num_srqs;	/* number of requested SRQs */
+	u32		num_xrc_srqs;	/* number of requested XRC SRQs */
 	u8		roce_edpm_mode; /* see QED_ROCE_EDPM_MODE_ENABLE */
 	u8		gl_pi;		/* protocol index */
 

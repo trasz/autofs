@@ -65,7 +65,7 @@ struct pstorm_iwarp_conn_st_ctx
  */
 struct xstorm_iwarp_conn_st_ctx
 {
-	__le32 reserved[44];
+	__le32 reserved[48];
 };
 
 struct e4_xstorm_iwarp_conn_ag_ctx
@@ -331,85 +331,85 @@ struct e4_tstorm_iwarp_conn_ag_ctx
 	u8 reserved0 /* cdu_validation */;
 	u8 state /* state */;
 	u8 flags0;
-#define E4_TSTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_MASK                0x1 /* exist_in_qm0 */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_SHIFT               0
-#define E4_TSTORM_IWARP_CONN_AG_CTX_BIT1_MASK                        0x1 /* exist_in_qm1 */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_BIT1_SHIFT                       1
-#define E4_TSTORM_IWARP_CONN_AG_CTX_BIT2_MASK                        0x1 /* bit2 */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_BIT2_SHIFT                       2
-#define E4_TSTORM_IWARP_CONN_AG_CTX_MSTORM_FLUSH_MASK                0x1 /* bit3 */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_MSTORM_FLUSH_SHIFT               3
-#define E4_TSTORM_IWARP_CONN_AG_CTX_BIT4_MASK                        0x1 /* bit4 */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_BIT4_SHIFT                       4
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CACHED_ORQ_MASK                  0x1 /* bit5 */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CACHED_ORQ_SHIFT                 5
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF0_MASK                         0x3 /* timer0cf */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF0_SHIFT                        6
+#define E4_TSTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_MASK                            0x1 /* exist_in_qm0 */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_SHIFT                           0
+#define E4_TSTORM_IWARP_CONN_AG_CTX_BIT1_MASK                                    0x1 /* exist_in_qm1 */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_BIT1_SHIFT                                   1
+#define E4_TSTORM_IWARP_CONN_AG_CTX_BIT2_MASK                                    0x1 /* bit2 */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_BIT2_SHIFT                                   2
+#define E4_TSTORM_IWARP_CONN_AG_CTX_MSTORM_FLUSH_MASK                            0x1 /* bit3 */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_MSTORM_FLUSH_SHIFT                           3
+#define E4_TSTORM_IWARP_CONN_AG_CTX_BIT4_MASK                                    0x1 /* bit4 */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_BIT4_SHIFT                                   4
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CACHED_ORQ_MASK                              0x1 /* bit5 */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CACHED_ORQ_SHIFT                             5
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF0_MASK                                     0x3 /* timer0cf */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF0_SHIFT                                    6
 	u8 flags1;
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RQ_POST_CF_MASK                  0x3 /* timer1cf */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RQ_POST_CF_SHIFT                 0
-#define E4_TSTORM_IWARP_CONN_AG_CTX_FLUSH_OR_ERROR_DETECTED_MASK     0x3 /* timer2cf */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_FLUSH_OR_ERROR_DETECTED_SHIFT    2
-#define E4_TSTORM_IWARP_CONN_AG_CTX_TIMER_STOP_ALL_MASK              0x3 /* timer_stop_all */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_TIMER_STOP_ALL_SHIFT             4
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF4_MASK                         0x3 /* cf4 */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF4_SHIFT                        6
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RQ_POST_CF_MASK                              0x3 /* timer1cf */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RQ_POST_CF_SHIFT                             0
+#define E4_TSTORM_IWARP_CONN_AG_CTX_MPA_TIMEOUT_CF_MASK                          0x3 /* timer2cf */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_MPA_TIMEOUT_CF_SHIFT                         2
+#define E4_TSTORM_IWARP_CONN_AG_CTX_TIMER_STOP_ALL_MASK                          0x3 /* timer_stop_all */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_TIMER_STOP_ALL_SHIFT                         4
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF4_MASK                                     0x3 /* cf4 */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF4_SHIFT                                    6
 	u8 flags2;
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF5_MASK                         0x3 /* cf5 */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF5_SHIFT                        0
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF6_MASK                         0x3 /* cf6 */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF6_SHIFT                        2
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF7_MASK                         0x3 /* cf7 */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF7_SHIFT                        4
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF8_MASK                         0x3 /* cf8 */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF8_SHIFT                        6
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF5_MASK                                     0x3 /* cf5 */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF5_SHIFT                                    0
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF6_MASK                                     0x3 /* cf6 */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF6_SHIFT                                    2
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF7_MASK                                     0x3 /* cf7 */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF7_SHIFT                                    4
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF8_MASK                                     0x3 /* cf8 */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF8_SHIFT                                    6
 	u8 flags3;
-#define E4_TSTORM_IWARP_CONN_AG_CTX_FLUSH_Q0_MASK                    0x3 /* cf9 */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_FLUSH_Q0_SHIFT                   0
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF10_MASK                        0x3 /* cf10 */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF10_SHIFT                       2
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF0EN_MASK                       0x1 /* cf0en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF0EN_SHIFT                      4
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RQ_POST_CF_EN_MASK               0x1 /* cf1en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RQ_POST_CF_EN_SHIFT              5
-#define E4_TSTORM_IWARP_CONN_AG_CTX_FLUSH_OR_ERROR_DETECTED_EN_MASK  0x1 /* cf2en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_FLUSH_OR_ERROR_DETECTED_EN_SHIFT 6
-#define E4_TSTORM_IWARP_CONN_AG_CTX_TIMER_STOP_ALL_EN_MASK           0x1 /* cf3en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_TIMER_STOP_ALL_EN_SHIFT          7
+#define E4_TSTORM_IWARP_CONN_AG_CTX_FLUSH_Q0_AND_TCP_HANDSHAKE_COMPLETE_MASK     0x3 /* cf9 */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_FLUSH_Q0_AND_TCP_HANDSHAKE_COMPLETE_SHIFT    0
+#define E4_TSTORM_IWARP_CONN_AG_CTX_FLUSH_OR_ERROR_DETECTED_MASK                 0x3 /* cf10 */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_FLUSH_OR_ERROR_DETECTED_SHIFT                2
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF0EN_MASK                                   0x1 /* cf0en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF0EN_SHIFT                                  4
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RQ_POST_CF_EN_MASK                           0x1 /* cf1en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RQ_POST_CF_EN_SHIFT                          5
+#define E4_TSTORM_IWARP_CONN_AG_CTX_MPA_TIMEOUT_CF_EN_MASK                       0x1 /* cf2en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_MPA_TIMEOUT_CF_EN_SHIFT                      6
+#define E4_TSTORM_IWARP_CONN_AG_CTX_TIMER_STOP_ALL_EN_MASK                       0x1 /* cf3en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_TIMER_STOP_ALL_EN_SHIFT                      7
 	u8 flags4;
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF4EN_MASK                       0x1 /* cf4en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF4EN_SHIFT                      0
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF5EN_MASK                       0x1 /* cf5en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF5EN_SHIFT                      1
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF6EN_MASK                       0x1 /* cf6en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF6EN_SHIFT                      2
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF7EN_MASK                       0x1 /* cf7en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF7EN_SHIFT                      3
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF8EN_MASK                       0x1 /* cf8en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF8EN_SHIFT                      4
-#define E4_TSTORM_IWARP_CONN_AG_CTX_FLUSH_Q0_EN_MASK                 0x1 /* cf9en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_FLUSH_Q0_EN_SHIFT                5
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF10EN_MASK                      0x1 /* cf10en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_CF10EN_SHIFT                     6
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE0EN_MASK                     0x1 /* rule0en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE0EN_SHIFT                    7
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF4EN_MASK                                   0x1 /* cf4en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF4EN_SHIFT                                  0
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF5EN_MASK                                   0x1 /* cf5en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF5EN_SHIFT                                  1
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF6EN_MASK                                   0x1 /* cf6en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF6EN_SHIFT                                  2
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF7EN_MASK                                   0x1 /* cf7en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF7EN_SHIFT                                  3
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF8EN_MASK                                   0x1 /* cf8en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_CF8EN_SHIFT                                  4
+#define E4_TSTORM_IWARP_CONN_AG_CTX_FLUSH_Q0_AND_TCP_HANDSHAKE_COMPLETE_EN_MASK  0x1 /* cf9en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_FLUSH_Q0_AND_TCP_HANDSHAKE_COMPLETE_EN_SHIFT 5
+#define E4_TSTORM_IWARP_CONN_AG_CTX_FLUSH_OR_ERROR_DETECTED_EN_MASK              0x1 /* cf10en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_FLUSH_OR_ERROR_DETECTED_EN_SHIFT             6
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE0EN_MASK                                 0x1 /* rule0en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE0EN_SHIFT                                7
 	u8 flags5;
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE1EN_MASK                     0x1 /* rule1en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE1EN_SHIFT                    0
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE2EN_MASK                     0x1 /* rule2en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE2EN_SHIFT                    1
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE3EN_MASK                     0x1 /* rule3en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE3EN_SHIFT                    2
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE4EN_MASK                     0x1 /* rule4en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE4EN_SHIFT                    3
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE5EN_MASK                     0x1 /* rule5en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE5EN_SHIFT                    4
-#define E4_TSTORM_IWARP_CONN_AG_CTX_SND_SQ_CONS_RULE_MASK            0x1 /* rule6en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_SND_SQ_CONS_RULE_SHIFT           5
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE7EN_MASK                     0x1 /* rule7en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE7EN_SHIFT                    6
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE8EN_MASK                     0x1 /* rule8en */
-#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE8EN_SHIFT                    7
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE1EN_MASK                                 0x1 /* rule1en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE1EN_SHIFT                                0
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE2EN_MASK                                 0x1 /* rule2en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE2EN_SHIFT                                1
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE3EN_MASK                                 0x1 /* rule3en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE3EN_SHIFT                                2
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE4EN_MASK                                 0x1 /* rule4en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE4EN_SHIFT                                3
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE5EN_MASK                                 0x1 /* rule5en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE5EN_SHIFT                                4
+#define E4_TSTORM_IWARP_CONN_AG_CTX_SND_SQ_CONS_RULE_MASK                        0x1 /* rule6en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_SND_SQ_CONS_RULE_SHIFT                       5
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE7EN_MASK                                 0x1 /* rule7en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE7EN_SHIFT                                6
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE8EN_MASK                                 0x1 /* rule8en */
+#define E4_TSTORM_IWARP_CONN_AG_CTX_RULE8EN_SHIFT                                7
 	__le32 reg0 /* reg0 */;
 	__le32 reg1 /* reg1 */;
 	__le32 unaligned_nxt_seq /* reg2 */;
@@ -428,7 +428,7 @@ struct e4_tstorm_iwarp_conn_ag_ctx
 	__le16 conn_dpi /* conn_dpi */;
 	__le16 rq_prod /* word3 */;
 	__le32 snd_seq /* reg9 */;
-	__le32 reg10 /* reg10 */;
+	__le32 last_hq_sequence /* reg10 */;
 };
 
 /*
@@ -458,7 +458,7 @@ struct ustorm_iwarp_conn_st_ctx
 /*
  * iwarp connection context
  */
-struct iwarp_conn_context
+struct e4_iwarp_conn_context
 {
 	struct ystorm_iwarp_conn_st_ctx ystorm_st_context /* ystorm storm context */;
 	struct regpair ystorm_st_padding[2] /* padding */;
@@ -474,767 +474,6 @@ struct iwarp_conn_context
 	struct regpair tstorm_st_padding[2] /* padding */;
 	struct mstorm_iwarp_conn_st_ctx mstorm_st_context /* mstorm storm context */;
 	struct ustorm_iwarp_conn_st_ctx ustorm_st_context /* ustorm storm context */;
-};
-
-
-/*
- * iWARP create QP params passed by driver to FW in CreateQP Request Ramrod 
- */
-struct iwarp_create_qp_ramrod_data
-{
-	u8 flags;
-#define IWARP_CREATE_QP_RAMROD_DATA_FMR_AND_RESERVED_EN_MASK  0x1
-#define IWARP_CREATE_QP_RAMROD_DATA_FMR_AND_RESERVED_EN_SHIFT 0
-#define IWARP_CREATE_QP_RAMROD_DATA_SIGNALED_COMP_MASK        0x1
-#define IWARP_CREATE_QP_RAMROD_DATA_SIGNALED_COMP_SHIFT       1
-#define IWARP_CREATE_QP_RAMROD_DATA_RDMA_RD_EN_MASK           0x1
-#define IWARP_CREATE_QP_RAMROD_DATA_RDMA_RD_EN_SHIFT          2
-#define IWARP_CREATE_QP_RAMROD_DATA_RDMA_WR_EN_MASK           0x1
-#define IWARP_CREATE_QP_RAMROD_DATA_RDMA_WR_EN_SHIFT          3
-#define IWARP_CREATE_QP_RAMROD_DATA_ATOMIC_EN_MASK            0x1
-#define IWARP_CREATE_QP_RAMROD_DATA_ATOMIC_EN_SHIFT           4
-#define IWARP_CREATE_QP_RAMROD_DATA_SRQ_FLG_MASK              0x1
-#define IWARP_CREATE_QP_RAMROD_DATA_SRQ_FLG_SHIFT             5
-#define IWARP_CREATE_QP_RAMROD_DATA_RESERVED0_MASK            0x3
-#define IWARP_CREATE_QP_RAMROD_DATA_RESERVED0_SHIFT           6
-	u8 reserved1 /* Basic/Enhanced */;
-	__le16 pd;
-	__le16 sq_num_pages;
-	__le16 rq_num_pages;
-	__le32 reserved3[2];
-	struct regpair qp_handle_for_cqe /* For use in CQEs */;
-	struct rdma_srq_id srq_id;
-	__le32 cq_cid_for_sq /* Cid of the CQ that will be posted from SQ */;
-	__le32 cq_cid_for_rq /* Cid of the CQ that will be posted from RQ */;
-	__le16 dpi;
-	__le16 physical_q0 /* Physical QM queue to be tied to logical Q0 */;
-	__le16 physical_q1 /* Physical QM queue to be tied to logical Q1 */;
-	u8 reserved2[6];
-};
-
-
-/*
- * iWARP completion queue types
- */
-enum iwarp_eqe_async_opcode
-{
-	IWARP_EVENT_TYPE_ASYNC_CONNECT_COMPLETE /* Async completion oafter TCP 3-way handshake */,
-	IWARP_EVENT_TYPE_ASYNC_ENHANCED_MPA_REPLY_ARRIVED /* Enhanced MPA reply arrived. Driver should either send RTR or reject */,
-	IWARP_EVENT_TYPE_ASYNC_MPA_HANDSHAKE_COMPLETE /* MPA Negotiations completed */,
-	IWARP_EVENT_TYPE_ASYNC_CID_CLEANED /* Async completion that indicates to the driver that the CID can be re-used. */,
-	IWARP_EVENT_TYPE_ASYNC_EXCEPTION_DETECTED /* Async EQE indicating detection of an error/exception on a QP at Firmware */,
-	IWARP_EVENT_TYPE_ASYNC_QP_IN_ERROR_STATE /* Async EQE indicating QP is in Error state. */,
-	IWARP_EVENT_TYPE_ASYNC_CQ_OVERFLOW /* Async EQE indicating CQ, whose handle is sent with this event, has overflowed */,
-	MAX_IWARP_EQE_ASYNC_OPCODE
-};
-
-
-struct iwarp_eqe_data_mpa_async_completion
-{
-	__le16 ulp_data_len /* On active side, length of ULP Data, from peers MPA Connect Response */;
-	u8 reserved[6];
-};
-
-
-struct iwarp_eqe_data_tcp_async_completion
-{
-	__le16 ulp_data_len /* On passive side, length of ULP Data, from peers active MPA Connect Request */;
-	u8 mpa_handshake_mode /* Negotiation type Basic/Enhanced */;
-	u8 reserved[5];
-};
-
-
-/*
- * iWARP completion queue types
- */
-enum iwarp_eqe_sync_opcode
-{
-	IWARP_EVENT_TYPE_TCP_OFFLOAD=11 /* iWARP event queue response after option 2 offload Ramrod */,
-	IWARP_EVENT_TYPE_TCP_ABORT,
-	IWARP_EVENT_TYPE_MPA_OFFLOAD /* Synchronous completion for MPA offload Request */,
-	IWARP_EVENT_TYPE_MPA_OFFLOAD_SEND_RTR,
-	IWARP_EVENT_TYPE_CREATE_QP,
-	IWARP_EVENT_TYPE_QUERY_QP,
-	IWARP_EVENT_TYPE_MODIFY_QP,
-	IWARP_EVENT_TYPE_DESTROY_QP,
-	MAX_IWARP_EQE_SYNC_OPCODE
-};
-
-
-/*
- * iWARP EQE completion status 
- */
-enum iwarp_fw_return_code
-{
-	IWARP_CONN_ERROR_TCP_CONNECT_INVALID_PACKET=5 /* Got invalid packet SYN/SYN-ACK */,
-	IWARP_CONN_ERROR_TCP_CONNECTION_RST /* Got RST during offload TCP connection  */,
-	IWARP_CONN_ERROR_TCP_CONNECT_TIMEOUT /* TCP connection setup timed out */,
-	IWARP_CONN_ERROR_MPA_ERROR_REJECT /* Got Reject in MPA reply. */,
-	IWARP_CONN_ERROR_MPA_NOT_SUPPORTED_VER /* Got MPA request with higher version that we support. */,
-	IWARP_CONN_ERROR_MPA_RST /* Got RST during MPA negotiation */,
-	IWARP_CONN_ERROR_MPA_FIN /* Got FIN during MPA negotiation */,
-	IWARP_CONN_ERROR_MPA_RTR_MISMATCH /* RTR mismatch detected when MPA reply arrived. */,
-	IWARP_CONN_ERROR_MPA_INSUF_IRD /* Insufficient IRD on the MPA reply that arrived. */,
-	IWARP_CONN_ERROR_MPA_INVALID_PACKET /* Incoming MPAp acket failed on FW verifications */,
-	IWARP_CONN_ERROR_MPA_LOCAL_ERROR /* Detected an internal error during MPA negotiation. */,
-	IWARP_CONN_ERROR_MPA_TIMEOUT /* MPA negotiation timed out. */,
-	IWARP_CONN_ERROR_MPA_TERMINATE /* Got Terminate during MPA negotiation. */,
-	IWARP_QP_IN_ERROR_GOOD_CLOSE /* LLP connection was closed gracefully - Used for async IWARP_EVENT_TYPE_ASYNC_QP_IN_ERROR_STATE */,
-	IWARP_QP_IN_ERROR_BAD_CLOSE /* LLP Connection was closed abortively - Used for async IWARP_EVENT_TYPE_ASYNC_QP_IN_ERROR_STATE */,
-	IWARP_EXCEPTION_DETECTED_LLP_CLOSED /* LLP has been disociated from the QP, although the TCP connection may not be closed yet - Used for async IWARP_EVENT_TYPE_ASYNC_EXCEPTION_DETECTED */,
-	IWARP_EXCEPTION_DETECTED_LLP_RESET /* LLP has Reset (either because of an RST, or a bad-close condition) - Used for async IWARP_EVENT_TYPE_ASYNC_EXCEPTION_DETECTED */,
-	IWARP_EXCEPTION_DETECTED_IRQ_FULL /* Peer sent more outstanding Read Requests than IRD - Used for async IWARP_EVENT_TYPE_ASYNC_EXCEPTION_DETECTED */,
-	IWARP_EXCEPTION_DETECTED_RQ_EMPTY /* SEND request received with RQ empty - Used for async IWARP_EVENT_TYPE_ASYNC_EXCEPTION_DETECTED */,
-	IWARP_EXCEPTION_DETECTED_LLP_TIMEOUT /* TCP Retransmissions timed out - Used for async IWARP_EVENT_TYPE_ASYNC_EXCEPTION_DETECTED */,
-	IWARP_EXCEPTION_DETECTED_REMOTE_PROTECTION_ERROR /* Peers Remote Access caused error */,
-	IWARP_EXCEPTION_DETECTED_CQ_OVERFLOW /* CQ overflow detected */,
-	IWARP_EXCEPTION_DETECTED_LOCAL_CATASTROPHIC /* Local catastrophic error detected - Used for async IWARP_EVENT_TYPE_ASYNC_EXCEPTION_DETECTED */,
-	IWARP_EXCEPTION_DETECTED_LOCAL_ACCESS_ERROR /* Local Access error detected while responding - Used for async IWARP_EVENT_TYPE_ASYNC_EXCEPTION_DETECTED */,
-	IWARP_EXCEPTION_DETECTED_REMOTE_OPERATION_ERROR /* An operation/protocol error caused by Remote Consumer */,
-	IWARP_EXCEPTION_DETECTED_TERMINATE_RECEIVED /* Peer sent a TERMINATE message */,
-	MAX_IWARP_FW_RETURN_CODE
-};
-
-
-/*
- * unaligned opaque data received from LL2
- */
-struct iwarp_init_func_params
-{
-	u8 ll2_ooo_q_index /* LL2 OOO queue id. The unaligned queue id will be + 1 */;
-	u8 reserved1[7];
-};
-
-
-/*
- * iwarp func init ramrod data
- */
-struct iwarp_init_func_ramrod_data
-{
-	struct rdma_init_func_ramrod_data rdma;
-	struct tcp_init_params tcp;
-	struct iwarp_init_func_params iwarp;
-};
-
-
-/*
- * iWARP QP - possible states to transition to
- */
-enum iwarp_modify_qp_new_state_type
-{
-	IWARP_MODIFY_QP_STATE_CLOSING=1 /* graceful close */,
-	IWARP_MODIFY_QP_STATE_ERROR=2 /* abortive close, if LLP connection still exists */,
-	MAX_IWARP_MODIFY_QP_NEW_STATE_TYPE
-};
-
-
-/*
- * iwarp modify qp responder ramrod data
- */
-struct iwarp_modify_qp_ramrod_data
-{
-	__le16 transition_to_state;
-	__le16 flags;
-#define IWARP_MODIFY_QP_RAMROD_DATA_RDMA_RD_EN_MASK       0x1
-#define IWARP_MODIFY_QP_RAMROD_DATA_RDMA_RD_EN_SHIFT      0
-#define IWARP_MODIFY_QP_RAMROD_DATA_RDMA_WR_EN_MASK       0x1
-#define IWARP_MODIFY_QP_RAMROD_DATA_RDMA_WR_EN_SHIFT      1
-#define IWARP_MODIFY_QP_RAMROD_DATA_ATOMIC_EN_MASK        0x1
-#define IWARP_MODIFY_QP_RAMROD_DATA_ATOMIC_EN_SHIFT       2
-#define IWARP_MODIFY_QP_RAMROD_DATA_STATE_TRANS_EN_MASK   0x1 /* change QP state as per transition_to_state field */
-#define IWARP_MODIFY_QP_RAMROD_DATA_STATE_TRANS_EN_SHIFT  3
-#define IWARP_MODIFY_QP_RAMROD_DATA_RDMA_OPS_EN_FLG_MASK  0x1 /* If set, the rdma_rd/wr/atomic_en should be updated */
-#define IWARP_MODIFY_QP_RAMROD_DATA_RDMA_OPS_EN_FLG_SHIFT 4
-#define IWARP_MODIFY_QP_RAMROD_DATA_RESERVED_MASK         0x7FF
-#define IWARP_MODIFY_QP_RAMROD_DATA_RESERVED_SHIFT        5
-	__le32 reserved3[3];
-	__le32 reserved4[8];
-};
-
-
-/*
- * MPA params for Enhanced mode
- */
-struct mpa_rq_params
-{
-	__le32 ird;
-	__le32 ord;
-};
-
-/*
- * MPA host Address-Len for private data
- */
-struct mpa_ulp_buffer
-{
-	struct regpair addr;
-	__le16 len;
-	__le16 reserved[3];
-};
-
-/*
- * iWARP MPA offload params common to Basic and Enhanced modes
- */
-struct mpa_outgoing_params
-{
-	u8 crc_needed;
-	u8 reject /* Valid only for passive side. */;
-	u8 reserved[6];
-	struct mpa_rq_params out_rq;
-	struct mpa_ulp_buffer outgoing_ulp_buffer /* ULP buffer populated by the host */;
-};
-
-/*
- * iWARP MPA offload params passed by driver to FW in MPA Offload Request Ramrod 
- */
-struct iwarp_mpa_offload_ramrod_data
-{
-	struct mpa_outgoing_params common;
-	__le32 tcp_cid;
-	u8 mode /* Basic/Enhanced */;
-	u8 tcp_connect_side /* Passive/Active. use enum tcp_connect_mode */;
-	u8 rtr_pref;
-#define IWARP_MPA_OFFLOAD_RAMROD_DATA_RTR_SUPPORTED_MASK  0x7 /*  (use enum mpa_rtr_type) */
-#define IWARP_MPA_OFFLOAD_RAMROD_DATA_RTR_SUPPORTED_SHIFT 0
-#define IWARP_MPA_OFFLOAD_RAMROD_DATA_RESERVED1_MASK      0x1F
-#define IWARP_MPA_OFFLOAD_RAMROD_DATA_RESERVED1_SHIFT     3
-	u8 reserved2;
-	struct mpa_ulp_buffer incoming_ulp_buffer /* host buffer for placing the incoming MPA reply */;
-	struct regpair async_eqe_output_buf /* host buffer for async tcp/mpa completion information - must have space for at least 8 bytes */;
-	struct regpair handle_for_async /* a host cookie that will be echoed back with in every qp-specific async EQE */;
-	struct regpair shared_queue_addr /* Address of shared queue address that consist of SQ/RQ and FW internal queues (IRQ/ORQ/HQ) */;
-	u8 stats_counter_id /* Statistics counter ID to use */;
-	u8 reserved3[15];
-};
-
-
-/*
- * iWARP TCP connection offload params passed by driver to FW 
- */
-struct iwarp_offload_params
-{
-	struct mpa_ulp_buffer incoming_ulp_buffer /* host buffer for placing the incoming MPA request */;
-	struct regpair async_eqe_output_buf /* host buffer for async tcp/mpa completion information - must have space for at least 8 bytes */;
-	struct regpair handle_for_async /* host handle that will be echoed back with in every qp-specific async EQE */;
-	__le16 physical_q0 /* Physical QM queue to be tied to logical Q0 */;
-	__le16 physical_q1 /* Physical QM queue to be tied to logical Q1 */;
-	u8 stats_counter_id /* Statistics counter ID to use */;
-	u8 mpa_mode /* Basic/Enahnced. Used for a verification for incoming MPA request */;
-	u8 reserved[10];
-};
-
-
-/*
- * iWARP query QP output params
- */
-struct iwarp_query_qp_output_params
-{
-	__le32 flags;
-#define IWARP_QUERY_QP_OUTPUT_PARAMS_ERROR_FLG_MASK  0x1
-#define IWARP_QUERY_QP_OUTPUT_PARAMS_ERROR_FLG_SHIFT 0
-#define IWARP_QUERY_QP_OUTPUT_PARAMS_RESERVED0_MASK  0x7FFFFFFF
-#define IWARP_QUERY_QP_OUTPUT_PARAMS_RESERVED0_SHIFT 1
-	u8 reserved1[4] /* 64 bit alignment */;
-};
-
-
-/*
- * iWARP query QP ramrod data
- */
-struct iwarp_query_qp_ramrod_data
-{
-	struct regpair output_params_addr;
-};
-
-
-/*
- * iWARP Ramrod Command IDs 
- */
-enum iwarp_ramrod_cmd_id
-{
-	IWARP_RAMROD_CMD_ID_TCP_OFFLOAD=11 /* iWARP TCP connection offload ramrod */,
-	IWARP_RAMROD_CMD_ID_TCP_ABORT /* Abort TCP connection without changing the QP state. */,
-	IWARP_RAMROD_CMD_ID_MPA_OFFLOAD /* iWARP MPA offload ramrod */,
-	IWARP_RAMROD_CMD_ID_MPA_OFFLOAD_SEND_RTR,
-	IWARP_RAMROD_CMD_ID_CREATE_QP,
-	IWARP_RAMROD_CMD_ID_QUERY_QP,
-	IWARP_RAMROD_CMD_ID_MODIFY_QP,
-	IWARP_RAMROD_CMD_ID_DESTROY_QP,
-	MAX_IWARP_RAMROD_CMD_ID
-};
-
-
-/*
- * Per PF iWARP retransmit path statistics
- */
-struct iwarp_rxmit_stats_drv
-{
-	struct regpair tx_go_to_slow_start_event_cnt /* Number of times slow start event occurred */;
-	struct regpair tx_fast_retransmit_event_cnt /* Number of times fast retransmit event occurred */;
-};
-
-
-/*
- * iWARP and TCP connection offload params passed by driver to FW in iWARP offload ramrod 
- */
-struct iwarp_tcp_offload_ramrod_data
-{
-	struct iwarp_offload_params iwarp /* iWARP connection offload params */;
-	struct tcp_offload_params_opt2 tcp /* tcp offload params */;
-};
-
-
-/*
- * iWARP MPA negotiation types
- */
-enum mpa_negotiation_mode
-{
-	MPA_NEGOTIATION_TYPE_BASIC=1,
-	MPA_NEGOTIATION_TYPE_ENHANCED=2,
-	MAX_MPA_NEGOTIATION_MODE
-};
-
-
-
-
-/*
- * iWARP MPA Enhanced mode RTR types
- */
-enum mpa_rtr_type
-{
-	MPA_RTR_TYPE_NONE=0 /* No RTR type */,
-	MPA_RTR_TYPE_ZERO_SEND=1,
-	MPA_RTR_TYPE_ZERO_WRITE=2,
-	MPA_RTR_TYPE_ZERO_SEND_AND_WRITE=3,
-	MPA_RTR_TYPE_ZERO_READ=4,
-	MPA_RTR_TYPE_ZERO_SEND_AND_READ=5,
-	MPA_RTR_TYPE_ZERO_WRITE_AND_READ=6,
-	MPA_RTR_TYPE_ZERO_SEND_AND_WRITE_AND_READ=7,
-	MAX_MPA_RTR_TYPE
-};
-
-
-
-
-
-
-/*
- * unaligned opaque data received from LL2
- */
-struct unaligned_opaque_data
-{
-	__le16 first_mpa_offset /* offset of first MPA byte that should be processed */;
-	u8 tcp_payload_offset /* offset of first the byte that comes after the last byte of the TCP Hdr */;
-	u8 flags;
-#define UNALIGNED_OPAQUE_DATA_PKT_REACHED_WIN_RIGHT_EDGE_MASK  0x1 /* packet reached window right edge */
-#define UNALIGNED_OPAQUE_DATA_PKT_REACHED_WIN_RIGHT_EDGE_SHIFT 0
-#define UNALIGNED_OPAQUE_DATA_RESERVED_MASK                    0x7F
-#define UNALIGNED_OPAQUE_DATA_RESERVED_SHIFT                   1
-	__le32 cid;
-};
-
-
-
-
-
-struct e4_mstorm_iwarp_conn_ag_ctx
-{
-	u8 reserved /* cdu_validation */;
-	u8 state /* state */;
-	u8 flags0;
-#define E4_MSTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_MASK         0x1 /* exist_in_qm0 */
-#define E4_MSTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_SHIFT        0
-#define E4_MSTORM_IWARP_CONN_AG_CTX_BIT1_MASK                 0x1 /* exist_in_qm1 */
-#define E4_MSTORM_IWARP_CONN_AG_CTX_BIT1_SHIFT                1
-#define E4_MSTORM_IWARP_CONN_AG_CTX_INV_STAG_DONE_CF_MASK     0x3 /* cf0 */
-#define E4_MSTORM_IWARP_CONN_AG_CTX_INV_STAG_DONE_CF_SHIFT    2
-#define E4_MSTORM_IWARP_CONN_AG_CTX_CF1_MASK                  0x3 /* cf1 */
-#define E4_MSTORM_IWARP_CONN_AG_CTX_CF1_SHIFT                 4
-#define E4_MSTORM_IWARP_CONN_AG_CTX_CF2_MASK                  0x3 /* cf2 */
-#define E4_MSTORM_IWARP_CONN_AG_CTX_CF2_SHIFT                 6
-	u8 flags1;
-#define E4_MSTORM_IWARP_CONN_AG_CTX_INV_STAG_DONE_CF_EN_MASK  0x1 /* cf0en */
-#define E4_MSTORM_IWARP_CONN_AG_CTX_INV_STAG_DONE_CF_EN_SHIFT 0
-#define E4_MSTORM_IWARP_CONN_AG_CTX_CF1EN_MASK                0x1 /* cf1en */
-#define E4_MSTORM_IWARP_CONN_AG_CTX_CF1EN_SHIFT               1
-#define E4_MSTORM_IWARP_CONN_AG_CTX_CF2EN_MASK                0x1 /* cf2en */
-#define E4_MSTORM_IWARP_CONN_AG_CTX_CF2EN_SHIFT               2
-#define E4_MSTORM_IWARP_CONN_AG_CTX_RULE0EN_MASK              0x1 /* rule0en */
-#define E4_MSTORM_IWARP_CONN_AG_CTX_RULE0EN_SHIFT             3
-#define E4_MSTORM_IWARP_CONN_AG_CTX_RULE1EN_MASK              0x1 /* rule1en */
-#define E4_MSTORM_IWARP_CONN_AG_CTX_RULE1EN_SHIFT             4
-#define E4_MSTORM_IWARP_CONN_AG_CTX_RULE2EN_MASK              0x1 /* rule2en */
-#define E4_MSTORM_IWARP_CONN_AG_CTX_RULE2EN_SHIFT             5
-#define E4_MSTORM_IWARP_CONN_AG_CTX_RCQ_CONS_EN_MASK          0x1 /* rule3en */
-#define E4_MSTORM_IWARP_CONN_AG_CTX_RCQ_CONS_EN_SHIFT         6
-#define E4_MSTORM_IWARP_CONN_AG_CTX_RULE4EN_MASK              0x1 /* rule4en */
-#define E4_MSTORM_IWARP_CONN_AG_CTX_RULE4EN_SHIFT             7
-	__le16 rcq_cons /* word0 */;
-	__le16 rcq_cons_th /* word1 */;
-	__le32 reg0 /* reg0 */;
-	__le32 reg1 /* reg1 */;
-};
-
-
-
-struct e4_ustorm_iwarp_conn_ag_ctx
-{
-	u8 reserved /* cdu_validation */;
-	u8 byte1 /* state */;
-	u8 flags0;
-#define E4_USTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_MASK     0x1 /* exist_in_qm0 */
-#define E4_USTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_SHIFT    0
-#define E4_USTORM_IWARP_CONN_AG_CTX_BIT1_MASK             0x1 /* exist_in_qm1 */
-#define E4_USTORM_IWARP_CONN_AG_CTX_BIT1_SHIFT            1
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF0_MASK              0x3 /* timer0cf */
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF0_SHIFT             2
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF1_MASK              0x3 /* timer1cf */
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF1_SHIFT             4
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF2_MASK              0x3 /* timer2cf */
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF2_SHIFT             6
-	u8 flags1;
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF3_MASK              0x3 /* timer_stop_all */
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF3_SHIFT             0
-#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_SE_CF_MASK     0x3 /* cf4 */
-#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_SE_CF_SHIFT    2
-#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_CF_MASK        0x3 /* cf5 */
-#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_CF_SHIFT       4
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF6_MASK              0x3 /* cf6 */
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF6_SHIFT             6
-	u8 flags2;
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF0EN_MASK            0x1 /* cf0en */
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF0EN_SHIFT           0
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF1EN_MASK            0x1 /* cf1en */
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF1EN_SHIFT           1
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF2EN_MASK            0x1 /* cf2en */
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF2EN_SHIFT           2
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF3EN_MASK            0x1 /* cf3en */
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF3EN_SHIFT           3
-#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_SE_CF_EN_MASK  0x1 /* cf4en */
-#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_SE_CF_EN_SHIFT 4
-#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_CF_EN_MASK     0x1 /* cf5en */
-#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_CF_EN_SHIFT    5
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF6EN_MASK            0x1 /* cf6en */
-#define E4_USTORM_IWARP_CONN_AG_CTX_CF6EN_SHIFT           6
-#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_SE_EN_MASK         0x1 /* rule0en */
-#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_SE_EN_SHIFT        7
-	u8 flags3;
-#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_EN_MASK            0x1 /* rule1en */
-#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_EN_SHIFT           0
-#define E4_USTORM_IWARP_CONN_AG_CTX_RULE2EN_MASK          0x1 /* rule2en */
-#define E4_USTORM_IWARP_CONN_AG_CTX_RULE2EN_SHIFT         1
-#define E4_USTORM_IWARP_CONN_AG_CTX_RULE3EN_MASK          0x1 /* rule3en */
-#define E4_USTORM_IWARP_CONN_AG_CTX_RULE3EN_SHIFT         2
-#define E4_USTORM_IWARP_CONN_AG_CTX_RULE4EN_MASK          0x1 /* rule4en */
-#define E4_USTORM_IWARP_CONN_AG_CTX_RULE4EN_SHIFT         3
-#define E4_USTORM_IWARP_CONN_AG_CTX_RULE5EN_MASK          0x1 /* rule5en */
-#define E4_USTORM_IWARP_CONN_AG_CTX_RULE5EN_SHIFT         4
-#define E4_USTORM_IWARP_CONN_AG_CTX_RULE6EN_MASK          0x1 /* rule6en */
-#define E4_USTORM_IWARP_CONN_AG_CTX_RULE6EN_SHIFT         5
-#define E4_USTORM_IWARP_CONN_AG_CTX_RULE7EN_MASK          0x1 /* rule7en */
-#define E4_USTORM_IWARP_CONN_AG_CTX_RULE7EN_SHIFT         6
-#define E4_USTORM_IWARP_CONN_AG_CTX_RULE8EN_MASK          0x1 /* rule8en */
-#define E4_USTORM_IWARP_CONN_AG_CTX_RULE8EN_SHIFT         7
-	u8 byte2 /* byte2 */;
-	u8 byte3 /* byte3 */;
-	__le16 word0 /* conn_dpi */;
-	__le16 word1 /* word1 */;
-	__le32 cq_cons /* reg0 */;
-	__le32 cq_se_prod /* reg1 */;
-	__le32 cq_prod /* reg2 */;
-	__le32 reg3 /* reg3 */;
-	__le16 word2 /* word2 */;
-	__le16 word3 /* word3 */;
-};
-
-
-
-struct e4_ystorm_iwarp_conn_ag_ctx
-{
-	u8 byte0 /* cdu_validation */;
-	u8 byte1 /* state */;
-	u8 flags0;
-#define E4_YSTORM_IWARP_CONN_AG_CTX_BIT0_MASK     0x1 /* exist_in_qm0 */
-#define E4_YSTORM_IWARP_CONN_AG_CTX_BIT0_SHIFT    0
-#define E4_YSTORM_IWARP_CONN_AG_CTX_BIT1_MASK     0x1 /* exist_in_qm1 */
-#define E4_YSTORM_IWARP_CONN_AG_CTX_BIT1_SHIFT    1
-#define E4_YSTORM_IWARP_CONN_AG_CTX_CF0_MASK      0x3 /* cf0 */
-#define E4_YSTORM_IWARP_CONN_AG_CTX_CF0_SHIFT     2
-#define E4_YSTORM_IWARP_CONN_AG_CTX_CF1_MASK      0x3 /* cf1 */
-#define E4_YSTORM_IWARP_CONN_AG_CTX_CF1_SHIFT     4
-#define E4_YSTORM_IWARP_CONN_AG_CTX_CF2_MASK      0x3 /* cf2 */
-#define E4_YSTORM_IWARP_CONN_AG_CTX_CF2_SHIFT     6
-	u8 flags1;
-#define E4_YSTORM_IWARP_CONN_AG_CTX_CF0EN_MASK    0x1 /* cf0en */
-#define E4_YSTORM_IWARP_CONN_AG_CTX_CF0EN_SHIFT   0
-#define E4_YSTORM_IWARP_CONN_AG_CTX_CF1EN_MASK    0x1 /* cf1en */
-#define E4_YSTORM_IWARP_CONN_AG_CTX_CF1EN_SHIFT   1
-#define E4_YSTORM_IWARP_CONN_AG_CTX_CF2EN_MASK    0x1 /* cf2en */
-#define E4_YSTORM_IWARP_CONN_AG_CTX_CF2EN_SHIFT   2
-#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE0EN_MASK  0x1 /* rule0en */
-#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE0EN_SHIFT 3
-#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE1EN_MASK  0x1 /* rule1en */
-#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE1EN_SHIFT 4
-#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE2EN_MASK  0x1 /* rule2en */
-#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE2EN_SHIFT 5
-#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE3EN_MASK  0x1 /* rule3en */
-#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE3EN_SHIFT 6
-#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE4EN_MASK  0x1 /* rule4en */
-#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE4EN_SHIFT 7
-	u8 byte2 /* byte2 */;
-	u8 byte3 /* byte3 */;
-	__le16 word0 /* word0 */;
-	__le32 reg0 /* reg0 */;
-	__le32 reg1 /* reg1 */;
-	__le16 word1 /* word1 */;
-	__le16 word2 /* word2 */;
-	__le16 word3 /* word3 */;
-	__le16 word4 /* word4 */;
-	__le32 reg2 /* reg2 */;
-	__le32 reg3 /* reg3 */;
-};
-
-
-struct e5_mstorm_iwarp_conn_ag_ctx
-{
-	u8 reserved /* cdu_validation */;
-	u8 state_and_core_id /* state_and_core_id */;
-	u8 flags0;
-#define E5_MSTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_MASK         0x1 /* exist_in_qm0 */
-#define E5_MSTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_SHIFT        0
-#define E5_MSTORM_IWARP_CONN_AG_CTX_BIT1_MASK                 0x1 /* exist_in_qm1 */
-#define E5_MSTORM_IWARP_CONN_AG_CTX_BIT1_SHIFT                1
-#define E5_MSTORM_IWARP_CONN_AG_CTX_INV_STAG_DONE_CF_MASK     0x3 /* cf0 */
-#define E5_MSTORM_IWARP_CONN_AG_CTX_INV_STAG_DONE_CF_SHIFT    2
-#define E5_MSTORM_IWARP_CONN_AG_CTX_CF1_MASK                  0x3 /* cf1 */
-#define E5_MSTORM_IWARP_CONN_AG_CTX_CF1_SHIFT                 4
-#define E5_MSTORM_IWARP_CONN_AG_CTX_CF2_MASK                  0x3 /* cf2 */
-#define E5_MSTORM_IWARP_CONN_AG_CTX_CF2_SHIFT                 6
-	u8 flags1;
-#define E5_MSTORM_IWARP_CONN_AG_CTX_INV_STAG_DONE_CF_EN_MASK  0x1 /* cf0en */
-#define E5_MSTORM_IWARP_CONN_AG_CTX_INV_STAG_DONE_CF_EN_SHIFT 0
-#define E5_MSTORM_IWARP_CONN_AG_CTX_CF1EN_MASK                0x1 /* cf1en */
-#define E5_MSTORM_IWARP_CONN_AG_CTX_CF1EN_SHIFT               1
-#define E5_MSTORM_IWARP_CONN_AG_CTX_CF2EN_MASK                0x1 /* cf2en */
-#define E5_MSTORM_IWARP_CONN_AG_CTX_CF2EN_SHIFT               2
-#define E5_MSTORM_IWARP_CONN_AG_CTX_RULE0EN_MASK              0x1 /* rule0en */
-#define E5_MSTORM_IWARP_CONN_AG_CTX_RULE0EN_SHIFT             3
-#define E5_MSTORM_IWARP_CONN_AG_CTX_RULE1EN_MASK              0x1 /* rule1en */
-#define E5_MSTORM_IWARP_CONN_AG_CTX_RULE1EN_SHIFT             4
-#define E5_MSTORM_IWARP_CONN_AG_CTX_RULE2EN_MASK              0x1 /* rule2en */
-#define E5_MSTORM_IWARP_CONN_AG_CTX_RULE2EN_SHIFT             5
-#define E5_MSTORM_IWARP_CONN_AG_CTX_RCQ_CONS_EN_MASK          0x1 /* rule3en */
-#define E5_MSTORM_IWARP_CONN_AG_CTX_RCQ_CONS_EN_SHIFT         6
-#define E5_MSTORM_IWARP_CONN_AG_CTX_RULE4EN_MASK              0x1 /* rule4en */
-#define E5_MSTORM_IWARP_CONN_AG_CTX_RULE4EN_SHIFT             7
-	__le16 rcq_cons /* word0 */;
-	__le16 rcq_cons_th /* word1 */;
-	__le32 reg0 /* reg0 */;
-	__le32 reg1 /* reg1 */;
-};
-
-
-struct e5_tstorm_iwarp_conn_ag_ctx
-{
-	u8 reserved0 /* cdu_validation */;
-	u8 state_and_core_id /* state_and_core_id */;
-	u8 flags0;
-#define E5_TSTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_MASK                0x1 /* exist_in_qm0 */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_SHIFT               0
-#define E5_TSTORM_IWARP_CONN_AG_CTX_BIT1_MASK                        0x1 /* exist_in_qm1 */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_BIT1_SHIFT                       1
-#define E5_TSTORM_IWARP_CONN_AG_CTX_BIT2_MASK                        0x1 /* bit2 */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_BIT2_SHIFT                       2
-#define E5_TSTORM_IWARP_CONN_AG_CTX_MSTORM_FLUSH_MASK                0x1 /* bit3 */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_MSTORM_FLUSH_SHIFT               3
-#define E5_TSTORM_IWARP_CONN_AG_CTX_BIT4_MASK                        0x1 /* bit4 */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_BIT4_SHIFT                       4
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CACHED_ORQ_MASK                  0x1 /* bit5 */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CACHED_ORQ_SHIFT                 5
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF0_MASK                         0x3 /* timer0cf */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF0_SHIFT                        6
-	u8 flags1;
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RQ_POST_CF_MASK                  0x3 /* timer1cf */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RQ_POST_CF_SHIFT                 0
-#define E5_TSTORM_IWARP_CONN_AG_CTX_FLUSH_OR_ERROR_DETECTED_MASK     0x3 /* timer2cf */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_FLUSH_OR_ERROR_DETECTED_SHIFT    2
-#define E5_TSTORM_IWARP_CONN_AG_CTX_TIMER_STOP_ALL_MASK              0x3 /* timer_stop_all */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_TIMER_STOP_ALL_SHIFT             4
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF4_MASK                         0x3 /* cf4 */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF4_SHIFT                        6
-	u8 flags2;
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF5_MASK                         0x3 /* cf5 */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF5_SHIFT                        0
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF6_MASK                         0x3 /* cf6 */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF6_SHIFT                        2
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF7_MASK                         0x3 /* cf7 */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF7_SHIFT                        4
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF8_MASK                         0x3 /* cf8 */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF8_SHIFT                        6
-	u8 flags3;
-#define E5_TSTORM_IWARP_CONN_AG_CTX_FLUSH_Q0_MASK                    0x3 /* cf9 */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_FLUSH_Q0_SHIFT                   0
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF10_MASK                        0x3 /* cf10 */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF10_SHIFT                       2
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF0EN_MASK                       0x1 /* cf0en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF0EN_SHIFT                      4
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RQ_POST_CF_EN_MASK               0x1 /* cf1en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RQ_POST_CF_EN_SHIFT              5
-#define E5_TSTORM_IWARP_CONN_AG_CTX_FLUSH_OR_ERROR_DETECTED_EN_MASK  0x1 /* cf2en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_FLUSH_OR_ERROR_DETECTED_EN_SHIFT 6
-#define E5_TSTORM_IWARP_CONN_AG_CTX_TIMER_STOP_ALL_EN_MASK           0x1 /* cf3en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_TIMER_STOP_ALL_EN_SHIFT          7
-	u8 flags4;
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF4EN_MASK                       0x1 /* cf4en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF4EN_SHIFT                      0
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF5EN_MASK                       0x1 /* cf5en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF5EN_SHIFT                      1
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF6EN_MASK                       0x1 /* cf6en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF6EN_SHIFT                      2
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF7EN_MASK                       0x1 /* cf7en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF7EN_SHIFT                      3
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF8EN_MASK                       0x1 /* cf8en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF8EN_SHIFT                      4
-#define E5_TSTORM_IWARP_CONN_AG_CTX_FLUSH_Q0_EN_MASK                 0x1 /* cf9en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_FLUSH_Q0_EN_SHIFT                5
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF10EN_MASK                      0x1 /* cf10en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_CF10EN_SHIFT                     6
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE0EN_MASK                     0x1 /* rule0en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE0EN_SHIFT                    7
-	u8 flags5;
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE1EN_MASK                     0x1 /* rule1en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE1EN_SHIFT                    0
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE2EN_MASK                     0x1 /* rule2en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE2EN_SHIFT                    1
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE3EN_MASK                     0x1 /* rule3en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE3EN_SHIFT                    2
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE4EN_MASK                     0x1 /* rule4en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE4EN_SHIFT                    3
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE5EN_MASK                     0x1 /* rule5en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE5EN_SHIFT                    4
-#define E5_TSTORM_IWARP_CONN_AG_CTX_SND_SQ_CONS_RULE_MASK            0x1 /* rule6en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_SND_SQ_CONS_RULE_SHIFT           5
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE7EN_MASK                     0x1 /* rule7en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE7EN_SHIFT                    6
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE8EN_MASK                     0x1 /* rule8en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE8EN_SHIFT                    7
-	u8 flags6;
-#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED1_MASK                0x1 /* bit6 */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED1_SHIFT               0
-#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED2_MASK                0x1 /* bit7 */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED2_SHIFT               1
-#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED3_MASK                0x1 /* bit8 */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED3_SHIFT               2
-#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED4_MASK                0x3 /* cf11 */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED4_SHIFT               3
-#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED5_MASK                0x1 /* cf11en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED5_SHIFT               5
-#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED6_MASK                0x1 /* rule9en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED6_SHIFT               6
-#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED7_MASK                0x1 /* rule10en */
-#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED7_SHIFT               7
-	u8 orq_cache_idx /* byte2 */;
-	__le16 sq_tx_cons_th /* word0 */;
-	__le32 reg0 /* reg0 */;
-	__le32 reg1 /* reg1 */;
-	__le32 unaligned_nxt_seq /* reg2 */;
-	__le32 reg3 /* reg3 */;
-	__le32 reg4 /* reg4 */;
-	__le32 reg5 /* reg5 */;
-	__le32 reg6 /* reg6 */;
-	__le32 reg7 /* reg7 */;
-	__le32 reg8 /* reg8 */;
-	u8 hq_prod /* byte3 */;
-	u8 orq_prod /* byte4 */;
-	u8 irq_cons /* byte5 */;
-	u8 e4_reserved8 /* byte6 */;
-	__le16 sq_tx_cons /* word1 */;
-	__le16 conn_dpi /* conn_dpi */;
-	__le32 snd_seq /* reg9 */;
-	__le16 rq_prod /* word3 */;
-	__le16 e4_reserved9 /* word4 */;
-};
-
-
-struct e5_ustorm_iwarp_conn_ag_ctx
-{
-	u8 reserved /* cdu_validation */;
-	u8 byte1 /* state_and_core_id */;
-	u8 flags0;
-#define E5_USTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_MASK     0x1 /* exist_in_qm0 */
-#define E5_USTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_SHIFT    0
-#define E5_USTORM_IWARP_CONN_AG_CTX_BIT1_MASK             0x1 /* exist_in_qm1 */
-#define E5_USTORM_IWARP_CONN_AG_CTX_BIT1_SHIFT            1
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF0_MASK              0x3 /* timer0cf */
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF0_SHIFT             2
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF1_MASK              0x3 /* timer1cf */
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF1_SHIFT             4
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF2_MASK              0x3 /* timer2cf */
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF2_SHIFT             6
-	u8 flags1;
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF3_MASK              0x3 /* timer_stop_all */
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF3_SHIFT             0
-#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_SE_CF_MASK     0x3 /* cf4 */
-#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_SE_CF_SHIFT    2
-#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_CF_MASK        0x3 /* cf5 */
-#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_CF_SHIFT       4
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF6_MASK              0x3 /* cf6 */
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF6_SHIFT             6
-	u8 flags2;
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF0EN_MASK            0x1 /* cf0en */
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF0EN_SHIFT           0
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF1EN_MASK            0x1 /* cf1en */
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF1EN_SHIFT           1
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF2EN_MASK            0x1 /* cf2en */
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF2EN_SHIFT           2
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF3EN_MASK            0x1 /* cf3en */
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF3EN_SHIFT           3
-#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_SE_CF_EN_MASK  0x1 /* cf4en */
-#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_SE_CF_EN_SHIFT 4
-#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_CF_EN_MASK     0x1 /* cf5en */
-#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_CF_EN_SHIFT    5
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF6EN_MASK            0x1 /* cf6en */
-#define E5_USTORM_IWARP_CONN_AG_CTX_CF6EN_SHIFT           6
-#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_SE_EN_MASK         0x1 /* rule0en */
-#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_SE_EN_SHIFT        7
-	u8 flags3;
-#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_EN_MASK            0x1 /* rule1en */
-#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_EN_SHIFT           0
-#define E5_USTORM_IWARP_CONN_AG_CTX_RULE2EN_MASK          0x1 /* rule2en */
-#define E5_USTORM_IWARP_CONN_AG_CTX_RULE2EN_SHIFT         1
-#define E5_USTORM_IWARP_CONN_AG_CTX_RULE3EN_MASK          0x1 /* rule3en */
-#define E5_USTORM_IWARP_CONN_AG_CTX_RULE3EN_SHIFT         2
-#define E5_USTORM_IWARP_CONN_AG_CTX_RULE4EN_MASK          0x1 /* rule4en */
-#define E5_USTORM_IWARP_CONN_AG_CTX_RULE4EN_SHIFT         3
-#define E5_USTORM_IWARP_CONN_AG_CTX_RULE5EN_MASK          0x1 /* rule5en */
-#define E5_USTORM_IWARP_CONN_AG_CTX_RULE5EN_SHIFT         4
-#define E5_USTORM_IWARP_CONN_AG_CTX_RULE6EN_MASK          0x1 /* rule6en */
-#define E5_USTORM_IWARP_CONN_AG_CTX_RULE6EN_SHIFT         5
-#define E5_USTORM_IWARP_CONN_AG_CTX_RULE7EN_MASK          0x1 /* rule7en */
-#define E5_USTORM_IWARP_CONN_AG_CTX_RULE7EN_SHIFT         6
-#define E5_USTORM_IWARP_CONN_AG_CTX_RULE8EN_MASK          0x1 /* rule8en */
-#define E5_USTORM_IWARP_CONN_AG_CTX_RULE8EN_SHIFT         7
-	u8 flags4;
-#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED1_MASK     0x1 /* bit2 */
-#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED1_SHIFT    0
-#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED2_MASK     0x1 /* bit3 */
-#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED2_SHIFT    1
-#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED3_MASK     0x3 /* cf7 */
-#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED3_SHIFT    2
-#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED4_MASK     0x3 /* cf8 */
-#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED4_SHIFT    4
-#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED5_MASK     0x1 /* cf7en */
-#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED5_SHIFT    6
-#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED6_MASK     0x1 /* cf8en */
-#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED6_SHIFT    7
-	u8 byte2 /* byte2 */;
-	__le16 word0 /* conn_dpi */;
-	__le16 word1 /* word1 */;
-	__le32 cq_cons /* reg0 */;
-	__le32 cq_se_prod /* reg1 */;
-	__le32 cq_prod /* reg2 */;
-	__le32 reg3 /* reg3 */;
-	__le16 word2 /* word2 */;
-	__le16 word3 /* word3 */;
 };
 
 
@@ -1507,6 +746,799 @@ struct e5_xstorm_iwarp_conn_ag_ctx
 	__le32 reg16 /* reg16 */;
 	__le32 reg17 /* reg17 */;
 };
+
+struct e5_tstorm_iwarp_conn_ag_ctx
+{
+	u8 reserved0 /* cdu_validation */;
+	u8 state_and_core_id /* state_and_core_id */;
+	u8 flags0;
+#define E5_TSTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_MASK                0x1 /* exist_in_qm0 */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_SHIFT               0
+#define E5_TSTORM_IWARP_CONN_AG_CTX_BIT1_MASK                        0x1 /* exist_in_qm1 */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_BIT1_SHIFT                       1
+#define E5_TSTORM_IWARP_CONN_AG_CTX_BIT2_MASK                        0x1 /* bit2 */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_BIT2_SHIFT                       2
+#define E5_TSTORM_IWARP_CONN_AG_CTX_MSTORM_FLUSH_MASK                0x1 /* bit3 */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_MSTORM_FLUSH_SHIFT               3
+#define E5_TSTORM_IWARP_CONN_AG_CTX_BIT4_MASK                        0x1 /* bit4 */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_BIT4_SHIFT                       4
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CACHED_ORQ_MASK                  0x1 /* bit5 */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CACHED_ORQ_SHIFT                 5
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF0_MASK                         0x3 /* timer0cf */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF0_SHIFT                        6
+	u8 flags1;
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RQ_POST_CF_MASK                  0x3 /* timer1cf */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RQ_POST_CF_SHIFT                 0
+#define E5_TSTORM_IWARP_CONN_AG_CTX_FLUSH_OR_ERROR_DETECTED_MASK     0x3 /* timer2cf */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_FLUSH_OR_ERROR_DETECTED_SHIFT    2
+#define E5_TSTORM_IWARP_CONN_AG_CTX_TIMER_STOP_ALL_MASK              0x3 /* timer_stop_all */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_TIMER_STOP_ALL_SHIFT             4
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF4_MASK                         0x3 /* cf4 */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF4_SHIFT                        6
+	u8 flags2;
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF5_MASK                         0x3 /* cf5 */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF5_SHIFT                        0
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF6_MASK                         0x3 /* cf6 */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF6_SHIFT                        2
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF7_MASK                         0x3 /* cf7 */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF7_SHIFT                        4
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF8_MASK                         0x3 /* cf8 */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF8_SHIFT                        6
+	u8 flags3;
+#define E5_TSTORM_IWARP_CONN_AG_CTX_FLUSH_Q0_MASK                    0x3 /* cf9 */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_FLUSH_Q0_SHIFT                   0
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF10_MASK                        0x3 /* cf10 */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF10_SHIFT                       2
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF0EN_MASK                       0x1 /* cf0en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF0EN_SHIFT                      4
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RQ_POST_CF_EN_MASK               0x1 /* cf1en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RQ_POST_CF_EN_SHIFT              5
+#define E5_TSTORM_IWARP_CONN_AG_CTX_FLUSH_OR_ERROR_DETECTED_EN_MASK  0x1 /* cf2en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_FLUSH_OR_ERROR_DETECTED_EN_SHIFT 6
+#define E5_TSTORM_IWARP_CONN_AG_CTX_TIMER_STOP_ALL_EN_MASK           0x1 /* cf3en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_TIMER_STOP_ALL_EN_SHIFT          7
+	u8 flags4;
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF4EN_MASK                       0x1 /* cf4en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF4EN_SHIFT                      0
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF5EN_MASK                       0x1 /* cf5en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF5EN_SHIFT                      1
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF6EN_MASK                       0x1 /* cf6en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF6EN_SHIFT                      2
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF7EN_MASK                       0x1 /* cf7en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF7EN_SHIFT                      3
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF8EN_MASK                       0x1 /* cf8en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF8EN_SHIFT                      4
+#define E5_TSTORM_IWARP_CONN_AG_CTX_FLUSH_Q0_EN_MASK                 0x1 /* cf9en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_FLUSH_Q0_EN_SHIFT                5
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF10EN_MASK                      0x1 /* cf10en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_CF10EN_SHIFT                     6
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE0EN_MASK                     0x1 /* rule0en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE0EN_SHIFT                    7
+	u8 flags5;
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE1EN_MASK                     0x1 /* rule1en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE1EN_SHIFT                    0
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE2EN_MASK                     0x1 /* rule2en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE2EN_SHIFT                    1
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE3EN_MASK                     0x1 /* rule3en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE3EN_SHIFT                    2
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE4EN_MASK                     0x1 /* rule4en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE4EN_SHIFT                    3
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE5EN_MASK                     0x1 /* rule5en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE5EN_SHIFT                    4
+#define E5_TSTORM_IWARP_CONN_AG_CTX_SND_SQ_CONS_RULE_MASK            0x1 /* rule6en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_SND_SQ_CONS_RULE_SHIFT           5
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE7EN_MASK                     0x1 /* rule7en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE7EN_SHIFT                    6
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE8EN_MASK                     0x1 /* rule8en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_RULE8EN_SHIFT                    7
+	u8 flags6;
+#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED1_MASK                0x1 /* bit6 */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED1_SHIFT               0
+#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED2_MASK                0x1 /* bit7 */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED2_SHIFT               1
+#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED3_MASK                0x1 /* bit8 */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED3_SHIFT               2
+#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED4_MASK                0x3 /* cf11 */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED4_SHIFT               3
+#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED5_MASK                0x1 /* cf11en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED5_SHIFT               5
+#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED6_MASK                0x1 /* rule9en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED6_SHIFT               6
+#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED7_MASK                0x1 /* rule10en */
+#define E5_TSTORM_IWARP_CONN_AG_CTX_E4_RESERVED7_SHIFT               7
+	u8 orq_cache_idx /* byte2 */;
+	__le16 sq_tx_cons_th /* word0 */;
+	__le32 reg0 /* reg0 */;
+	__le32 reg1 /* reg1 */;
+	__le32 unaligned_nxt_seq /* reg2 */;
+	__le32 reg3 /* reg3 */;
+	__le32 reg4 /* reg4 */;
+	__le32 reg5 /* reg5 */;
+	__le32 reg6 /* reg6 */;
+	__le32 reg7 /* reg7 */;
+	__le32 reg8 /* reg8 */;
+	u8 hq_prod /* byte3 */;
+	u8 orq_prod /* byte4 */;
+	u8 irq_cons /* byte5 */;
+	u8 e4_reserved8 /* byte6 */;
+	__le16 sq_tx_cons /* word1 */;
+	__le16 conn_dpi /* conn_dpi */;
+	__le32 snd_seq /* reg9 */;
+	__le16 rq_prod /* word3 */;
+	__le16 e4_reserved9 /* word4 */;
+};
+
+/*
+ * iwarp connection context
+ */
+struct e5_iwarp_conn_context
+{
+	struct ystorm_iwarp_conn_st_ctx ystorm_st_context /* ystorm storm context */;
+	struct regpair ystorm_st_padding[2] /* padding */;
+	struct pstorm_iwarp_conn_st_ctx pstorm_st_context /* pstorm storm context */;
+	struct regpair pstorm_st_padding[2] /* padding */;
+	struct xstorm_iwarp_conn_st_ctx xstorm_st_context /* xstorm storm context */;
+	struct regpair xstorm_st_padding[2] /* padding */;
+	struct e5_xstorm_iwarp_conn_ag_ctx xstorm_ag_context /* xstorm aggregative context */;
+	struct e5_tstorm_iwarp_conn_ag_ctx tstorm_ag_context /* tstorm aggregative context */;
+	struct timers_context timer_context /* timer context */;
+	struct e5_ustorm_rdma_conn_ag_ctx ustorm_ag_context /* ustorm aggregative context */;
+	struct tstorm_iwarp_conn_st_ctx tstorm_st_context /* tstorm storm context */;
+	struct regpair tstorm_st_padding[2] /* padding */;
+	struct mstorm_iwarp_conn_st_ctx mstorm_st_context /* mstorm storm context */;
+	struct ustorm_iwarp_conn_st_ctx ustorm_st_context /* ustorm storm context */;
+};
+
+
+/*
+ * iWARP create QP params passed by driver to FW in CreateQP Request Ramrod 
+ */
+struct iwarp_create_qp_ramrod_data
+{
+	u8 flags;
+#define IWARP_CREATE_QP_RAMROD_DATA_FMR_AND_RESERVED_EN_MASK   0x1
+#define IWARP_CREATE_QP_RAMROD_DATA_FMR_AND_RESERVED_EN_SHIFT  0
+#define IWARP_CREATE_QP_RAMROD_DATA_SIGNALED_COMP_MASK         0x1
+#define IWARP_CREATE_QP_RAMROD_DATA_SIGNALED_COMP_SHIFT        1
+#define IWARP_CREATE_QP_RAMROD_DATA_RDMA_RD_EN_MASK            0x1
+#define IWARP_CREATE_QP_RAMROD_DATA_RDMA_RD_EN_SHIFT           2
+#define IWARP_CREATE_QP_RAMROD_DATA_RDMA_WR_EN_MASK            0x1
+#define IWARP_CREATE_QP_RAMROD_DATA_RDMA_WR_EN_SHIFT           3
+#define IWARP_CREATE_QP_RAMROD_DATA_ATOMIC_EN_MASK             0x1
+#define IWARP_CREATE_QP_RAMROD_DATA_ATOMIC_EN_SHIFT            4
+#define IWARP_CREATE_QP_RAMROD_DATA_SRQ_FLG_MASK               0x1
+#define IWARP_CREATE_QP_RAMROD_DATA_SRQ_FLG_SHIFT              5
+#define IWARP_CREATE_QP_RAMROD_DATA_LOW_LATENCY_QUEUE_EN_MASK  0x1
+#define IWARP_CREATE_QP_RAMROD_DATA_LOW_LATENCY_QUEUE_EN_SHIFT 6
+#define IWARP_CREATE_QP_RAMROD_DATA_RESERVED0_MASK             0x1
+#define IWARP_CREATE_QP_RAMROD_DATA_RESERVED0_SHIFT            7
+	u8 reserved1 /* Basic/Enhanced (use enum mpa_negotiation_mode) */;
+	__le16 pd;
+	__le16 sq_num_pages;
+	__le16 rq_num_pages;
+	__le32 reserved3[2];
+	struct regpair qp_handle_for_cqe /* For use in CQEs */;
+	struct rdma_srq_id srq_id;
+	__le32 cq_cid_for_sq /* Cid of the CQ that will be posted from SQ */;
+	__le32 cq_cid_for_rq /* Cid of the CQ that will be posted from RQ */;
+	__le16 dpi;
+	__le16 physical_q0 /* Physical QM queue to be tied to logical Q0 */;
+	__le16 physical_q1 /* Physical QM queue to be tied to logical Q1 */;
+	u8 reserved2[6];
+};
+
+
+/*
+ * iWARP completion queue types
+ */
+enum iwarp_eqe_async_opcode
+{
+	IWARP_EVENT_TYPE_ASYNC_CONNECT_COMPLETE /* Async completion oafter TCP 3-way handshake */,
+	IWARP_EVENT_TYPE_ASYNC_ENHANCED_MPA_REPLY_ARRIVED /* Enhanced MPA reply arrived. Driver should either send RTR or reject */,
+	IWARP_EVENT_TYPE_ASYNC_MPA_HANDSHAKE_COMPLETE /* MPA Negotiations completed */,
+	IWARP_EVENT_TYPE_ASYNC_CID_CLEANED /* Async completion that indicates to the driver that the CID can be re-used. */,
+	IWARP_EVENT_TYPE_ASYNC_EXCEPTION_DETECTED /* Async EQE indicating detection of an error/exception on a QP at Firmware */,
+	IWARP_EVENT_TYPE_ASYNC_QP_IN_ERROR_STATE /* Async EQE indicating QP is in Error state. */,
+	IWARP_EVENT_TYPE_ASYNC_CQ_OVERFLOW /* Async EQE indicating CQ, whose handle is sent with this event, has overflowed */,
+	MAX_IWARP_EQE_ASYNC_OPCODE
+};
+
+
+struct iwarp_eqe_data_mpa_async_completion
+{
+	__le16 ulp_data_len /* On active side, length of ULP Data, from peers MPA Connect Response */;
+	u8 reserved[6];
+};
+
+
+struct iwarp_eqe_data_tcp_async_completion
+{
+	__le16 ulp_data_len /* On passive side, length of ULP Data, from peers active MPA Connect Request */;
+	u8 mpa_handshake_mode /* Negotiation type Basic/Enhanced */;
+	u8 reserved[5];
+};
+
+
+/*
+ * iWARP completion queue types
+ */
+enum iwarp_eqe_sync_opcode
+{
+	IWARP_EVENT_TYPE_TCP_OFFLOAD=11 /* iWARP event queue response after option 2 offload Ramrod */,
+	IWARP_EVENT_TYPE_MPA_OFFLOAD /* Synchronous completion for MPA offload Request */,
+	IWARP_EVENT_TYPE_MPA_OFFLOAD_SEND_RTR,
+	IWARP_EVENT_TYPE_CREATE_QP,
+	IWARP_EVENT_TYPE_QUERY_QP,
+	IWARP_EVENT_TYPE_MODIFY_QP,
+	IWARP_EVENT_TYPE_DESTROY_QP,
+	IWARP_EVENT_TYPE_ABORT_TCP_OFFLOAD,
+	MAX_IWARP_EQE_SYNC_OPCODE
+};
+
+
+/*
+ * iWARP EQE completion status 
+ */
+enum iwarp_fw_return_code
+{
+	IWARP_CONN_ERROR_TCP_CONNECT_INVALID_PACKET=5 /* Got invalid packet SYN/SYN-ACK */,
+	IWARP_CONN_ERROR_TCP_CONNECTION_RST /* Got RST during offload TCP connection  */,
+	IWARP_CONN_ERROR_TCP_CONNECT_TIMEOUT /* TCP connection setup timed out */,
+	IWARP_CONN_ERROR_MPA_ERROR_REJECT /* Got Reject in MPA reply. */,
+	IWARP_CONN_ERROR_MPA_NOT_SUPPORTED_VER /* Got MPA request with higher version that we support. */,
+	IWARP_CONN_ERROR_MPA_RST /* Got RST during MPA negotiation */,
+	IWARP_CONN_ERROR_MPA_FIN /* Got FIN during MPA negotiation */,
+	IWARP_CONN_ERROR_MPA_RTR_MISMATCH /* RTR mismatch detected when MPA reply arrived. */,
+	IWARP_CONN_ERROR_MPA_INSUF_IRD /* Insufficient IRD on the MPA reply that arrived. */,
+	IWARP_CONN_ERROR_MPA_INVALID_PACKET /* Incoming MPAp acket failed on FW verifications */,
+	IWARP_CONN_ERROR_MPA_LOCAL_ERROR /* Detected an internal error during MPA negotiation. */,
+	IWARP_CONN_ERROR_MPA_TIMEOUT /* MPA negotiation timed out. */,
+	IWARP_CONN_ERROR_MPA_TERMINATE /* Got Terminate during MPA negotiation. */,
+	IWARP_QP_IN_ERROR_GOOD_CLOSE /* LLP connection was closed gracefully - Used for async IWARP_EVENT_TYPE_ASYNC_QP_IN_ERROR_STATE */,
+	IWARP_QP_IN_ERROR_BAD_CLOSE /* LLP Connection was closed abortively - Used for async IWARP_EVENT_TYPE_ASYNC_QP_IN_ERROR_STATE */,
+	IWARP_EXCEPTION_DETECTED_LLP_CLOSED /* LLP has been disociated from the QP, although the TCP connection may not be closed yet - Used for async IWARP_EVENT_TYPE_ASYNC_EXCEPTION_DETECTED */,
+	IWARP_EXCEPTION_DETECTED_LLP_RESET /* LLP has Reset (either because of an RST, or a bad-close condition) - Used for async IWARP_EVENT_TYPE_ASYNC_EXCEPTION_DETECTED */,
+	IWARP_EXCEPTION_DETECTED_IRQ_FULL /* Peer sent more outstanding Read Requests than IRD - Used for async IWARP_EVENT_TYPE_ASYNC_EXCEPTION_DETECTED */,
+	IWARP_EXCEPTION_DETECTED_RQ_EMPTY /* SEND request received with RQ empty - Used for async IWARP_EVENT_TYPE_ASYNC_EXCEPTION_DETECTED */,
+	IWARP_EXCEPTION_DETECTED_SRQ_EMPTY /* SEND request received with SRQ empty - Used for async IWARP_EVENT_TYPE_ASYNC_EXCEPTION_DETECTED */,
+	IWARP_EXCEPTION_DETECTED_SRQ_LIMIT /* Number of SRQ wqes is below the limit */,
+	IWARP_EXCEPTION_DETECTED_LLP_TIMEOUT /* TCP Retransmissions timed out - Used for async IWARP_EVENT_TYPE_ASYNC_EXCEPTION_DETECTED */,
+	IWARP_EXCEPTION_DETECTED_REMOTE_PROTECTION_ERROR /* Peers Remote Access caused error */,
+	IWARP_EXCEPTION_DETECTED_CQ_OVERFLOW /* CQ overflow detected */,
+	IWARP_EXCEPTION_DETECTED_LOCAL_CATASTROPHIC /* Local catastrophic error detected - Used for async IWARP_EVENT_TYPE_ASYNC_EXCEPTION_DETECTED */,
+	IWARP_EXCEPTION_DETECTED_LOCAL_ACCESS_ERROR /* Local Access error detected while responding - Used for async IWARP_EVENT_TYPE_ASYNC_EXCEPTION_DETECTED */,
+	IWARP_EXCEPTION_DETECTED_REMOTE_OPERATION_ERROR /* An operation/protocol error caused by Remote Consumer */,
+	IWARP_EXCEPTION_DETECTED_TERMINATE_RECEIVED /* Peer sent a TERMINATE message */,
+	MAX_IWARP_FW_RETURN_CODE
+};
+
+
+/*
+ * unaligned opaque data received from LL2
+ */
+struct iwarp_init_func_params
+{
+	u8 ll2_ooo_q_index /* LL2 OOO queue id. The unaligned queue id will be + 1 */;
+	u8 reserved1[7];
+};
+
+
+/*
+ * iwarp func init ramrod data
+ */
+struct iwarp_init_func_ramrod_data
+{
+	struct rdma_init_func_ramrod_data rdma;
+	struct tcp_init_params tcp;
+	struct iwarp_init_func_params iwarp;
+};
+
+
+/*
+ * iWARP QP - possible states to transition to
+ */
+enum iwarp_modify_qp_new_state_type
+{
+	IWARP_MODIFY_QP_STATE_CLOSING=1 /* graceful close */,
+	IWARP_MODIFY_QP_STATE_ERROR=2 /* abortive close, if LLP connection still exists */,
+	MAX_IWARP_MODIFY_QP_NEW_STATE_TYPE
+};
+
+
+/*
+ * iwarp modify qp responder ramrod data
+ */
+struct iwarp_modify_qp_ramrod_data
+{
+	__le16 transition_to_state /*  (use enum iwarp_modify_qp_new_state_type) */;
+	__le16 flags;
+#define IWARP_MODIFY_QP_RAMROD_DATA_RDMA_RD_EN_MASK          0x1
+#define IWARP_MODIFY_QP_RAMROD_DATA_RDMA_RD_EN_SHIFT         0
+#define IWARP_MODIFY_QP_RAMROD_DATA_RDMA_WR_EN_MASK          0x1
+#define IWARP_MODIFY_QP_RAMROD_DATA_RDMA_WR_EN_SHIFT         1
+#define IWARP_MODIFY_QP_RAMROD_DATA_ATOMIC_EN_MASK           0x1
+#define IWARP_MODIFY_QP_RAMROD_DATA_ATOMIC_EN_SHIFT          2
+#define IWARP_MODIFY_QP_RAMROD_DATA_STATE_TRANS_EN_MASK      0x1 /* change QP state as per transition_to_state field */
+#define IWARP_MODIFY_QP_RAMROD_DATA_STATE_TRANS_EN_SHIFT     3
+#define IWARP_MODIFY_QP_RAMROD_DATA_RDMA_OPS_EN_FLG_MASK     0x1 /* If set, the rdma_rd/wr/atomic_en should be updated */
+#define IWARP_MODIFY_QP_RAMROD_DATA_RDMA_OPS_EN_FLG_SHIFT    4
+#define IWARP_MODIFY_QP_RAMROD_DATA_PHYSICAL_QUEUE_FLG_MASK  0x1 /* If set, the  physicalQ1Val/physicalQ0Val/regularLatencyPhyQueue should be updated */
+#define IWARP_MODIFY_QP_RAMROD_DATA_PHYSICAL_QUEUE_FLG_SHIFT 5
+#define IWARP_MODIFY_QP_RAMROD_DATA_RESERVED_MASK            0x3FF
+#define IWARP_MODIFY_QP_RAMROD_DATA_RESERVED_SHIFT           6
+	__le16 physical_q0 /* Updated physicalQ0Val */;
+	__le16 physical_q1 /* Updated physicalQ1Val */;
+	__le32 reserved1[10];
+};
+
+
+/*
+ * MPA params for Enhanced mode
+ */
+struct mpa_rq_params
+{
+	__le32 ird;
+	__le32 ord;
+};
+
+/*
+ * MPA host Address-Len for private data
+ */
+struct mpa_ulp_buffer
+{
+	struct regpair addr;
+	__le16 len;
+	__le16 reserved[3];
+};
+
+/*
+ * iWARP MPA offload params common to Basic and Enhanced modes
+ */
+struct mpa_outgoing_params
+{
+	u8 crc_needed;
+	u8 reject /* Valid only for passive side. */;
+	u8 reserved[6];
+	struct mpa_rq_params out_rq;
+	struct mpa_ulp_buffer outgoing_ulp_buffer /* ULP buffer populated by the host */;
+};
+
+/*
+ * iWARP MPA offload params passed by driver to FW in MPA Offload Request Ramrod 
+ */
+struct iwarp_mpa_offload_ramrod_data
+{
+	struct mpa_outgoing_params common;
+	__le32 tcp_cid;
+	u8 mode /* Basic/Enhanced (use enum mpa_negotiation_mode) */;
+	u8 tcp_connect_side /* Passive/Active. use enum tcp_connect_mode */;
+	u8 rtr_pref;
+#define IWARP_MPA_OFFLOAD_RAMROD_DATA_RTR_SUPPORTED_MASK  0x7 /*  (use enum mpa_rtr_type) */
+#define IWARP_MPA_OFFLOAD_RAMROD_DATA_RTR_SUPPORTED_SHIFT 0
+#define IWARP_MPA_OFFLOAD_RAMROD_DATA_RESERVED1_MASK      0x1F
+#define IWARP_MPA_OFFLOAD_RAMROD_DATA_RESERVED1_SHIFT     3
+	u8 reserved2;
+	struct mpa_ulp_buffer incoming_ulp_buffer /* host buffer for placing the incoming MPA reply */;
+	struct regpair async_eqe_output_buf /* host buffer for async tcp/mpa completion information - must have space for at least 8 bytes */;
+	struct regpair handle_for_async /* a host cookie that will be echoed back with in every qp-specific async EQE */;
+	struct regpair shared_queue_addr /* Address of shared queue address that consist of SQ/RQ and FW internal queues (IRQ/ORQ/HQ) */;
+	__le16 rcv_wnd /* TCP window after scaling */;
+	u8 stats_counter_id /* Statistics counter ID to use */;
+	u8 reserved3[13];
+};
+
+
+/*
+ * iWARP TCP connection offload params passed by driver to FW 
+ */
+struct iwarp_offload_params
+{
+	struct mpa_ulp_buffer incoming_ulp_buffer /* host buffer for placing the incoming MPA request */;
+	struct regpair async_eqe_output_buf /* host buffer for async tcp/mpa completion information - must have space for at least 8 bytes */;
+	struct regpair handle_for_async /* host handle that will be echoed back with in every qp-specific async EQE */;
+	__le16 physical_q0 /* Physical QM queue to be tied to logical Q0 */;
+	__le16 physical_q1 /* Physical QM queue to be tied to logical Q1 */;
+	u8 stats_counter_id /* Statistics counter ID to use */;
+	u8 mpa_mode /* Basic/Enahnced. Used for a verification for incoming MPA request (use enum mpa_negotiation_mode) */;
+	u8 reserved[10];
+};
+
+
+/*
+ * iWARP query QP output params
+ */
+struct iwarp_query_qp_output_params
+{
+	__le32 flags;
+#define IWARP_QUERY_QP_OUTPUT_PARAMS_ERROR_FLG_MASK  0x1
+#define IWARP_QUERY_QP_OUTPUT_PARAMS_ERROR_FLG_SHIFT 0
+#define IWARP_QUERY_QP_OUTPUT_PARAMS_RESERVED0_MASK  0x7FFFFFFF
+#define IWARP_QUERY_QP_OUTPUT_PARAMS_RESERVED0_SHIFT 1
+	u8 reserved1[4] /* 64 bit alignment */;
+};
+
+
+/*
+ * iWARP query QP ramrod data
+ */
+struct iwarp_query_qp_ramrod_data
+{
+	struct regpair output_params_addr;
+};
+
+
+/*
+ * iWARP Ramrod Command IDs 
+ */
+enum iwarp_ramrod_cmd_id
+{
+	IWARP_RAMROD_CMD_ID_TCP_OFFLOAD=11 /* iWARP TCP connection offload ramrod */,
+	IWARP_RAMROD_CMD_ID_MPA_OFFLOAD /* iWARP MPA offload ramrod */,
+	IWARP_RAMROD_CMD_ID_MPA_OFFLOAD_SEND_RTR,
+	IWARP_RAMROD_CMD_ID_CREATE_QP,
+	IWARP_RAMROD_CMD_ID_QUERY_QP,
+	IWARP_RAMROD_CMD_ID_MODIFY_QP,
+	IWARP_RAMROD_CMD_ID_DESTROY_QP,
+	IWARP_RAMROD_CMD_ID_ABORT_TCP_OFFLOAD,
+	MAX_IWARP_RAMROD_CMD_ID
+};
+
+
+/*
+ * Per PF iWARP retransmit path statistics
+ */
+struct iwarp_rxmit_stats_drv
+{
+	struct regpair tx_go_to_slow_start_event_cnt /* Number of times slow start event occurred */;
+	struct regpair tx_fast_retransmit_event_cnt /* Number of times fast retransmit event occurred */;
+};
+
+
+/*
+ * iWARP and TCP connection offload params passed by driver to FW in iWARP offload ramrod 
+ */
+struct iwarp_tcp_offload_ramrod_data
+{
+	struct iwarp_offload_params iwarp /* iWARP connection offload params */;
+	struct tcp_offload_params_opt2 tcp /* tcp offload params */;
+};
+
+
+/*
+ * iWARP MPA negotiation types
+ */
+enum mpa_negotiation_mode
+{
+	MPA_NEGOTIATION_TYPE_BASIC=1,
+	MPA_NEGOTIATION_TYPE_ENHANCED=2,
+	MAX_MPA_NEGOTIATION_MODE
+};
+
+
+
+
+/*
+ * iWARP MPA Enhanced mode RTR types
+ */
+enum mpa_rtr_type
+{
+	MPA_RTR_TYPE_NONE=0 /* No RTR type */,
+	MPA_RTR_TYPE_ZERO_SEND=1,
+	MPA_RTR_TYPE_ZERO_WRITE=2,
+	MPA_RTR_TYPE_ZERO_SEND_AND_WRITE=3,
+	MPA_RTR_TYPE_ZERO_READ=4,
+	MPA_RTR_TYPE_ZERO_SEND_AND_READ=5,
+	MPA_RTR_TYPE_ZERO_WRITE_AND_READ=6,
+	MPA_RTR_TYPE_ZERO_SEND_AND_WRITE_AND_READ=7,
+	MAX_MPA_RTR_TYPE
+};
+
+
+
+
+
+
+/*
+ * unaligned opaque data received from LL2
+ */
+struct unaligned_opaque_data
+{
+	__le16 first_mpa_offset /* offset of first MPA byte that should be processed */;
+	u8 tcp_payload_offset /* offset of first the byte that comes after the last byte of the TCP Hdr */;
+	u8 flags;
+#define UNALIGNED_OPAQUE_DATA_PKT_REACHED_WIN_RIGHT_EDGE_MASK  0x1 /* packet reached window right edge */
+#define UNALIGNED_OPAQUE_DATA_PKT_REACHED_WIN_RIGHT_EDGE_SHIFT 0
+#define UNALIGNED_OPAQUE_DATA_CONNECTION_CLOSED_MASK           0x1 /* Indication that the connection is closed. Clean all connecitons database. */
+#define UNALIGNED_OPAQUE_DATA_CONNECTION_CLOSED_SHIFT          1
+#define UNALIGNED_OPAQUE_DATA_RESERVED_MASK                    0x3F
+#define UNALIGNED_OPAQUE_DATA_RESERVED_SHIFT                   2
+	__le32 cid;
+};
+
+
+
+
+
+struct e4_mstorm_iwarp_conn_ag_ctx
+{
+	u8 reserved /* cdu_validation */;
+	u8 state /* state */;
+	u8 flags0;
+#define E4_MSTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_MASK         0x1 /* exist_in_qm0 */
+#define E4_MSTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_SHIFT        0
+#define E4_MSTORM_IWARP_CONN_AG_CTX_BIT1_MASK                 0x1 /* exist_in_qm1 */
+#define E4_MSTORM_IWARP_CONN_AG_CTX_BIT1_SHIFT                1
+#define E4_MSTORM_IWARP_CONN_AG_CTX_INV_STAG_DONE_CF_MASK     0x3 /* cf0 */
+#define E4_MSTORM_IWARP_CONN_AG_CTX_INV_STAG_DONE_CF_SHIFT    2
+#define E4_MSTORM_IWARP_CONN_AG_CTX_CF1_MASK                  0x3 /* cf1 */
+#define E4_MSTORM_IWARP_CONN_AG_CTX_CF1_SHIFT                 4
+#define E4_MSTORM_IWARP_CONN_AG_CTX_CF2_MASK                  0x3 /* cf2 */
+#define E4_MSTORM_IWARP_CONN_AG_CTX_CF2_SHIFT                 6
+	u8 flags1;
+#define E4_MSTORM_IWARP_CONN_AG_CTX_INV_STAG_DONE_CF_EN_MASK  0x1 /* cf0en */
+#define E4_MSTORM_IWARP_CONN_AG_CTX_INV_STAG_DONE_CF_EN_SHIFT 0
+#define E4_MSTORM_IWARP_CONN_AG_CTX_CF1EN_MASK                0x1 /* cf1en */
+#define E4_MSTORM_IWARP_CONN_AG_CTX_CF1EN_SHIFT               1
+#define E4_MSTORM_IWARP_CONN_AG_CTX_CF2EN_MASK                0x1 /* cf2en */
+#define E4_MSTORM_IWARP_CONN_AG_CTX_CF2EN_SHIFT               2
+#define E4_MSTORM_IWARP_CONN_AG_CTX_RULE0EN_MASK              0x1 /* rule0en */
+#define E4_MSTORM_IWARP_CONN_AG_CTX_RULE0EN_SHIFT             3
+#define E4_MSTORM_IWARP_CONN_AG_CTX_RULE1EN_MASK              0x1 /* rule1en */
+#define E4_MSTORM_IWARP_CONN_AG_CTX_RULE1EN_SHIFT             4
+#define E4_MSTORM_IWARP_CONN_AG_CTX_RULE2EN_MASK              0x1 /* rule2en */
+#define E4_MSTORM_IWARP_CONN_AG_CTX_RULE2EN_SHIFT             5
+#define E4_MSTORM_IWARP_CONN_AG_CTX_RCQ_CONS_EN_MASK          0x1 /* rule3en */
+#define E4_MSTORM_IWARP_CONN_AG_CTX_RCQ_CONS_EN_SHIFT         6
+#define E4_MSTORM_IWARP_CONN_AG_CTX_RULE4EN_MASK              0x1 /* rule4en */
+#define E4_MSTORM_IWARP_CONN_AG_CTX_RULE4EN_SHIFT             7
+	__le16 rcq_cons /* word0 */;
+	__le16 rcq_cons_th /* word1 */;
+	__le32 reg0 /* reg0 */;
+	__le32 reg1 /* reg1 */;
+};
+
+
+
+struct e4_ustorm_iwarp_conn_ag_ctx
+{
+	u8 reserved /* cdu_validation */;
+	u8 byte1 /* state */;
+	u8 flags0;
+#define E4_USTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_MASK     0x1 /* exist_in_qm0 */
+#define E4_USTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_SHIFT    0
+#define E4_USTORM_IWARP_CONN_AG_CTX_BIT1_MASK             0x1 /* exist_in_qm1 */
+#define E4_USTORM_IWARP_CONN_AG_CTX_BIT1_SHIFT            1
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF0_MASK              0x3 /* timer0cf */
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF0_SHIFT             2
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF1_MASK              0x3 /* timer1cf */
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF1_SHIFT             4
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF2_MASK              0x3 /* timer2cf */
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF2_SHIFT             6
+	u8 flags1;
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF3_MASK              0x3 /* timer_stop_all */
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF3_SHIFT             0
+#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_SE_CF_MASK     0x3 /* cf4 */
+#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_SE_CF_SHIFT    2
+#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_CF_MASK        0x3 /* cf5 */
+#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_CF_SHIFT       4
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF6_MASK              0x3 /* cf6 */
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF6_SHIFT             6
+	u8 flags2;
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF0EN_MASK            0x1 /* cf0en */
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF0EN_SHIFT           0
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF1EN_MASK            0x1 /* cf1en */
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF1EN_SHIFT           1
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF2EN_MASK            0x1 /* cf2en */
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF2EN_SHIFT           2
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF3EN_MASK            0x1 /* cf3en */
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF3EN_SHIFT           3
+#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_SE_CF_EN_MASK  0x1 /* cf4en */
+#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_SE_CF_EN_SHIFT 4
+#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_CF_EN_MASK     0x1 /* cf5en */
+#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_CF_EN_SHIFT    5
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF6EN_MASK            0x1 /* cf6en */
+#define E4_USTORM_IWARP_CONN_AG_CTX_CF6EN_SHIFT           6
+#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_SE_EN_MASK         0x1 /* rule0en */
+#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_SE_EN_SHIFT        7
+	u8 flags3;
+#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_EN_MASK            0x1 /* rule1en */
+#define E4_USTORM_IWARP_CONN_AG_CTX_CQ_EN_SHIFT           0
+#define E4_USTORM_IWARP_CONN_AG_CTX_RULE2EN_MASK          0x1 /* rule2en */
+#define E4_USTORM_IWARP_CONN_AG_CTX_RULE2EN_SHIFT         1
+#define E4_USTORM_IWARP_CONN_AG_CTX_RULE3EN_MASK          0x1 /* rule3en */
+#define E4_USTORM_IWARP_CONN_AG_CTX_RULE3EN_SHIFT         2
+#define E4_USTORM_IWARP_CONN_AG_CTX_RULE4EN_MASK          0x1 /* rule4en */
+#define E4_USTORM_IWARP_CONN_AG_CTX_RULE4EN_SHIFT         3
+#define E4_USTORM_IWARP_CONN_AG_CTX_RULE5EN_MASK          0x1 /* rule5en */
+#define E4_USTORM_IWARP_CONN_AG_CTX_RULE5EN_SHIFT         4
+#define E4_USTORM_IWARP_CONN_AG_CTX_RULE6EN_MASK          0x1 /* rule6en */
+#define E4_USTORM_IWARP_CONN_AG_CTX_RULE6EN_SHIFT         5
+#define E4_USTORM_IWARP_CONN_AG_CTX_RULE7EN_MASK          0x1 /* rule7en */
+#define E4_USTORM_IWARP_CONN_AG_CTX_RULE7EN_SHIFT         6
+#define E4_USTORM_IWARP_CONN_AG_CTX_RULE8EN_MASK          0x1 /* rule8en */
+#define E4_USTORM_IWARP_CONN_AG_CTX_RULE8EN_SHIFT         7
+	u8 byte2 /* byte2 */;
+	u8 byte3 /* byte3 */;
+	__le16 word0 /* conn_dpi */;
+	__le16 word1 /* word1 */;
+	__le32 cq_cons /* reg0 */;
+	__le32 cq_se_prod /* reg1 */;
+	__le32 cq_prod /* reg2 */;
+	__le32 reg3 /* reg3 */;
+	__le16 word2 /* word2 */;
+	__le16 word3 /* word3 */;
+};
+
+
+
+struct e4_ystorm_iwarp_conn_ag_ctx
+{
+	u8 byte0 /* cdu_validation */;
+	u8 byte1 /* state */;
+	u8 flags0;
+#define E4_YSTORM_IWARP_CONN_AG_CTX_BIT0_MASK     0x1 /* exist_in_qm0 */
+#define E4_YSTORM_IWARP_CONN_AG_CTX_BIT0_SHIFT    0
+#define E4_YSTORM_IWARP_CONN_AG_CTX_BIT1_MASK     0x1 /* exist_in_qm1 */
+#define E4_YSTORM_IWARP_CONN_AG_CTX_BIT1_SHIFT    1
+#define E4_YSTORM_IWARP_CONN_AG_CTX_CF0_MASK      0x3 /* cf0 */
+#define E4_YSTORM_IWARP_CONN_AG_CTX_CF0_SHIFT     2
+#define E4_YSTORM_IWARP_CONN_AG_CTX_CF1_MASK      0x3 /* cf1 */
+#define E4_YSTORM_IWARP_CONN_AG_CTX_CF1_SHIFT     4
+#define E4_YSTORM_IWARP_CONN_AG_CTX_CF2_MASK      0x3 /* cf2 */
+#define E4_YSTORM_IWARP_CONN_AG_CTX_CF2_SHIFT     6
+	u8 flags1;
+#define E4_YSTORM_IWARP_CONN_AG_CTX_CF0EN_MASK    0x1 /* cf0en */
+#define E4_YSTORM_IWARP_CONN_AG_CTX_CF0EN_SHIFT   0
+#define E4_YSTORM_IWARP_CONN_AG_CTX_CF1EN_MASK    0x1 /* cf1en */
+#define E4_YSTORM_IWARP_CONN_AG_CTX_CF1EN_SHIFT   1
+#define E4_YSTORM_IWARP_CONN_AG_CTX_CF2EN_MASK    0x1 /* cf2en */
+#define E4_YSTORM_IWARP_CONN_AG_CTX_CF2EN_SHIFT   2
+#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE0EN_MASK  0x1 /* rule0en */
+#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE0EN_SHIFT 3
+#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE1EN_MASK  0x1 /* rule1en */
+#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE1EN_SHIFT 4
+#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE2EN_MASK  0x1 /* rule2en */
+#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE2EN_SHIFT 5
+#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE3EN_MASK  0x1 /* rule3en */
+#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE3EN_SHIFT 6
+#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE4EN_MASK  0x1 /* rule4en */
+#define E4_YSTORM_IWARP_CONN_AG_CTX_RULE4EN_SHIFT 7
+	u8 byte2 /* byte2 */;
+	u8 byte3 /* byte3 */;
+	__le16 word0 /* word0 */;
+	__le32 reg0 /* reg0 */;
+	__le32 reg1 /* reg1 */;
+	__le16 word1 /* word1 */;
+	__le16 word2 /* word2 */;
+	__le16 word3 /* word3 */;
+	__le16 word4 /* word4 */;
+	__le32 reg2 /* reg2 */;
+	__le32 reg3 /* reg3 */;
+};
+
+
+struct e5_mstorm_iwarp_conn_ag_ctx
+{
+	u8 reserved /* cdu_validation */;
+	u8 state_and_core_id /* state_and_core_id */;
+	u8 flags0;
+#define E5_MSTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_MASK         0x1 /* exist_in_qm0 */
+#define E5_MSTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_SHIFT        0
+#define E5_MSTORM_IWARP_CONN_AG_CTX_BIT1_MASK                 0x1 /* exist_in_qm1 */
+#define E5_MSTORM_IWARP_CONN_AG_CTX_BIT1_SHIFT                1
+#define E5_MSTORM_IWARP_CONN_AG_CTX_INV_STAG_DONE_CF_MASK     0x3 /* cf0 */
+#define E5_MSTORM_IWARP_CONN_AG_CTX_INV_STAG_DONE_CF_SHIFT    2
+#define E5_MSTORM_IWARP_CONN_AG_CTX_CF1_MASK                  0x3 /* cf1 */
+#define E5_MSTORM_IWARP_CONN_AG_CTX_CF1_SHIFT                 4
+#define E5_MSTORM_IWARP_CONN_AG_CTX_CF2_MASK                  0x3 /* cf2 */
+#define E5_MSTORM_IWARP_CONN_AG_CTX_CF2_SHIFT                 6
+	u8 flags1;
+#define E5_MSTORM_IWARP_CONN_AG_CTX_INV_STAG_DONE_CF_EN_MASK  0x1 /* cf0en */
+#define E5_MSTORM_IWARP_CONN_AG_CTX_INV_STAG_DONE_CF_EN_SHIFT 0
+#define E5_MSTORM_IWARP_CONN_AG_CTX_CF1EN_MASK                0x1 /* cf1en */
+#define E5_MSTORM_IWARP_CONN_AG_CTX_CF1EN_SHIFT               1
+#define E5_MSTORM_IWARP_CONN_AG_CTX_CF2EN_MASK                0x1 /* cf2en */
+#define E5_MSTORM_IWARP_CONN_AG_CTX_CF2EN_SHIFT               2
+#define E5_MSTORM_IWARP_CONN_AG_CTX_RULE0EN_MASK              0x1 /* rule0en */
+#define E5_MSTORM_IWARP_CONN_AG_CTX_RULE0EN_SHIFT             3
+#define E5_MSTORM_IWARP_CONN_AG_CTX_RULE1EN_MASK              0x1 /* rule1en */
+#define E5_MSTORM_IWARP_CONN_AG_CTX_RULE1EN_SHIFT             4
+#define E5_MSTORM_IWARP_CONN_AG_CTX_RULE2EN_MASK              0x1 /* rule2en */
+#define E5_MSTORM_IWARP_CONN_AG_CTX_RULE2EN_SHIFT             5
+#define E5_MSTORM_IWARP_CONN_AG_CTX_RCQ_CONS_EN_MASK          0x1 /* rule3en */
+#define E5_MSTORM_IWARP_CONN_AG_CTX_RCQ_CONS_EN_SHIFT         6
+#define E5_MSTORM_IWARP_CONN_AG_CTX_RULE4EN_MASK              0x1 /* rule4en */
+#define E5_MSTORM_IWARP_CONN_AG_CTX_RULE4EN_SHIFT             7
+	__le16 rcq_cons /* word0 */;
+	__le16 rcq_cons_th /* word1 */;
+	__le32 reg0 /* reg0 */;
+	__le32 reg1 /* reg1 */;
+};
+
+
+
+struct e5_ustorm_iwarp_conn_ag_ctx
+{
+	u8 reserved /* cdu_validation */;
+	u8 byte1 /* state_and_core_id */;
+	u8 flags0;
+#define E5_USTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_MASK     0x1 /* exist_in_qm0 */
+#define E5_USTORM_IWARP_CONN_AG_CTX_EXIST_IN_QM0_SHIFT    0
+#define E5_USTORM_IWARP_CONN_AG_CTX_BIT1_MASK             0x1 /* exist_in_qm1 */
+#define E5_USTORM_IWARP_CONN_AG_CTX_BIT1_SHIFT            1
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF0_MASK              0x3 /* timer0cf */
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF0_SHIFT             2
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF1_MASK              0x3 /* timer1cf */
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF1_SHIFT             4
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF2_MASK              0x3 /* timer2cf */
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF2_SHIFT             6
+	u8 flags1;
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF3_MASK              0x3 /* timer_stop_all */
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF3_SHIFT             0
+#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_SE_CF_MASK     0x3 /* cf4 */
+#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_SE_CF_SHIFT    2
+#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_CF_MASK        0x3 /* cf5 */
+#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_CF_SHIFT       4
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF6_MASK              0x3 /* cf6 */
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF6_SHIFT             6
+	u8 flags2;
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF0EN_MASK            0x1 /* cf0en */
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF0EN_SHIFT           0
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF1EN_MASK            0x1 /* cf1en */
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF1EN_SHIFT           1
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF2EN_MASK            0x1 /* cf2en */
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF2EN_SHIFT           2
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF3EN_MASK            0x1 /* cf3en */
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF3EN_SHIFT           3
+#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_SE_CF_EN_MASK  0x1 /* cf4en */
+#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_SE_CF_EN_SHIFT 4
+#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_CF_EN_MASK     0x1 /* cf5en */
+#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_ARM_CF_EN_SHIFT    5
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF6EN_MASK            0x1 /* cf6en */
+#define E5_USTORM_IWARP_CONN_AG_CTX_CF6EN_SHIFT           6
+#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_SE_EN_MASK         0x1 /* rule0en */
+#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_SE_EN_SHIFT        7
+	u8 flags3;
+#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_EN_MASK            0x1 /* rule1en */
+#define E5_USTORM_IWARP_CONN_AG_CTX_CQ_EN_SHIFT           0
+#define E5_USTORM_IWARP_CONN_AG_CTX_RULE2EN_MASK          0x1 /* rule2en */
+#define E5_USTORM_IWARP_CONN_AG_CTX_RULE2EN_SHIFT         1
+#define E5_USTORM_IWARP_CONN_AG_CTX_RULE3EN_MASK          0x1 /* rule3en */
+#define E5_USTORM_IWARP_CONN_AG_CTX_RULE3EN_SHIFT         2
+#define E5_USTORM_IWARP_CONN_AG_CTX_RULE4EN_MASK          0x1 /* rule4en */
+#define E5_USTORM_IWARP_CONN_AG_CTX_RULE4EN_SHIFT         3
+#define E5_USTORM_IWARP_CONN_AG_CTX_RULE5EN_MASK          0x1 /* rule5en */
+#define E5_USTORM_IWARP_CONN_AG_CTX_RULE5EN_SHIFT         4
+#define E5_USTORM_IWARP_CONN_AG_CTX_RULE6EN_MASK          0x1 /* rule6en */
+#define E5_USTORM_IWARP_CONN_AG_CTX_RULE6EN_SHIFT         5
+#define E5_USTORM_IWARP_CONN_AG_CTX_RULE7EN_MASK          0x1 /* rule7en */
+#define E5_USTORM_IWARP_CONN_AG_CTX_RULE7EN_SHIFT         6
+#define E5_USTORM_IWARP_CONN_AG_CTX_RULE8EN_MASK          0x1 /* rule8en */
+#define E5_USTORM_IWARP_CONN_AG_CTX_RULE8EN_SHIFT         7
+	u8 flags4;
+#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED1_MASK     0x1 /* bit2 */
+#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED1_SHIFT    0
+#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED2_MASK     0x1 /* bit3 */
+#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED2_SHIFT    1
+#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED3_MASK     0x3 /* cf7 */
+#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED3_SHIFT    2
+#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED4_MASK     0x3 /* cf8 */
+#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED4_SHIFT    4
+#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED5_MASK     0x1 /* cf7en */
+#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED5_SHIFT    6
+#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED6_MASK     0x1 /* cf8en */
+#define E5_USTORM_IWARP_CONN_AG_CTX_E4_RESERVED6_SHIFT    7
+	u8 byte2 /* byte2 */;
+	__le16 word0 /* conn_dpi */;
+	__le16 word1 /* word1 */;
+	__le32 cq_cons /* reg0 */;
+	__le32 cq_se_prod /* reg1 */;
+	__le32 cq_prod /* reg2 */;
+	__le32 reg3 /* reg3 */;
+	__le16 word2 /* word2 */;
+	__le16 word3 /* word3 */;
+};
+
 
 
 struct e5_ystorm_iwarp_conn_ag_ctx

@@ -44,6 +44,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/memrange.h>
 #include <sys/smp.h>
 #include <sys/systm.h>
+#include <sys/cons.h>
 
 #include <vm/vm.h>
 #include <vm/pmap.h>
@@ -77,6 +78,7 @@ CTASSERT(sizeof(wakecode) < PAGE_SIZE - 1024);
 
 extern int		acpi_resume_beep;
 extern int		acpi_reset_video;
+extern int		acpi_susp_bounce;
 
 #ifdef SMP
 extern struct susppcb	**susppcbs;
@@ -190,6 +192,10 @@ acpi_sleep_machdep(struct acpi_softc *sc, int state)
 {
 	ACPI_STATUS	status;
 	struct pcb	*pcb;
+#ifdef __amd64__
+	struct pcpu *pc;
+	int i;
+#endif
 
 	if (sc->acpi_wakeaddr == 0ul)
 		return (-1);	/* couldn't alloc wake memory */
@@ -219,6 +225,15 @@ acpi_sleep_machdep(struct acpi_softc *sc, int state)
 			return (0);	/* couldn't sleep */
 		}
 #endif
+#ifdef __amd64__
+		hw_ibrs_active = 0;
+		hw_ssb_active = 0;
+		cpu_stdext_feature3 = 0;
+		CPU_FOREACH(i) {
+			pc = pcpu_find(i);
+			pc->pc_ibpb_set = 0;
+		}
+#endif
 
 		WAKECODE_FIXUP(resume_beep, uint8_t, (acpi_resume_beep != 0));
 		WAKECODE_FIXUP(reset_video, uint8_t, (acpi_reset_video != 0));
@@ -245,9 +260,18 @@ acpi_sleep_machdep(struct acpi_softc *sc, int state)
 			return (0);	/* couldn't sleep */
 		}
 
+		if (acpi_susp_bounce)
+			resumectx(pcb);
+
 		for (;;)
 			ia32_pause();
 	} else {
+		/*
+		 * Re-initialize console hardware as soon as possibe.
+		 * No console output (e.g. printf) is allowed before
+		 * this point.
+		 */
+		cnresume();
 #ifdef __amd64__
 		fpuresume(susppcbs[0]->sp_fpususpend);
 #else
@@ -284,7 +308,7 @@ acpi_wakeup_machdep(struct acpi_softc *sc, int state, int sleep_result,
 
 #ifdef SMP
 		if (!CPU_EMPTY(&suspcpus))
-			restart_cpus(suspcpus);
+			resume_cpus(suspcpus);
 #endif
 		mca_resume();
 #ifdef __amd64__

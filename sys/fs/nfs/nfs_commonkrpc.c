@@ -161,7 +161,7 @@ newnfs_connect(struct nfsmount *nmp, struct nfssockreq *nrp,
     struct ucred *cred, NFSPROC_T *p, int callback_retry_mult)
 {
 	int rcvreserve, sndreserve;
-	int pktscale;
+	int pktscale, pktscalesav;
 	struct sockaddr *saddr;
 	struct ucred *origcred;
 	CLIENT *client;
@@ -210,6 +210,7 @@ newnfs_connect(struct nfsmount *nmp, struct nfssockreq *nrp,
 		pktscale = 2;
 	if (pktscale > 64)
 		pktscale = 64;
+	pktscalesav = pktscale;
 	/*
 	 * soreserve() can fail if sb_max is too small, so shrink pktscale
 	 * and try again if there is an error.
@@ -228,8 +229,12 @@ newnfs_connect(struct nfsmount *nmp, struct nfssockreq *nrp,
 		goto out;
 	}
 	do {
-	    if (error != 0 && pktscale > 2)
+	    if (error != 0 && pktscale > 2) {
+		if (nmp != NULL && nrp->nr_sotype == SOCK_STREAM &&
+		    pktscale == pktscalesav)
+		    printf("Consider increasing kern.ipc.maxsockbuf\n");
 		pktscale--;
+	    }
 	    if (nrp->nr_sotype == SOCK_DGRAM) {
 		if (nmp != NULL) {
 			sndreserve = (NFS_MAXDGRAMDATA + NFS_MAXPKTHDR) *
@@ -243,15 +248,19 @@ newnfs_connect(struct nfsmount *nmp, struct nfssockreq *nrp,
 		if (nrp->nr_sotype != SOCK_STREAM)
 			panic("nfscon sotype");
 		if (nmp != NULL) {
-			sndreserve = (NFS_MAXBSIZE + NFS_MAXPKTHDR +
+			sndreserve = (NFS_MAXBSIZE + NFS_MAXXDR +
 			    sizeof (u_int32_t)) * pktscale;
-			rcvreserve = (NFS_MAXBSIZE + NFS_MAXPKTHDR +
+			rcvreserve = (NFS_MAXBSIZE + NFS_MAXXDR +
 			    sizeof (u_int32_t)) * pktscale;
 		} else {
 			sndreserve = rcvreserve = 1024 * pktscale;
 		}
 	    }
 	    error = soreserve(so, sndreserve, rcvreserve);
+	    if (error != 0 && nmp != NULL && nrp->nr_sotype == SOCK_STREAM &&
+		pktscale <= 2)
+		printf("Must increase kern.ipc.maxsockbuf or reduce"
+		    " rsize, wsize\n");
 	} while (error != 0 && pktscale > 2);
 	soclose(so);
 	if (error) {
@@ -500,7 +509,7 @@ newnfs_request(struct nfsrv_descript *nd, struct nfsmount *nmp,
 	if (xidp != NULL)
 		*xidp = 0;
 	/* Reject requests while attempting a forced unmount. */
-	if (nmp != NULL && (nmp->nm_mountp->mnt_kern_flag & MNTK_UNMOUNTF)) {
+	if (nmp != NULL && NFSCL_FORCEDISM(nmp->nm_mountp)) {
 		m_freem(nd->nd_mreq);
 		return (ESTALE);
 	}
@@ -840,9 +849,9 @@ tryagain:
 			if ((nmp != NULL && i == NFSV4OP_SEQUENCE && j != 0) ||
 			    (clp != NULL && i == NFSV4OP_CBSEQUENCE && j != 0))
 				NFSCL_DEBUG(1, "failed seq=%d\n", j);
-			if ((nmp != NULL && i == NFSV4OP_SEQUENCE && j == 0) ||
-			    (clp != NULL && i == NFSV4OP_CBSEQUENCE && j == 0)
-			    ) {
+			if (((nmp != NULL && i == NFSV4OP_SEQUENCE && j == 0) ||
+			    (clp != NULL && i == NFSV4OP_CBSEQUENCE &&
+			    j == 0)) && sep != NULL) {
 				if (i == NFSV4OP_SEQUENCE)
 					NFSM_DISSECT(tl, uint32_t *,
 					    NFSX_V4SESSIONID +
@@ -884,7 +893,8 @@ tryagain:
 		}
 		if (nd->nd_repstat != 0) {
 			if (nd->nd_repstat == NFSERR_BADSESSION &&
-			    nmp != NULL && dssep == NULL) {
+			    nmp != NULL && dssep == NULL &&
+			    (nd->nd_flag & ND_NFSV41) != 0) {
 				/*
 				 * If this is a client side MDS RPC, mark
 				 * the MDS session defunct and initiate
@@ -953,10 +963,14 @@ tryagain:
 					NFSCL_DEBUG(1, "Got err=%d\n", reterr);
 				}
 			}
+			/*
+			 * When clp != NULL, it is a callback and all
+			 * callback operations can be retried for NFSERR_DELAY.
+			 */
 			if (((nd->nd_repstat == NFSERR_DELAY ||
 			      nd->nd_repstat == NFSERR_GRACE) &&
-			     (nd->nd_flag & ND_NFSV4) &&
-			     nd->nd_procnum != NFSPROC_DELEGRETURN &&
+			     (nd->nd_flag & ND_NFSV4) && (clp != NULL ||
+			     (nd->nd_procnum != NFSPROC_DELEGRETURN &&
 			     nd->nd_procnum != NFSPROC_SETATTR &&
 			     nd->nd_procnum != NFSPROC_READ &&
 			     nd->nd_procnum != NFSPROC_READDS &&
@@ -968,7 +982,7 @@ tryagain:
 			     nd->nd_procnum != NFSPROC_OPENDOWNGRADE &&
 			     nd->nd_procnum != NFSPROC_CLOSE &&
 			     nd->nd_procnum != NFSPROC_LOCK &&
-			     nd->nd_procnum != NFSPROC_LOCKU) ||
+			     nd->nd_procnum != NFSPROC_LOCKU))) ||
 			    (nd->nd_repstat == NFSERR_DELAY &&
 			     (nd->nd_flag & ND_NFSV4) == 0) ||
 			    nd->nd_repstat == NFSERR_RESOURCE) {
@@ -1110,9 +1124,29 @@ nfsmout:
 int
 newnfs_nmcancelreqs(struct nfsmount *nmp)
 {
+	struct nfsclds *dsp;
+	struct __rpc_client *cl;
 
 	if (nmp->nm_sockreq.nr_client != NULL)
 		CLNT_CLOSE(nmp->nm_sockreq.nr_client);
+lookformore:
+	NFSLOCKMNT(nmp);
+	TAILQ_FOREACH(dsp, &nmp->nm_sess, nfsclds_list) {
+		NFSLOCKDS(dsp);
+		if (dsp != TAILQ_FIRST(&nmp->nm_sess) &&
+		    (dsp->nfsclds_flags & NFSCLDS_CLOSED) == 0 &&
+		    dsp->nfsclds_sockp != NULL &&
+		    dsp->nfsclds_sockp->nr_client != NULL) {
+			dsp->nfsclds_flags |= NFSCLDS_CLOSED;
+			cl = dsp->nfsclds_sockp->nr_client;
+			NFSUNLOCKDS(dsp);
+			NFSUNLOCKMNT(nmp);
+			CLNT_CLOSE(cl);
+			goto lookformore;
+		}
+		NFSUNLOCKDS(dsp);
+	}
+	NFSUNLOCKMNT(nmp);
 	return (0);
 }
 
@@ -1220,7 +1254,7 @@ newnfs_sigintr(struct nfsmount *nmp, struct thread *td)
 	sigset_t tmpset;
 	
 	/* Terminate all requests while attempting a forced unmount. */
-	if (nmp->nm_mountp->mnt_kern_flag & MNTK_UNMOUNTF)
+	if (NFSCL_FORCEDISM(nmp->nm_mountp))
 		return (EIO);
 	if (!(nmp->nm_flag & NFSMNT_INT))
 		return (0);

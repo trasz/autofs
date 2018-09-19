@@ -97,6 +97,8 @@ struct fork_args {
 };
 #endif
 
+EVENTHANDLER_LIST_DECLARE(process_fork);
+
 /* ARGSUSED */
 int
 sys_fork(struct thread *td, struct fork_args *uap)
@@ -208,20 +210,26 @@ sysctl_kern_randompid(SYSCTL_HANDLER_ARGS)
 	pid = randompid;
 	error = sysctl_handle_int(oidp, &pid, 0, req);
 	if (error == 0 && req->newptr != NULL) {
-		if (pid < 0 || pid > pid_max - 100)	/* out of range */
-			pid = pid_max - 100;
-		else if (pid < 2)			/* NOP */
-			pid = 0;
-		else if (pid < 100)			/* Make it reasonable */
-			pid = 100;
-		randompid = pid;
+		if (pid == 0)
+			randompid = 0;
+		else if (pid == 1)
+			/* generate a random PID modulus between 100 and 1123 */
+			randompid = 100 + arc4random() % 1024;
+		else if (pid < 0 || pid > pid_max - 100)
+			/* out of range */
+			randompid = pid_max - 100;
+		else if (pid < 100)	 
+			/* Make it reasonable */
+			randompid = 100;
+		else
+			randompid = pid;
 	}
 	sx_xunlock(&allproc_lock);
 	return (error);
 }
 
 SYSCTL_PROC(_kern, OID_AUTO, randompid, CTLTYPE_INT|CTLFLAG_RW,
-    0, 0, sysctl_kern_randompid, "I", "Random PID modulus");
+    0, 0, sysctl_kern_randompid, "I", "Random PID modulus. Special values: 0: disable, 1: choose random value");
 
 static int
 fork_findpid(int flags)
@@ -417,6 +425,7 @@ do_fork(struct thread *td, struct fork_req *fr, struct proc *p2, struct thread *
 	bzero(&p2->p_startzero,
 	    __rangeof(struct proc, p_startzero, p_endzero));
 	p2->p_ptevents = 0;
+	p2->p_pdeathsig = 0;
 
 	/* Tell the prison that we exist. */
 	prison_proc_hold(p2->p_ucred->cr_prison);
@@ -475,9 +484,12 @@ do_fork(struct thread *td, struct fork_req *fr, struct proc *p2, struct thread *
 	bzero(&td2->td_startzero,
 	    __rangeof(struct thread, td_startzero, td_endzero));
 	td2->td_sleeptimo = 0;
+	td2->td_vslock_sz = 0;
+	bzero(&td2->td_si, sizeof(td2->td_si));
 
 	bcopy(&td->td_startcopy, &td2->td_startcopy,
 	    __rangeof(struct thread, td_startcopy, td_endcopy));
+	td2->td_sa = td->td_sa;
 
 	bcopy(&p2->p_comm, &td2->td_name, sizeof(td2->td_name));
 	td2->td_sigstk = td->td_sigstk;
@@ -697,7 +709,7 @@ do_fork(struct thread *td, struct fork_req *fr, struct proc *p2, struct thread *
 	 * Both processes are set up, now check if any loadable modules want
 	 * to adjust anything.
 	 */
-	EVENTHANDLER_INVOKE(process_fork, p1, p2, fr->fr_flags);
+	EVENTHANDLER_DIRECT_INVOKE(process_fork, p1, p2, fr->fr_flags);
 
 	/*
 	 * Set the child start time and mark the process as being complete.
@@ -724,18 +736,6 @@ do_fork(struct thread *td, struct fork_req *fr, struct proc *p2, struct thread *
 	 * but before we wait for the debugger.
 	 */
 	_PHOLD(p2);
-	if (p1->p_ptevents & PTRACE_FORK) {
-		/*
-		 * Arrange for debugger to receive the fork event.
-		 *
-		 * We can report PL_FLAG_FORKED regardless of
-		 * P_FOLLOWFORK settings, but it does not make a sense
-		 * for runaway child.
-		 */
-		td->td_dbgflags |= TDB_FORK;
-		td->td_dbg_forked = p2->p_pid;
-		td2->td_dbgflags |= TDB_STOPATFORK;
-	}
 	if (fr->fr_flags & RFPPWAIT) {
 		td->td_pflags |= TDP_RFPPWAIT;
 		td->td_rfppwait_p = p2;
@@ -759,7 +759,42 @@ do_fork(struct thread *td, struct fork_req *fr, struct proc *p2, struct thread *
 		procdesc_finit(p2->p_procdesc, fp_procdesc);
 		fdrop(fp_procdesc, td);
 	}
-
+	
+	/*
+	 * Speculative check for PTRACE_FORK. PTRACE_FORK is not
+	 * synced with forks in progress so it is OK if we miss it
+	 * if being set atm.
+	 */
+	if ((p1->p_ptevents & PTRACE_FORK) != 0) {
+		sx_xlock(&proctree_lock);
+		PROC_LOCK(p2);
+		
+		/*
+		 * p1->p_ptevents & p1->p_pptr are protected by both
+		 * process and proctree locks for modifications,
+		 * so owning proctree_lock allows the race-free read.
+		 */
+		if ((p1->p_ptevents & PTRACE_FORK) != 0) {
+			/*
+			 * Arrange for debugger to receive the fork event.
+			 *
+			 * We can report PL_FLAG_FORKED regardless of
+			 * P_FOLLOWFORK settings, but it does not make a sense
+			 * for runaway child.
+			 */
+			td->td_dbgflags |= TDB_FORK;
+			td->td_dbg_forked = p2->p_pid;
+			td2->td_dbgflags |= TDB_STOPATFORK;
+			proc_set_traced(p2, true);
+			CTR2(KTR_PTRACE,
+			    "do_fork: attaching to new child pid %d: oppid %d",
+			    p2->p_pid, p2->p_oppid);
+			proc_reparent(p2, p1->p_pptr);
+		}
+		PROC_UNLOCK(p2);
+		sx_xunlock(&proctree_lock);
+	}
+	
 	if ((fr->fr_flags & RFSTOPPED) == 0) {
 		/*
 		 * If RFSTOPPED not requested, make child runnable and
@@ -776,11 +811,6 @@ do_fork(struct thread *td, struct fork_req *fr, struct proc *p2, struct thread *
 	}
 
 	PROC_LOCK(p2);
-	/*
-	 * Wait until debugger is attached to child.
-	 */
-	while (td2->td_proc == p2 && (td2->td_dbgflags & TDB_STOPATFORK) != 0)
-		cv_wait(&p2->p_dbgwait, &p2->p_mtx);
 	_PRELE(p2);
 	racct_proc_fork_done(p2);
 	PROC_UNLOCK(p2);
@@ -1066,24 +1096,15 @@ fork_exit(void (*callout)(void *, struct trapframe *), void *arg,
 void
 fork_return(struct thread *td, struct trapframe *frame)
 {
-	struct proc *p, *dbg;
+	struct proc *p;
 
 	p = td->td_proc;
 	if (td->td_dbgflags & TDB_STOPATFORK) {
-		sx_xlock(&proctree_lock);
 		PROC_LOCK(p);
-		if (p->p_pptr->p_ptevents & PTRACE_FORK) {
+		if ((p->p_flag & P_TRACED) != 0) {
 			/*
-			 * If debugger still wants auto-attach for the
-			 * parent's children, do it now.
+			 * Inform the debugger if one is still present.
 			 */
-			dbg = p->p_pptr->p_pptr;
-			proc_set_traced(p, true);
-			CTR2(KTR_PTRACE,
-		    "fork_return: attaching to new child pid %d: oppid %d",
-			    p->p_pid, p->p_oppid);
-			proc_reparent(p, dbg);
-			sx_xunlock(&proctree_lock);
 			td->td_dbgflags |= TDB_CHILD | TDB_SCX | TDB_FSTP;
 			ptracestop(td, SIGSTOP, NULL);
 			td->td_dbgflags &= ~(TDB_CHILD | TDB_SCX);
@@ -1091,9 +1112,7 @@ fork_return(struct thread *td, struct trapframe *frame)
 			/*
 			 * ... otherwise clear the request.
 			 */
-			sx_xunlock(&proctree_lock);
 			td->td_dbgflags &= ~TDB_STOPATFORK;
-			cv_broadcast(&p->p_dbgwait);
 		}
 		PROC_UNLOCK(p);
 	} else if (p->p_flag & P_TRACED || td->td_dbgflags & TDB_BORN) {
@@ -1103,7 +1122,7 @@ fork_return(struct thread *td, struct trapframe *frame)
 		 */
 		PROC_LOCK(p);
 		td->td_dbgflags |= TDB_SCX;
-		_STOPEVENT(p, S_SCX, td->td_dbg_sc_code);
+		_STOPEVENT(p, S_SCX, td->td_sa.code);
 		if ((p->p_ptevents & PTRACE_SCX) != 0 ||
 		    (td->td_dbgflags & TDB_BORN) != 0)
 			ptracestop(td, SIGTRAP, NULL);

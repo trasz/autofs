@@ -72,7 +72,19 @@ __FBSDID("$FreeBSD$");
  * Note that stdarg.h and the ANSI style va_start macro is used for both
  * ANSI and traditional C compilers.
  */
+#ifdef _KERNEL
 #include <machine/stdarg.h>
+#else
+#include <stdarg.h>
+#endif
+
+/*
+ * This is needed for sbuf_putbuf() when compiled into userland.  Due to the
+ * shared nature of this file, it's the only place to put it.
+ */
+#ifndef _KERNEL
+#include <stdio.h>
+#endif
 
 #ifdef _KERNEL
 
@@ -106,8 +118,20 @@ static void  putchar(int ch, void *arg);
 static char *ksprintn(char *nbuf, uintmax_t num, int base, int *len, int upper);
 static void  snprintf_func(int ch, void *arg);
 
-static int msgbufmapped;		/* Set when safe to use msgbuf */
+static bool msgbufmapped;		/* Set when safe to use msgbuf */
 int msgbuftrigger;
+
+#ifndef BOOT_TAG_SZ
+#define	BOOT_TAG_SZ	32
+#endif
+#ifndef BOOT_TAG
+/* Tag used to mark the start of a boot in dmesg */
+#define	BOOT_TAG	""
+#endif
+
+static char current_boot_tag[BOOT_TAG_SZ + 1] = BOOT_TAG;
+SYSCTL_STRING(_kern, OID_AUTO, boot_tag, CTLFLAG_RDTUN | CTLFLAG_NOFETCH,
+    current_boot_tag, 0, "Tag added to dmesg at start of boot");
 
 static int log_console_output = 1;
 SYSCTL_INT(_kern, OID_AUTO, log_console_output, CTLFLAG_RWTUN,
@@ -377,7 +401,6 @@ log_console(struct uio *uio)
 	msgbuftrigger = 1;
 	free(uio, M_IOV);
 	free(consbuffer, M_TEMP);
-	return;
 }
 
 int
@@ -407,6 +430,23 @@ vprintf(const char *fmt, va_list ap)
 }
 
 static void
+prf_putbuf(char *bufr, int flags, int pri)
+{
+
+	if (flags & TOLOG)
+		msglogstr(bufr, pri, /*filter_cr*/1);
+
+	if (flags & TOCONS) {
+		if ((panicstr == NULL) && (constty != NULL))
+			msgbuf_addstr(&consmsgbuf, -1,
+			    bufr, /*filter_cr*/ 0);
+
+		if ((constty == NULL) ||(always_console_output))
+			cnputs(bufr);
+	}
+}
+
+static void
 putbuf(int c, struct putchar_arg *ap)
 {
 	/* Check if no console output buffer was provided. */
@@ -427,18 +467,7 @@ putbuf(int c, struct putchar_arg *ap)
 
 		/* Check if the buffer needs to be flushed. */
 		if (ap->remain == 2 || c == '\n') {
-
-			if (ap->flags & TOLOG)
-				msglogstr(ap->p_bufr, ap->pri, /*filter_cr*/1);
-
-			if (ap->flags & TOCONS) {
-				if ((panicstr == NULL) && (constty != NULL))
-					msgbuf_addstr(&consmsgbuf, -1,
-					    ap->p_bufr, /*filter_cr*/ 0);
-
-				if ((constty == NULL) ||(always_console_output))
-					cnputs(ap->p_bufr);
-			}
+			prf_putbuf(ap->p_bufr, ap->flags, ap->pri);
 
 			ap->p_next = ap->p_bufr;
 			ap->remain = ap->n_bufr;
@@ -693,6 +722,7 @@ reswitch:	switch (ch = (u_char)*fmt++) {
 				padc = '0';
 				goto reswitch;
 			}
+			/* FALLTHROUGH */
 		case '1': case '2': case '3': case '4':
 		case '5': case '6': case '7': case '8': case '9':
 				for (n = 0;; ++fmt) {
@@ -993,14 +1023,22 @@ msgbufinit(void *ptr, int size)
 {
 	char *cp;
 	static struct msgbuf *oldp = NULL;
+	bool print_boot_tag;
 
 	size -= sizeof(*msgbufp);
 	cp = (char *)ptr;
+	print_boot_tag = !msgbufmapped;
+	/* Attempt to fetch kern.boot_tag tunable on first mapping */
+	if (!msgbufmapped)
+		TUNABLE_STR_FETCH("kern.boot_tag", current_boot_tag,
+		    sizeof(current_boot_tag));
 	msgbufp = (struct msgbuf *)(cp + size);
 	msgbuf_reinit(msgbufp, cp, size);
 	if (msgbufmapped && oldp != msgbufp)
 		msgbuf_copy(oldp, msgbufp);
-	msgbufmapped = 1;
+	msgbufmapped = true;
+	if (print_boot_tag && *current_boot_tag != '\0')
+		printf("%s\n", current_boot_tag);
 	oldp = msgbufp;
 }
 
@@ -1215,5 +1253,21 @@ counted_warning(unsigned *counter, const char *msg)
 			break;
 		}
 	}
+}
+#endif
+
+#ifdef _KERNEL
+void
+sbuf_putbuf(struct sbuf *sb)
+{
+
+	prf_putbuf(sbuf_data(sb), TOLOG | TOCONS, -1);
+}
+#else
+void
+sbuf_putbuf(struct sbuf *sb)
+{
+
+	printf("%s", sbuf_data(sb));
 }
 #endif

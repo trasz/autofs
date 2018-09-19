@@ -100,6 +100,7 @@ __FBSDID("$FreeBSD$");
 #include <vm/vm_object.h>
 #include <vm/vm_pager.h>
 #include <vm/vm_param.h>
+#include <vm/vm_phys.h>
 
 #ifdef DDB
 #ifndef KDB
@@ -114,6 +115,7 @@ __FBSDID("$FreeBSD$");
 #include <machine/clock.h>
 #include <machine/cpu.h>
 #include <machine/cputypes.h>
+#include <machine/frame.h>
 #include <machine/intr_machdep.h>
 #include <x86/mca.h>
 #include <machine/md_var.h>
@@ -149,6 +151,14 @@ __FBSDID("$FreeBSD$");
 /* Sanity check for __curthread() */
 CTASSERT(offsetof(struct pcpu, pc_curthread) == 0);
 
+/*
+ * The PTI trampoline stack needs enough space for a hardware trapframe and a
+ * couple of scratch registers, as well as the trapframe left behind after an
+ * iret fault.
+ */
+CTASSERT(PC_PTI_STACK_SZ * sizeof(register_t) >= 2 * sizeof(struct pti_frame) -
+    offsetof(struct pti_frame, pti_rip));
+
 extern u_int64_t hammer_time(u_int64_t, u_int64_t);
 
 #define	CS_SECURE(cs)		(ISPL(cs) == SEL_UPL)
@@ -179,12 +189,6 @@ struct init_ops init_ops = {
 #endif
 	.msi_init =			msi_init,
 };
-
-/*
- * The file "conf/ldscript.amd64" defines the symbol "kernphys".  Its value is
- * the physical address at which the kernel is loaded.
- */
-extern char kernphys[];
 
 struct msgbuf *msgbufp;
 
@@ -379,6 +383,7 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
 	sf.sf_uc.uc_mcontext.mc_len = sizeof(sf.sf_uc.uc_mcontext); /* magic */
 	get_fpcontext(td, &sf.sf_uc.uc_mcontext, xfpusave, xfpusave_len);
 	fpstate_drop(td);
+	update_pcb_bases(pcb);
 	sf.sf_uc.uc_mcontext.mc_fsbase = pcb->pcb_fsbase;
 	sf.sf_uc.uc_mcontext.mc_gsbase = pcb->pcb_gsbase;
 	bzero(sf.sf_uc.uc_mcontext.mc_spare,
@@ -449,7 +454,6 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
 	regs->tf_fs = _ufssel;
 	regs->tf_gs = _ugssel;
 	regs->tf_flags = TF_HASSEGS;
-	set_pcb_flags(pcb, PCB_FULL_IRET);
 	PROC_LOCK(p);
 	mtx_lock(&psp->ps_mtx);
 }
@@ -555,6 +559,7 @@ sys_sigreturn(td, uap)
 		return (ret);
 	}
 	bcopy(&ucp->uc_mcontext.mc_rdi, regs, sizeof(*regs));
+	update_pcb_bases(pcb);
 	pcb->pcb_fsbase = ucp->uc_mcontext.mc_fsbase;
 	pcb->pcb_gsbase = ucp->uc_mcontext.mc_gsbase;
 
@@ -566,7 +571,6 @@ sys_sigreturn(td, uap)
 #endif
 
 	kern_sigprocmask(td, SIG_SETMASK, &ucp->uc_sigmask, NULL, 0);
-	set_pcb_flags(pcb, PCB_FULL_IRET);
 	return (EJUSTRETURN);
 }
 
@@ -585,8 +589,12 @@ freebsd4_sigreturn(struct thread *td, struct freebsd4_sigreturn_args *uap)
 void
 exec_setregs(struct thread *td, struct image_params *imgp, u_long stack)
 {
-	struct trapframe *regs = td->td_frame;
-	struct pcb *pcb = td->td_pcb;
+	struct trapframe *regs;
+	struct pcb *pcb;
+	register_t saved_rflags;
+
+	regs = td->td_frame;
+	pcb = td->td_pcb;
 
 	mtx_lock(&dt_lock);
 	if (td->td_proc->p_md.md_ldt != NULL)
@@ -594,17 +602,18 @@ exec_setregs(struct thread *td, struct image_params *imgp, u_long stack)
 	else
 		mtx_unlock(&dt_lock);
 	
+	update_pcb_bases(pcb);
 	pcb->pcb_fsbase = 0;
 	pcb->pcb_gsbase = 0;
 	clear_pcb_flags(pcb, PCB_32BIT);
 	pcb->pcb_initial_fpucw = __INITIAL_FPUCW__;
-	set_pcb_flags(pcb, PCB_FULL_IRET);
 
+	saved_rflags = regs->tf_rflags & PSL_T;
 	bzero((char *)regs, sizeof(struct trapframe));
 	regs->tf_rip = imgp->entry_addr;
 	regs->tf_rsp = ((stack - 8) & ~0xFul) + 8;
 	regs->tf_rdi = stack;		/* argv */
-	regs->tf_rflags = PSL_USER | (regs->tf_rflags & PSL_T);
+	regs->tf_rflags = PSL_USER | saved_rflags;
 	regs->tf_ss = _udatasel;
 	regs->tf_cs = _ucodesel;
 	regs->tf_ds = _udatasel;
@@ -670,8 +679,9 @@ static struct gate_descriptor idt0[NIDT];
 struct gate_descriptor *idt = &idt0[0];	/* interrupt descriptor table */
 
 static char dblfault_stack[PAGE_SIZE] __aligned(16);
-
+static char mce0_stack[PAGE_SIZE] __aligned(16);
 static char nmi0_stack[PAGE_SIZE] __aligned(16);
+static char dbg0_stack[PAGE_SIZE] __aligned(16);
 CTASSERT(sizeof(struct nmi_pcpu) == 16);
 
 struct amd64tss common_tss[MAXCPU];
@@ -824,13 +834,20 @@ extern inthand_t
 	IDTVEC(tss), IDTVEC(missing), IDTVEC(stk), IDTVEC(prot),
 	IDTVEC(page), IDTVEC(mchk), IDTVEC(rsvd), IDTVEC(fpu), IDTVEC(align),
 	IDTVEC(xmm), IDTVEC(dblfault),
+	IDTVEC(div_pti), IDTVEC(bpt_pti),
+	IDTVEC(ofl_pti), IDTVEC(bnd_pti), IDTVEC(ill_pti), IDTVEC(dna_pti),
+	IDTVEC(fpusegm_pti), IDTVEC(tss_pti), IDTVEC(missing_pti),
+	IDTVEC(stk_pti), IDTVEC(prot_pti), IDTVEC(page_pti),
+	IDTVEC(rsvd_pti), IDTVEC(fpu_pti), IDTVEC(align_pti),
+	IDTVEC(xmm_pti),
 #ifdef KDTRACE_HOOKS
-	IDTVEC(dtrace_ret),
+	IDTVEC(dtrace_ret), IDTVEC(dtrace_ret_pti),
 #endif
 #ifdef XENHVM
-	IDTVEC(xen_intr_upcall),
+	IDTVEC(xen_intr_upcall), IDTVEC(xen_intr_upcall_pti),
 #endif
-	IDTVEC(fast_syscall), IDTVEC(fast_syscall32);
+	IDTVEC(fast_syscall), IDTVEC(fast_syscall32),
+	IDTVEC(fast_syscall_pti);
 
 #ifdef DDB
 /*
@@ -1219,6 +1236,12 @@ getmemsize(caddr_t kmdp, u_int64_t first)
 	quad_t dcons_addr, dcons_size;
 	int page_counter;
 
+	/*
+	 * Tell the physical memory allocator about pages used to store
+	 * the kernel and preloaded data.  See kmem_bootstrap_free().
+	 */
+	vm_phys_add_seg((vm_paddr_t)kernphys, trunc_page(first));
+
 	bzero(physmap, sizeof(physmap));
 	physmap_idx = 0;
 
@@ -1523,6 +1546,23 @@ amd64_kdb_init(void)
 #endif
 }
 
+/* Set up the fast syscall stuff */
+void
+amd64_conf_fast_syscall(void)
+{
+	uint64_t msr;
+
+	msr = rdmsr(MSR_EFER) | EFER_SCE;
+	wrmsr(MSR_EFER, msr);
+	wrmsr(MSR_LSTAR, pti ? (u_int64_t)IDTVEC(fast_syscall_pti) :
+	    (u_int64_t)IDTVEC(fast_syscall));
+	wrmsr(MSR_CSTAR, (u_int64_t)IDTVEC(fast_syscall32));
+	msr = ((u_int64_t)GSEL(GCODE_SEL, SEL_KPL) << 32) |
+	    ((u_int64_t)GSEL(GUCODE32_SEL, SEL_UPL) << 48);
+	wrmsr(MSR_STAR, msr);
+	wrmsr(MSR_SF_MASK, PSL_NT | PSL_T | PSL_I | PSL_C | PSL_D);
+}
+
 u_int64_t
 hammer_time(u_int64_t modulep, u_int64_t physfree)
 {
@@ -1531,18 +1571,28 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
 	struct pcpu *pc;
 	struct nmi_pcpu *np;
 	struct xstate_hdr *xhdr;
-	u_int64_t msr;
+	u_int64_t rsp0;
 	char *env;
 	size_t kstack0_sz;
 	int late_console;
 
+	kmdp = init_ops.parse_preload_data(modulep);
+
+	identify_cpu1();
+	identify_hypervisor();
 	/*
- 	 * This may be done better later if it gets more high level
- 	 * components in it. If so just link td->td_proc here.
+	 * hw.cpu_stdext_disable is ignored by the call, it will be
+	 * re-evaluted by the below call to finishidentcpu().
+	 */
+	identify_cpu2();
+
+	link_elf_ireloc(kmdp);
+
+	/*
+	 * This may be done better later if it gets more high level
+	 * components in it. If so just link td->td_proc here.
 	 */
 	proc_linkup0(&proc0, &thread0);
-
-	kmdp = init_ops.parse_preload_data(modulep);
 
 	/* Init basic tunables, hz etc */
 	init_param1();
@@ -1600,34 +1650,54 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
 	mtx_init(&dt_lock, "descriptor tables", NULL, MTX_DEF);
 
 	/* exceptions */
+	pti = pti_get_default();
+	TUNABLE_INT_FETCH("vm.pmap.pti", &pti);
+
 	for (x = 0; x < NIDT; x++)
-		setidt(x, &IDTVEC(rsvd), SDT_SYSIGT, SEL_KPL, 0);
-	setidt(IDT_DE, &IDTVEC(div),  SDT_SYSIGT, SEL_KPL, 0);
-	setidt(IDT_DB, &IDTVEC(dbg),  SDT_SYSIGT, SEL_KPL, 0);
+		setidt(x, pti ? &IDTVEC(rsvd_pti) : &IDTVEC(rsvd), SDT_SYSIGT,
+		    SEL_KPL, 0);
+	setidt(IDT_DE, pti ? &IDTVEC(div_pti) : &IDTVEC(div), SDT_SYSIGT,
+	    SEL_KPL, 0);
+	setidt(IDT_DB, &IDTVEC(dbg), SDT_SYSIGT, SEL_KPL, 4);
 	setidt(IDT_NMI, &IDTVEC(nmi),  SDT_SYSIGT, SEL_KPL, 2);
- 	setidt(IDT_BP, &IDTVEC(bpt),  SDT_SYSIGT, SEL_UPL, 0);
-	setidt(IDT_OF, &IDTVEC(ofl),  SDT_SYSIGT, SEL_KPL, 0);
-	setidt(IDT_BR, &IDTVEC(bnd),  SDT_SYSIGT, SEL_KPL, 0);
-	setidt(IDT_UD, &IDTVEC(ill),  SDT_SYSIGT, SEL_KPL, 0);
-	setidt(IDT_NM, &IDTVEC(dna),  SDT_SYSIGT, SEL_KPL, 0);
+	setidt(IDT_BP, pti ? &IDTVEC(bpt_pti) : &IDTVEC(bpt), SDT_SYSIGT,
+	    SEL_UPL, 0);
+	setidt(IDT_OF, pti ? &IDTVEC(ofl_pti) : &IDTVEC(ofl), SDT_SYSIGT,
+	    SEL_UPL, 0);
+	setidt(IDT_BR, pti ? &IDTVEC(bnd_pti) : &IDTVEC(bnd), SDT_SYSIGT,
+	    SEL_KPL, 0);
+	setidt(IDT_UD, pti ? &IDTVEC(ill_pti) : &IDTVEC(ill), SDT_SYSIGT,
+	    SEL_KPL, 0);
+	setidt(IDT_NM, pti ? &IDTVEC(dna_pti) : &IDTVEC(dna), SDT_SYSIGT,
+	    SEL_KPL, 0);
 	setidt(IDT_DF, &IDTVEC(dblfault), SDT_SYSIGT, SEL_KPL, 1);
-	setidt(IDT_FPUGP, &IDTVEC(fpusegm),  SDT_SYSIGT, SEL_KPL, 0);
-	setidt(IDT_TS, &IDTVEC(tss),  SDT_SYSIGT, SEL_KPL, 0);
-	setidt(IDT_NP, &IDTVEC(missing),  SDT_SYSIGT, SEL_KPL, 0);
-	setidt(IDT_SS, &IDTVEC(stk),  SDT_SYSIGT, SEL_KPL, 0);
-	setidt(IDT_GP, &IDTVEC(prot),  SDT_SYSIGT, SEL_KPL, 0);
-	setidt(IDT_PF, &IDTVEC(page),  SDT_SYSIGT, SEL_KPL, 0);
-	setidt(IDT_MF, &IDTVEC(fpu),  SDT_SYSIGT, SEL_KPL, 0);
-	setidt(IDT_AC, &IDTVEC(align), SDT_SYSIGT, SEL_KPL, 0);
-	setidt(IDT_MC, &IDTVEC(mchk),  SDT_SYSIGT, SEL_KPL, 0);
-	setidt(IDT_XF, &IDTVEC(xmm), SDT_SYSIGT, SEL_KPL, 0);
+	setidt(IDT_FPUGP, pti ? &IDTVEC(fpusegm_pti) : &IDTVEC(fpusegm),
+	    SDT_SYSIGT, SEL_KPL, 0);
+	setidt(IDT_TS, pti ? &IDTVEC(tss_pti) : &IDTVEC(tss), SDT_SYSIGT,
+	    SEL_KPL, 0);
+	setidt(IDT_NP, pti ? &IDTVEC(missing_pti) : &IDTVEC(missing),
+	    SDT_SYSIGT, SEL_KPL, 0);
+	setidt(IDT_SS, pti ? &IDTVEC(stk_pti) : &IDTVEC(stk), SDT_SYSIGT,
+	    SEL_KPL, 0);
+	setidt(IDT_GP, pti ? &IDTVEC(prot_pti) : &IDTVEC(prot), SDT_SYSIGT,
+	    SEL_KPL, 0);
+	setidt(IDT_PF, pti ? &IDTVEC(page_pti) : &IDTVEC(page), SDT_SYSIGT,
+	    SEL_KPL, 0);
+	setidt(IDT_MF, pti ? &IDTVEC(fpu_pti) : &IDTVEC(fpu), SDT_SYSIGT,
+	    SEL_KPL, 0);
+	setidt(IDT_AC, pti ? &IDTVEC(align_pti) : &IDTVEC(align), SDT_SYSIGT,
+	    SEL_KPL, 0);
+	setidt(IDT_MC, &IDTVEC(mchk), SDT_SYSIGT, SEL_KPL, 3);
+	setidt(IDT_XF, pti ? &IDTVEC(xmm_pti) : &IDTVEC(xmm), SDT_SYSIGT,
+	    SEL_KPL, 0);
 #ifdef KDTRACE_HOOKS
-	setidt(IDT_DTRACE_RET, &IDTVEC(dtrace_ret), SDT_SYSIGT, SEL_UPL, 0);
+	setidt(IDT_DTRACE_RET, pti ? &IDTVEC(dtrace_ret_pti) :
+	    &IDTVEC(dtrace_ret), SDT_SYSIGT, SEL_UPL, 0);
 #endif
 #ifdef XENHVM
-	setidt(IDT_EVTCHN, &IDTVEC(xen_intr_upcall), SDT_SYSIGT, SEL_UPL, 0);
+	setidt(IDT_EVTCHN, pti ? &IDTVEC(xen_intr_upcall_pti) :
+	    &IDTVEC(xen_intr_upcall), SDT_SYSIGT, SEL_KPL, 0);
 #endif
-
 	r_idt.rd_limit = sizeof(idt0) - 1;
 	r_idt.rd_base = (long) idt;
 	lidt(&r_idt);
@@ -1648,7 +1718,7 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
 	    != NULL)
 		vty_set_preferred(VTY_VT);
 
-	identify_cpu();		/* Final stage of CPU initialization */
+	finishidentcpu();	/* Final stage of CPU initialization */
 	initializecpu();	/* Initialize CPU registers */
 	initializecpucache();
 
@@ -1663,21 +1733,28 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
 	np->np_pcpu = (register_t) pc;
 	common_tss[0].tss_ist2 = (long) np;
 
+	/*
+	 * MC# stack, runs on ist3.  The pcpu pointer is stored just
+	 * above the start of the ist3 stack.
+	 */
+	np = ((struct nmi_pcpu *) &mce0_stack[sizeof(mce0_stack)]) - 1;
+	np->np_pcpu = (register_t) pc;
+	common_tss[0].tss_ist3 = (long) np;
+
+	/*
+	 * DB# stack, runs on ist4.
+	 */
+	np = ((struct nmi_pcpu *) &dbg0_stack[sizeof(dbg0_stack)]) - 1;
+	np->np_pcpu = (register_t) pc;
+	common_tss[0].tss_ist4 = (long) np;
+	
 	/* Set the IO permission bitmap (empty due to tss seg limit) */
 	common_tss[0].tss_iobase = sizeof(struct amd64tss) + IOPERM_BITMAP_SIZE;
 
 	gsel_tss = GSEL(GPROC0_SEL, SEL_KPL);
 	ltr(gsel_tss);
 
-	/* Set up the fast syscall stuff */
-	msr = rdmsr(MSR_EFER) | EFER_SCE;
-	wrmsr(MSR_EFER, msr);
-	wrmsr(MSR_LSTAR, (u_int64_t)IDTVEC(fast_syscall));
-	wrmsr(MSR_CSTAR, (u_int64_t)IDTVEC(fast_syscall32));
-	msr = ((u_int64_t)GSEL(GCODE_SEL, SEL_KPL) << 32) |
-	      ((u_int64_t)GSEL(GUCODE32_SEL, SEL_UPL) << 48);
-	wrmsr(MSR_STAR, msr);
-	wrmsr(MSR_SF_MASK, PSL_NT|PSL_T|PSL_I|PSL_C|PSL_D);
+	amd64_conf_fast_syscall();
 
 	/*
 	 * Temporary forge some valid pointer to PCB, for exception
@@ -1749,10 +1826,13 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
 		xhdr->xstate_bv = xsave_mask;
 	}
 	/* make an initial tss so cpu can get interrupt stack on syscall! */
-	common_tss[0].tss_rsp0 = (vm_offset_t)thread0.td_pcb;
+	rsp0 = (vm_offset_t)thread0.td_pcb;
 	/* Ensure the stack is aligned to 16 bytes */
-	common_tss[0].tss_rsp0 &= ~0xFul;
-	PCPU_SET(rsp0, common_tss[0].tss_rsp0);
+	rsp0 &= ~0xFul;
+	common_tss[0].tss_rsp0 = rsp0;
+	PCPU_SET(rsp0, rsp0);
+	PCPU_SET(pti_rsp0, ((vm_offset_t)PCPU_PTR(pti_stack) +
+	    PC_PTI_STACK_SZ * sizeof(uint64_t)) & ~0xful);
 	PCPU_SET(curpcb, thread0.td_pcb);
 
 	/* transfer to user mode */
@@ -1781,6 +1861,9 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
 	x86_init_fdt();
 #endif
 	thread0.td_critnest = 0;
+
+	TUNABLE_INT_FETCH("hw.ibrs_disable", &hw_ibrs_disable);
+	TUNABLE_INT_FETCH("hw.spec_store_bypass_disable", &hw_ssb_disable);
 
 	/* Location of kernel stack for locore */
 	return ((u_int64_t)thread0.td_pcb);
@@ -1912,14 +1995,21 @@ ptrace_set_pc(struct thread *td, unsigned long addr)
 int
 ptrace_single_step(struct thread *td)
 {
-	td->td_frame->tf_rflags |= PSL_T;
+
+	PROC_LOCK_ASSERT(td->td_proc, MA_OWNED);
+	if ((td->td_frame->tf_rflags & PSL_T) == 0) {
+		td->td_frame->tf_rflags |= PSL_T;
+		td->td_dbgflags |= TDB_STEP;
+	}
 	return (0);
 }
 
 int
 ptrace_clear_single_step(struct thread *td)
 {
+	PROC_LOCK_ASSERT(td->td_proc, MA_OWNED);
 	td->td_frame->tf_rflags &= ~PSL_T;
+	td->td_dbgflags &= ~TDB_STEP;
 	return (0);
 }
 
@@ -2087,8 +2177,10 @@ int
 set_fpregs(struct thread *td, struct fpreg *fpregs)
 {
 
+	critical_enter();
 	set_fpregs_xmm(fpregs, get_pcb_user_save_td(td));
 	fpuuserinited(td);
+	critical_exit();
 	return (0);
 }
 
@@ -2139,6 +2231,7 @@ get_mcontext(struct thread *td, mcontext_t *mcp, int flags)
 	mcp->mc_flags = tp->tf_flags;
 	mcp->mc_len = sizeof(*mcp);
 	get_fpcontext(td, mcp, NULL, 0);
+	update_pcb_bases(pcb);
 	mcp->mc_fsbase = pcb->pcb_fsbase;
 	mcp->mc_gsbase = pcb->pcb_gsbase;
 	mcp->mc_xfpustate = 0;
@@ -2209,11 +2302,11 @@ set_mcontext(struct thread *td, mcontext_t *mcp)
 		tp->tf_fs = mcp->mc_fs;
 		tp->tf_gs = mcp->mc_gs;
 	}
+	set_pcb_flags(pcb, PCB_FULL_IRET);
 	if (mcp->mc_flags & _MC_HASBASES) {
 		pcb->pcb_fsbase = mcp->mc_fsbase;
 		pcb->pcb_gsbase = mcp->mc_gsbase;
 	}
-	set_pcb_flags(pcb, PCB_FULL_IRET);
 	return (0);
 }
 
@@ -2244,7 +2337,6 @@ static int
 set_fpcontext(struct thread *td, mcontext_t *mcp, char *xfpustate,
     size_t xfpustate_len)
 {
-	struct savefpu *fpstate;
 	int error;
 
 	if (mcp->mc_fpformat == _MC_FPFMT_NODEV)
@@ -2257,9 +2349,8 @@ set_fpcontext(struct thread *td, mcontext_t *mcp, char *xfpustate,
 		error = 0;
 	} else if (mcp->mc_ownedfp == _MC_FPOWNED_FPU ||
 	    mcp->mc_ownedfp == _MC_FPOWNED_PCB) {
-		fpstate = (struct savefpu *)&mcp->mc_fpstate;
-		fpstate->sv_env.en_mxcsr &= cpu_mxcsr_mask;
-		error = fpusetregs(td, fpstate, xfpustate, xfpustate_len);
+		error = fpusetregs(td, (struct savefpu *)&mcp->mc_fpstate,
+		    xfpustate, xfpustate_len);
 	} else
 		return (EINVAL);
 	return (error);
@@ -2421,14 +2512,23 @@ reset_dbregs(void)
  * breakpoint was in user space.  Return 0, otherwise.
  */
 int
-user_dbreg_trap(void)
+user_dbreg_trap(register_t dr6)
 {
-        u_int64_t dr7, dr6; /* debug registers dr6 and dr7 */
+        u_int64_t dr7;
         u_int64_t bp;       /* breakpoint bits extracted from dr6 */
         int nbp;            /* number of breakpoints that triggered */
         caddr_t addr[4];    /* breakpoint addresses */
         int i;
-        
+
+        bp = dr6 & DBREG_DR6_BMASK;
+        if (bp == 0) {
+                /*
+                 * None of the breakpoint bits are set meaning this
+                 * trap was not caused by any of the debug registers
+                 */
+                return 0;
+        }
+
         dr7 = rdr7();
         if ((dr7 & 0x000000ff) == 0) {
                 /*
@@ -2440,16 +2540,6 @@ user_dbreg_trap(void)
         }
 
         nbp = 0;
-        dr6 = rdr6();
-        bp = dr6 & 0x0000000f;
-
-        if (!bp) {
-                /*
-                 * None of the breakpoint bits are set meaning this
-                 * trap was not caused by any of the debug registers
-                 */
-                return 0;
-        }
 
         /*
          * at least one of the breakpoints were hit, check to see
@@ -2482,6 +2572,71 @@ user_dbreg_trap(void)
          * None of the breakpoints are in user space.
          */
         return 0;
+}
+
+/*
+ * The pcb_flags is only modified by current thread, or by other threads
+ * when current thread is stopped.  However, current thread may change it
+ * from the interrupt context in cpu_switch(), or in the trap handler.
+ * When we read-modify-write pcb_flags from C sources, compiler may generate
+ * code that is not atomic regarding the interrupt handler.  If a trap or
+ * interrupt happens and any flag is modified from the handler, it can be
+ * clobbered with the cached value later.  Therefore, we implement setting
+ * and clearing flags with single-instruction functions, which do not race
+ * with possible modification of the flags from the trap or interrupt context,
+ * because traps and interrupts are executed only on instruction boundary.
+ */
+void
+set_pcb_flags_raw(struct pcb *pcb, const u_int flags)
+{
+
+	__asm __volatile("orl %1,%0"
+	    : "=m" (pcb->pcb_flags) : "ir" (flags), "m" (pcb->pcb_flags)
+	    : "cc", "memory");
+
+}
+
+/*
+ * The support for RDFSBASE, WRFSBASE and similar instructions for %gs
+ * base requires that kernel saves MSR_FSBASE and MSR_{K,}GSBASE into
+ * pcb if user space modified the bases.  We must save on the context
+ * switch or if the return to usermode happens through the doreti.
+ *
+ * Tracking of both events is performed by the pcb flag PCB_FULL_IRET,
+ * which have a consequence that the base MSRs must be saved each time
+ * the PCB_FULL_IRET flag is set.  We disable interrupts to sync with
+ * context switches.
+ */
+void
+set_pcb_flags(struct pcb *pcb, const u_int flags)
+{
+	register_t r;
+
+	if (curpcb == pcb &&
+	    (flags & PCB_FULL_IRET) != 0 &&
+	    (pcb->pcb_flags & PCB_FULL_IRET) == 0 &&
+	    (cpu_stdext_feature & CPUID_STDEXT_FSGSBASE) != 0) {
+		r = intr_disable();
+		if ((pcb->pcb_flags & PCB_FULL_IRET) == 0) {
+			if (rfs() == _ufssel)
+				pcb->pcb_fsbase = rdfsbase();
+			if (rgs() == _ugssel)
+				pcb->pcb_gsbase = rdmsr(MSR_KGSBASE);
+		}
+		set_pcb_flags_raw(pcb, flags);
+		intr_restore(r);
+	} else {
+		set_pcb_flags_raw(pcb, flags);
+	}
+}
+
+void
+clear_pcb_flags(struct pcb *pcb, const u_int flags)
+{
+
+	__asm __volatile("andl %1,%0"
+	    : "=m" (pcb->pcb_flags) : "ir" (~flags), "m" (pcb->pcb_flags)
+	    : "cc", "memory");
 }
 
 #ifdef KDB

@@ -31,7 +31,6 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
-
 #include "bcm_osal.h"
 #include "ecore_hw.h"
 #include "ecore_init_ops.h"
@@ -46,12 +45,12 @@ __FBSDID("$FreeBSD$");
 
 #define CDU_VALIDATION_DEFAULT_CFG 61
 
-static u16 con_region_offsets[3][E4_NUM_OF_CONNECTION_TYPES] = {
+static u16 con_region_offsets[3][NUM_OF_CONNECTION_TYPES_E4] = {
 	{ 400,  336,  352,  304,  304,  384,  416,  352}, /* region 3 offsets */
 	{ 528,  496,  416,  448,  448,  512,  544,  480}, /* region 4 offsets */
 	{ 608,  544,  496,  512,  576,  592,  624,  560}  /* region 5 offsets */
 };
-static u16 task_region_offsets[1][E4_NUM_OF_CONNECTION_TYPES] = {
+static u16 task_region_offsets[1][NUM_OF_CONNECTION_TYPES_E4] = {
 	{ 240,  240,  112,    0,    0,    0,    0,   96}  /* region 1 offsets */
 };
 
@@ -67,6 +66,9 @@ static u16 task_region_offsets[1][E4_NUM_OF_CONNECTION_TYPES] = {
 /* Other PQ constants */
 #define QM_OTHER_PQS_PER_PF		4
 
+/* VOQ constants */
+#define QM_E5_NUM_EXT_VOQ		(MAX_NUM_PORTS_E5 * NUM_OF_TCS)
+
 /* WFQ constants: */
 
 /* Upper bound in MB, 10 * burst size of 1ms in 50Gbps */
@@ -76,18 +78,19 @@ static u16 task_region_offsets[1][E4_NUM_OF_CONNECTION_TYPES] = {
 #define QM_WFQ_VP_PQ_VOQ_SHIFT		0
 
 /* Bit  of PF in WFQ VP PQ map */
-#define QM_WFQ_VP_PQ_PF_SHIFT		5
+#define QM_WFQ_VP_PQ_PF_E4_SHIFT	5
+#define QM_WFQ_VP_PQ_PF_E5_SHIFT	6
 
 /* 0x9000 = 4*9*1024 */
 #define QM_WFQ_INC_VAL(weight)		((weight) * 0x9000) 
 
-/* 0.7 * upper bound (62500000) */
-#define QM_WFQ_MAX_INC_VAL		43750000
+/* Max WFQ increment value is 0.7 * upper bound */
+#define QM_WFQ_MAX_INC_VAL		((QM_WFQ_UPPER_BOUND * 7) / 10)
+
+/* Number of VOQs in E5 QmWfqCrd register */
+#define QM_WFQ_CRD_E5_NUM_VOQS		16
 
 /* RL constants: */
- 
-/* Upper bound is set to 10 * burst size of 1ms in 50Gbps */
-#define QM_RL_UPPER_BOUND		62500000
 
 /* Period in us */
 #define QM_RL_PERIOD			5
@@ -95,17 +98,29 @@ static u16 task_region_offsets[1][E4_NUM_OF_CONNECTION_TYPES] = {
 /* Period in 25MHz cycles */
 #define QM_RL_PERIOD_CLK_25M		(25 * QM_RL_PERIOD) 
 
-/* 0.7 * upper bound (62500000) */
-#define QM_RL_MAX_INC_VAL		43750000
-
 /* RL increment value - rate is specified in mbps. the factor of 1.01 was
- * added after seeing only 99% factor reached in a 25Gbps port with DPDK RFC
- * 2544 test. In this scenario the PF RL was reducing the line rate to 99%
- * although the credit increment value was the correct one and FW calculated
- * correct packet sizes. The reason for the inaccuracy of the RL is unknown at
- * this point.
- */
-#define QM_RL_INC_VAL(rate)			OSAL_MAX_T(u32, (u32)(((rate ? rate : 1000000) * QM_RL_PERIOD * 101) 	/ (8 * 100)), 1)
+* added after seeing only 99% factor reached in a 25Gbps port with DPDK RFC
+* 2544 test. In this scenario the PF RL was reducing the line rate to 99%
+* although the credit increment value was the correct one and FW calculated
+* correct packet sizes. The reason for the inaccuracy of the RL is unknown at
+* this point.
+*/
+#define QM_RL_INC_VAL(rate)			OSAL_MAX_T(u32, (u32)(((rate ? rate : 100000) * QM_RL_PERIOD * 101) 	/ (8 * 100)), 1)
+
+/* PF RL Upper bound is set to 10 * burst size of 1ms in 50Gbps */
+#define QM_PF_RL_UPPER_BOUND		62500000
+
+/* Max PF RL increment value is 0.7 * upper bound */
+#define QM_PF_RL_MAX_INC_VAL		((QM_PF_RL_UPPER_BOUND * 7) / 10)
+
+/* Vport RL Upper bound, link speed is in Mpbs */
+#define QM_VP_RL_UPPER_BOUND(speed)		((u32)OSAL_MAX_T(u32, QM_RL_INC_VAL(speed), 9700 + 1000))
+
+/* Max Vport RL increment value is the Vport RL upper bound */
+#define QM_VP_RL_MAX_INC_VAL(speed)	QM_VP_RL_UPPER_BOUND(speed)
+
+/* Vport RL credit threshold in case of QM bypass */
+#define QM_VP_RL_BYPASS_THRESH_SPEED	(QM_VP_RL_UPPER_BOUND(10000) - 1)
 
 /* AFullOprtnstcCrdMask constants */
 #define QM_OPPOR_LINE_VOQ_DEF		1
@@ -117,9 +132,11 @@ static u16 task_region_offsets[1][E4_NUM_OF_CONNECTION_TYPES] = {
 /* Pure LB CmdQ lines (+spare) */
 #define PBF_CMDQ_PURE_LB_LINES		150
 
-#define PBF_CMDQ_LINES_RT_OFFSET(voq)		(PBF_REG_YCMD_QS_NUM_LINES_VOQ0_RT_OFFSET + voq 	* (PBF_REG_YCMD_QS_NUM_LINES_VOQ1_RT_OFFSET 	- PBF_REG_YCMD_QS_NUM_LINES_VOQ0_RT_OFFSET))
+#define PBF_CMDQ_LINES_E5_RSVD_RATIO	8
 
-#define PBF_BTB_GUARANTEED_RT_OFFSET(voq) 	(PBF_REG_BTB_GUARANTEED_VOQ0_RT_OFFSET + voq 	* (PBF_REG_BTB_GUARANTEED_VOQ1_RT_OFFSET 	- PBF_REG_BTB_GUARANTEED_VOQ0_RT_OFFSET))
+#define PBF_CMDQ_LINES_RT_OFFSET(ext_voq)		(PBF_REG_YCMD_QS_NUM_LINES_VOQ0_RT_OFFSET + ext_voq 	* (PBF_REG_YCMD_QS_NUM_LINES_VOQ1_RT_OFFSET 	- PBF_REG_YCMD_QS_NUM_LINES_VOQ0_RT_OFFSET))
+
+#define PBF_BTB_GUARANTEED_RT_OFFSET(ext_voq) 	(PBF_REG_BTB_GUARANTEED_VOQ0_RT_OFFSET + ext_voq 	* (PBF_REG_BTB_GUARANTEED_VOQ1_RT_OFFSET 	- PBF_REG_BTB_GUARANTEED_VOQ0_RT_OFFSET))
 
 #define QM_VOQ_LINE_CRD(pbf_cmd_lines)		((((pbf_cmd_lines) - 4) * 2) | QM_LINE_CRD_REG_SIGN_BIT)
 
@@ -155,13 +172,25 @@ static u16 task_region_offsets[1][E4_NUM_OF_CONNECTION_TYPES] = {
 #define QM_CMD_STRUCT_SIZE(cmd)		  cmd##_STRUCT_SIZE
 #define QM_CMD_SET_FIELD(var, cmd, field, value)  	SET_FIELD(var[cmd##_##field##_OFFSET], cmd##_##field, value)
 
-/* QM: VOQ macros */
-#define PHYS_VOQ(port, tc, max_phys_tcs_per_port) 	((port) * (max_phys_tcs_per_port) + (tc))
-#define LB_VOQ(port)				  	(MAX_PHYS_VOQS + (port))
-#define VOQ(port, tc, max_phys_tcs_per_port)	  	((tc) < LB_TC ? PHYS_VOQ(port, tc, max_phys_tcs_per_port) 	: LB_VOQ(port))
+#define QM_INIT_TX_PQ_MAP(p_hwfn, map, chip, pq_id, rl_valid, vp_pq_id, rl_id, ext_voq, wrr) 	OSAL_MEMSET(&map, 0, sizeof(map)); 	SET_FIELD(map.reg, QM_RF_PQ_MAP_##chip##_PQ_VALID, 1); 	SET_FIELD(map.reg, QM_RF_PQ_MAP_##chip##_RL_VALID, rl_valid); 	SET_FIELD(map.reg, QM_RF_PQ_MAP_##chip##_VP_PQ_ID, vp_pq_id); 	SET_FIELD(map.reg, QM_RF_PQ_MAP_##chip##_RL_ID, rl_id); 	SET_FIELD(map.reg, QM_RF_PQ_MAP_##chip##_VOQ, ext_voq); 	SET_FIELD(map.reg, QM_RF_PQ_MAP_##chip##_WRR_WEIGHT_GROUP, wrr); 	STORE_RT_REG(p_hwfn, QM_REG_TXPQMAP_RT_OFFSET + pq_id, *((u32 *)&map))
 
+#define WRITE_PQ_INFO_TO_RAM							1
+#define PQ_INFO_ELEMENT(vp, pf, tc, port, rl_valid, rl)	(((vp) << 0) | ((pf) << 12) | ((tc) << 16) | ((port) << 20) | ((rl_valid) << 22) | ((rl) << 24))
+#define PQ_INFO_RAM_GRC_ADDRESS(pq_id)					XSEM_REG_FAST_MEMORY + SEM_FAST_REG_INT_RAM + 21776 + (pq_id) * 4
 
 /******************** INTERNAL IMPLEMENTATION *********************/
+
+/* Returns the external VOQ number */
+static u8 ecore_get_ext_voq(struct ecore_hwfn *p_hwfn,
+							u8 port_id,
+							u8 tc,
+							u8 max_phys_tcs_per_port)
+{
+	if (tc == PURE_LB_TC)
+		return NUM_OF_PHYS_TCS * (ECORE_IS_E5(p_hwfn->p_dev) ? MAX_NUM_PORTS_E5 : MAX_NUM_PORTS_BB) + port_id;
+	else
+		return port_id * (ECORE_IS_E5(p_hwfn->p_dev) ? NUM_OF_PHYS_TCS : max_phys_tcs_per_port) + tc;
+}
 
 /* Prepare PF RL enable/disable runtime init values */
 static void ecore_enable_pf_rl(struct ecore_hwfn *p_hwfn,
@@ -169,9 +198,15 @@ static void ecore_enable_pf_rl(struct ecore_hwfn *p_hwfn,
 {
 	STORE_RT_REG(p_hwfn, QM_REG_RLPFENABLE_RT_OFFSET, pf_rl_en ? 1 : 0);
 	if (pf_rl_en) {
+		u8 num_ext_voqs = ECORE_IS_E5(p_hwfn->p_dev) ? QM_E5_NUM_EXT_VOQ : MAX_NUM_VOQS_E4;
+		u64 voq_bit_mask = ((u64)1 << num_ext_voqs) - 1;
 
 		/* Enable RLs for all VOQs */
-		STORE_RT_REG(p_hwfn, QM_REG_RLPFVOQENABLE_RT_OFFSET, (1 << MAX_NUM_VOQS) - 1);
+		STORE_RT_REG(p_hwfn, QM_REG_RLPFVOQENABLE_RT_OFFSET, (u32)voq_bit_mask);
+#ifdef QM_REG_RLPFVOQENABLE_MSB_RT_OFFSET
+		if (num_ext_voqs >= 32)
+			STORE_RT_REG(p_hwfn, QM_REG_RLPFVOQENABLE_MSB_RT_OFFSET, (u32)(voq_bit_mask >> 32));
+#endif
 
 		/* Write RL period */
 		STORE_RT_REG(p_hwfn, QM_REG_RLPFPERIOD_RT_OFFSET, QM_RL_PERIOD_CLK_25M);
@@ -179,7 +214,7 @@ static void ecore_enable_pf_rl(struct ecore_hwfn *p_hwfn,
 
 		/* Set credit threshold for QM bypass flow */
 		if (QM_BYPASS_EN)
-			STORE_RT_REG(p_hwfn, QM_REG_AFULLQMBYPTHRPFRL_RT_OFFSET, QM_RL_UPPER_BOUND);
+			STORE_RT_REG(p_hwfn, QM_REG_AFULLQMBYPTHRPFRL_RT_OFFSET, QM_PF_RL_UPPER_BOUND);
 	}
 }
 
@@ -207,7 +242,7 @@ static void ecore_enable_vport_rl(struct ecore_hwfn *p_hwfn,
 
 		/* Set credit threshold for QM bypass flow */
 		if (QM_BYPASS_EN)
-			STORE_RT_REG(p_hwfn, QM_REG_AFULLQMBYPTHRGLBLRL_RT_OFFSET, QM_RL_UPPER_BOUND);
+			STORE_RT_REG(p_hwfn, QM_REG_AFULLQMBYPTHRGLBLRL_RT_OFFSET, QM_VP_RL_BYPASS_THRESH_SPEED);
 	}
 }
 
@@ -226,16 +261,16 @@ static void ecore_enable_vport_wfq(struct ecore_hwfn *p_hwfn,
  * the specified VOQ.
  */
 static void ecore_cmdq_lines_voq_rt_init(struct ecore_hwfn *p_hwfn,
-										 u8 voq,
+										 u8 ext_voq,
 										 u16 cmdq_lines)
 {
 	u32 qm_line_crd;	
 		
 	qm_line_crd = QM_VOQ_LINE_CRD(cmdq_lines);
 
-	OVERWRITE_RT_REG(p_hwfn, PBF_CMDQ_LINES_RT_OFFSET(voq), (u32)cmdq_lines);
-	STORE_RT_REG(p_hwfn, QM_REG_VOQCRDLINE_RT_OFFSET + voq, qm_line_crd);
-	STORE_RT_REG(p_hwfn, QM_REG_VOQINITCRDLINE_RT_OFFSET + voq, qm_line_crd);
+	OVERWRITE_RT_REG(p_hwfn, PBF_CMDQ_LINES_RT_OFFSET(ext_voq), (u32)cmdq_lines);
+	STORE_RT_REG(p_hwfn, QM_REG_VOQCRDLINE_RT_OFFSET + ext_voq, qm_line_crd);
+	STORE_RT_REG(p_hwfn, QM_REG_VOQINITCRDLINE_RT_OFFSET + ext_voq, qm_line_crd);
 }
 
 /* Prepare runtime init values to allocate PBF command queue lines. */
@@ -244,11 +279,12 @@ static void ecore_cmdq_lines_rt_init(struct ecore_hwfn *p_hwfn,
 									 u8 max_phys_tcs_per_port,
 									 struct init_qm_port_params port_params[MAX_NUM_PORTS])
 {
-	u8 tc, voq, port_id, num_tcs_in_port;
+	u8 tc, ext_voq, port_id, num_tcs_in_port;
+	u8 num_ext_voqs = ECORE_IS_E5(p_hwfn->p_dev) ? QM_E5_NUM_EXT_VOQ : MAX_NUM_VOQS_E4;
 
-	/* Clear PBF lines for all VOQs */
-	for (voq = 0; voq < MAX_NUM_VOQS; voq++)
-		STORE_RT_REG(p_hwfn, PBF_CMDQ_LINES_RT_OFFSET(voq), 0);
+	/* Clear PBF lines of all VOQs */
+	for (ext_voq = 0; ext_voq < num_ext_voqs; ext_voq++)
+		STORE_RT_REG(p_hwfn, PBF_CMDQ_LINES_RT_OFFSET(ext_voq), 0);
 
 	for (port_id = 0; port_id < max_ports_per_engine; port_id++) {
 		u16 phys_lines, phys_lines_per_tc;
@@ -256,26 +292,32 @@ static void ecore_cmdq_lines_rt_init(struct ecore_hwfn *p_hwfn,
 		if (!port_params[port_id].active)
 			continue;
 
-		/* Find #lines to divide between the active physical TCs */
-		phys_lines = port_params[port_id].num_pbf_cmd_lines - PBF_CMDQ_PURE_LB_LINES;
+		/* Find number of command queue lines to divide between the
+		 * active physical TCs. In E5, 1/8 of the lines are reserved.
+		 * the lines for pure LB TC are subtracted.
+		 */
+		phys_lines = port_params[port_id].num_pbf_cmd_lines;
+		if (ECORE_IS_E5(p_hwfn->p_dev))
+			phys_lines -= DIV_ROUND_UP(phys_lines, PBF_CMDQ_LINES_E5_RSVD_RATIO);
+		phys_lines -= PBF_CMDQ_PURE_LB_LINES;
 
 		/* Find #lines per active physical TC */
 		num_tcs_in_port = 0;
-		for (tc = 0; tc < NUM_OF_PHYS_TCS; tc++)
+		for (tc = 0; tc < max_phys_tcs_per_port; tc++)
 			if (((port_params[port_id].active_phys_tcs >> tc) & 0x1) == 1)
 				num_tcs_in_port++;
 		phys_lines_per_tc = phys_lines / num_tcs_in_port;
 
 		/* Init registers per active TC */
-		for (tc = 0; tc < NUM_OF_PHYS_TCS; tc++) {
-			if (((port_params[port_id].active_phys_tcs >> tc) & 0x1) == 1) {
-				voq = PHYS_VOQ(port_id, tc, max_phys_tcs_per_port);
-				ecore_cmdq_lines_voq_rt_init(p_hwfn, voq, phys_lines_per_tc);
-			}
+		for (tc = 0; tc < max_phys_tcs_per_port; tc++) {
+			ext_voq = ecore_get_ext_voq(p_hwfn, port_id, tc, max_phys_tcs_per_port);
+			if (((port_params[port_id].active_phys_tcs >> tc) & 0x1) == 1)
+				ecore_cmdq_lines_voq_rt_init(p_hwfn, ext_voq, phys_lines_per_tc);
 		}
 
 		/* Init registers for pure LB TC */
-		ecore_cmdq_lines_voq_rt_init(p_hwfn, LB_VOQ(port_id), PBF_CMDQ_PURE_LB_LINES);
+		ext_voq = ecore_get_ext_voq(p_hwfn, port_id, PURE_LB_TC, max_phys_tcs_per_port);
+		ecore_cmdq_lines_voq_rt_init(p_hwfn, ext_voq, PBF_CMDQ_PURE_LB_LINES);
 	}
 }
 
@@ -290,7 +332,7 @@ static void ecore_cmdq_lines_rt_init(struct ecore_hwfn *p_hwfn,
  *	 headroom.
  *    b. B = B - 38 (remainder after global headroom allocation).
  *    c. MAX(38,B/(C+0.7)) blocks are allocated for the pure LB VOQ.
- *    d. B = B % MAX(38, B/(C+0.7)) (remainder after pure LB allocation).
+ *    d. B = B – MAX(38, B/(C+0.7)) (remainder after pure LB allocation).
  *    e. B/C blocks are allocated for each physical TC.
  * Assumptions:
  * - MTU is up to 9700 bytes (38 blocks)
@@ -304,7 +346,7 @@ static void ecore_btb_blocks_rt_init(struct ecore_hwfn *p_hwfn,
 									 struct init_qm_port_params port_params[MAX_NUM_PORTS])
 {
 	u32 usable_blocks, pure_lb_blocks, phys_blocks;
-	u8 tc, voq, port_id, num_tcs_in_port;
+	u8 tc, ext_voq, port_id, num_tcs_in_port;
 
 	for (port_id = 0; port_id < max_ports_per_engine; port_id++) {
 		if (!port_params[port_id].active)
@@ -328,13 +370,14 @@ static void ecore_btb_blocks_rt_init(struct ecore_hwfn *p_hwfn,
 		/* Init physical TCs */
 		for (tc = 0; tc < NUM_OF_PHYS_TCS; tc++) {
 			if (((port_params[port_id].active_phys_tcs >> tc) & 0x1) == 1) {
-				voq = PHYS_VOQ(port_id, tc, max_phys_tcs_per_port);
-				STORE_RT_REG(p_hwfn, PBF_BTB_GUARANTEED_RT_OFFSET(voq), phys_blocks);
+				ext_voq = ecore_get_ext_voq(p_hwfn, port_id, tc, max_phys_tcs_per_port);
+				STORE_RT_REG(p_hwfn, PBF_BTB_GUARANTEED_RT_OFFSET(ext_voq), phys_blocks);
 			}
 		}
 
 		/* Init pure LB TC */
-		STORE_RT_REG(p_hwfn, PBF_BTB_GUARANTEED_RT_OFFSET(LB_VOQ(port_id)), pure_lb_blocks);
+		ext_voq = ecore_get_ext_voq(p_hwfn, port_id, PURE_LB_TC, max_phys_tcs_per_port);
+		STORE_RT_REG(p_hwfn, PBF_BTB_GUARANTEED_RT_OFFSET(ext_voq), pure_lb_blocks);
 	}
 }
 
@@ -344,7 +387,7 @@ static void ecore_tx_pq_map_rt_init(struct ecore_hwfn *p_hwfn,
 									u8 port_id,
 									u8 pf_id,
 									u8 max_phys_tcs_per_port,
-									bool is_first_pf,
+									bool is_pf_loading,
 									u32 num_pf_cids,
 									u32 num_vf_cids,
 									u16 start_pq,
@@ -358,7 +401,7 @@ static void ecore_tx_pq_map_rt_init(struct ecore_hwfn *p_hwfn,
 	/* A bit per Tx PQ indicating if the PQ is associated with a VF */
 	u32 tx_pq_vf_mask[MAX_QM_TX_QUEUES / QM_PF_QUEUE_GROUP_SIZE] = { 0 };
 	u32 num_tx_pq_vf_masks = MAX_QM_TX_QUEUES / QM_PF_QUEUE_GROUP_SIZE;
-	u16 num_pqs, first_pq_group, last_pq_group, i, pq_id, pq_group;
+	u16 num_pqs, first_pq_group, last_pq_group, i, j, pq_id, pq_group;
 	u32 pq_mem_4kb, vport_pq_mem_4kb, mem_addr_4kb;
 
 	num_pqs = num_pf_pqs + num_vf_pqs;
@@ -381,12 +424,11 @@ static void ecore_tx_pq_map_rt_init(struct ecore_hwfn *p_hwfn,
 	/* Go over all Tx PQs */
 	for (i = 0, pq_id = start_pq; i < num_pqs; i++, pq_id++) {
 		u32 max_qm_global_rls = MAX_QM_GLOBAL_RLS;
-		struct qm_rf_pq_map tx_pq_map;
+		u8 ext_voq, vport_id_in_pf;
 		bool is_vf_pq, rl_valid;
-		u8 voq, vport_id_in_pf;
 		u16 first_tx_pq_id;
 
-		voq = VOQ(port_id, pq_params[i].tc_id, max_phys_tcs_per_port);
+		ext_voq = ecore_get_ext_voq(p_hwfn, port_id, pq_params[i].tc_id, max_phys_tcs_per_port);
 		is_vf_pq = (i >= num_pf_pqs);
 		rl_valid = pq_params[i].rl_valid && pq_params[i].vport_id < max_qm_global_rls;
 
@@ -394,33 +436,45 @@ static void ecore_tx_pq_map_rt_init(struct ecore_hwfn *p_hwfn,
 		vport_id_in_pf = pq_params[i].vport_id - start_vport;
 		first_tx_pq_id = vport_params[vport_id_in_pf].first_tx_pq_id[pq_params[i].tc_id];
 		if (first_tx_pq_id == QM_INVALID_PQ_ID) {
+			u32 map_val = (ext_voq << QM_WFQ_VP_PQ_VOQ_SHIFT) | (pf_id << (ECORE_IS_E5(p_hwfn->p_dev) ? QM_WFQ_VP_PQ_PF_E5_SHIFT : QM_WFQ_VP_PQ_PF_E4_SHIFT));
 
 			/* Create new VP PQ */
 			vport_params[vport_id_in_pf].first_tx_pq_id[pq_params[i].tc_id] = pq_id;
 			first_tx_pq_id = pq_id;
 
 			/* Map VP PQ to VOQ and PF */
-			STORE_RT_REG(p_hwfn, QM_REG_WFQVPMAP_RT_OFFSET + first_tx_pq_id, (voq << QM_WFQ_VP_PQ_VOQ_SHIFT) | (pf_id << QM_WFQ_VP_PQ_PF_SHIFT));
+			STORE_RT_REG(p_hwfn, QM_REG_WFQVPMAP_RT_OFFSET + first_tx_pq_id, map_val);
 		}
 
 		/* Check RL ID */
 		if (pq_params[i].rl_valid && pq_params[i].vport_id >= max_qm_global_rls)
 			DP_NOTICE(p_hwfn, true, "Invalid VPORT ID for rate limiter configuration\n");
 
-		/* Fill PQ map entry */
-		OSAL_MEMSET(&tx_pq_map, 0, sizeof(tx_pq_map));
-		SET_FIELD(tx_pq_map.reg, QM_RF_PQ_MAP_PQ_VALID, 1);
-		SET_FIELD(tx_pq_map.reg, QM_RF_PQ_MAP_RL_VALID, rl_valid ? 1 : 0);
-		SET_FIELD(tx_pq_map.reg, QM_RF_PQ_MAP_VP_PQ_ID, first_tx_pq_id);
-		SET_FIELD(tx_pq_map.reg, QM_RF_PQ_MAP_RL_ID, rl_valid ? pq_params[i].vport_id : 0);
-		SET_FIELD(tx_pq_map.reg, QM_RF_PQ_MAP_VOQ, voq);
-		SET_FIELD(tx_pq_map.reg, QM_RF_PQ_MAP_WRR_WEIGHT_GROUP, pq_params[i].wrr_group);
+		/* Prepare PQ map entry */
+		if (ECORE_IS_E5(p_hwfn->p_dev)) {
+			struct qm_rf_pq_map_e5 tx_pq_map;
+			QM_INIT_TX_PQ_MAP(p_hwfn, tx_pq_map, E5, pq_id, rl_valid ? 1 : 0, first_tx_pq_id, rl_valid ? pq_params[i].vport_id : 0, ext_voq, pq_params[i].wrr_group);
+		}
+		else {
+			struct qm_rf_pq_map_e4 tx_pq_map;
+			QM_INIT_TX_PQ_MAP(p_hwfn, tx_pq_map, E4, pq_id, rl_valid ? 1 : 0, first_tx_pq_id, rl_valid ? pq_params[i].vport_id : 0, ext_voq, pq_params[i].wrr_group);
+		}
 
-		/* Write PQ map entry to CAM */
-		STORE_RT_REG(p_hwfn, QM_REG_TXPQMAP_RT_OFFSET + pq_id, *((u32*)&tx_pq_map));
-
-		/* Set base address */
+		/* Set PQ base address */
 		STORE_RT_REG(p_hwfn, QM_REG_BASEADDRTXPQ_RT_OFFSET + pq_id, mem_addr_4kb);
+
+		/* Clear PQ pointer table entry (64 bit) */
+		if (is_pf_loading)
+			for (j = 0; j < 2; j++)
+				STORE_RT_REG(p_hwfn, QM_REG_PTRTBLTX_RT_OFFSET + (pq_id * 2) + j, 0);
+
+		/* Write PQ info to RAM */
+		if (WRITE_PQ_INFO_TO_RAM != 0)
+		{
+			u32 pq_info = 0;
+			pq_info = PQ_INFO_ELEMENT(first_tx_pq_id, pf_id, pq_params[i].tc_id, port_id, rl_valid ? 1 : 0, rl_valid ? pq_params[i].vport_id : 0);
+			ecore_wr(p_hwfn, p_ptt, PQ_INFO_RAM_GRC_ADDRESS(pq_id), pq_info);
+		}
 
 		/* If VF PQ, add indication to PQ VF mask */
 		if (is_vf_pq) {
@@ -440,14 +494,14 @@ static void ecore_tx_pq_map_rt_init(struct ecore_hwfn *p_hwfn,
 
 /* Prepare Other PQ mapping runtime init values for the specified PF */
 static void ecore_other_pq_map_rt_init(struct ecore_hwfn *p_hwfn,
-									   u8 port_id,
 									   u8 pf_id,
+									   bool is_pf_loading,
 									   u32 num_pf_cids,
 									   u32 num_tids,
 									   u32 base_mem_addr_4kb)
 {
 	u32 pq_size, pq_mem_4kb, mem_addr_4kb;
-	u16 i, pq_id, pq_group;
+	u16 i, j, pq_id, pq_group;
 
 	/* A single other PQ group is used in each PF, where PQ group i is used
 	 * in PF i.
@@ -463,9 +517,15 @@ static void ecore_other_pq_map_rt_init(struct ecore_hwfn *p_hwfn,
 	/* Set PQ sizes */       
 	STORE_RT_REG(p_hwfn, QM_REG_MAXPQSIZE_2_RT_OFFSET, QM_PQ_SIZE_256B(pq_size));
 
-	/* Set base address */
 	for (i = 0, pq_id = pf_id * QM_PF_QUEUE_GROUP_SIZE; i < QM_OTHER_PQS_PER_PF; i++, pq_id++) {
+		/* Set PQ base address */
 		STORE_RT_REG(p_hwfn, QM_REG_BASEADDROTHERPQ_RT_OFFSET + pq_id, mem_addr_4kb);
+
+		/* Clear PQ pointer table entry */
+		if (is_pf_loading)
+			for (j = 0; j < 2; j++)
+				STORE_RT_REG(p_hwfn, QM_REG_PTRTBLOTHER_RT_OFFSET + (pq_id * 2) + j, 0);
+
 		mem_addr_4kb += pq_mem_4kb;
 	}
 }
@@ -482,10 +542,8 @@ static int ecore_pf_wfq_rt_init(struct ecore_hwfn *p_hwfn,
 								struct init_qm_pq_params *pq_params)
 {
 	u32 inc_val, crd_reg_offset;
-	u8 voq;
+	u8 ext_voq;
 	u16 i;
-
-	crd_reg_offset = (pf_id < MAX_NUM_PFS_BB ? QM_REG_WFQPFCRD_RT_OFFSET : QM_REG_WFQPFCRD_MSB_RT_OFFSET) + (pf_id % MAX_NUM_PFS_BB);
 
 	inc_val = QM_WFQ_INC_VAL(pf_wfq);
 	if (!inc_val || inc_val > QM_WFQ_MAX_INC_VAL) {
@@ -493,9 +551,12 @@ static int ecore_pf_wfq_rt_init(struct ecore_hwfn *p_hwfn,
 		return -1;
 	}
 
-	for(i = 0; i < num_tx_pqs; i++) {
-		voq = VOQ(port_id, pq_params[i].tc_id, max_phys_tcs_per_port);
-		OVERWRITE_RT_REG(p_hwfn, crd_reg_offset + voq * MAX_NUM_PFS_BB, (u32)QM_WFQ_CRD_REG_SIGN_BIT);
+	for (i = 0; i < num_tx_pqs; i++) {
+		ext_voq = ecore_get_ext_voq(p_hwfn, port_id, pq_params[i].tc_id, max_phys_tcs_per_port);
+		crd_reg_offset = ECORE_IS_E5(p_hwfn->p_dev) ?
+			(ext_voq < QM_WFQ_CRD_E5_NUM_VOQS ? QM_REG_WFQPFCRD_RT_OFFSET : QM_REG_WFQPFCRD_MSB_RT_OFFSET) + (ext_voq % QM_WFQ_CRD_E5_NUM_VOQS) * MAX_NUM_PFS_E5 + pf_id :
+			(pf_id < MAX_NUM_PFS_BB ? QM_REG_WFQPFCRD_RT_OFFSET : QM_REG_WFQPFCRD_MSB_RT_OFFSET) + ext_voq * MAX_NUM_PFS_BB + (pf_id % MAX_NUM_PFS_BB);
+		OVERWRITE_RT_REG(p_hwfn, crd_reg_offset, (u32)QM_WFQ_CRD_REG_SIGN_BIT);
 	}
 
 	STORE_RT_REG(p_hwfn, QM_REG_WFQPFUPPERBOUND_RT_OFFSET + pf_id, QM_WFQ_UPPER_BOUND | (u32)QM_WFQ_CRD_REG_SIGN_BIT);
@@ -514,13 +575,13 @@ static int ecore_pf_rl_rt_init(struct ecore_hwfn *p_hwfn,
 	u32 inc_val;
 	
 	inc_val = QM_RL_INC_VAL(pf_rl);
-	if (inc_val > QM_RL_MAX_INC_VAL) {
+	if (inc_val > QM_PF_RL_MAX_INC_VAL) {
 		DP_NOTICE(p_hwfn, true, "Invalid PF rate limit configuration\n");
 		return -1;
 	}
 
 	STORE_RT_REG(p_hwfn, QM_REG_RLPFCRD_RT_OFFSET + pf_id, (u32)QM_RL_CRD_REG_SIGN_BIT);
-	STORE_RT_REG(p_hwfn, QM_REG_RLPFUPPERBOUND_RT_OFFSET + pf_id, QM_RL_UPPER_BOUND | (u32)QM_RL_CRD_REG_SIGN_BIT);
+	STORE_RT_REG(p_hwfn, QM_REG_RLPFUPPERBOUND_RT_OFFSET + pf_id, QM_PF_RL_UPPER_BOUND | (u32)QM_RL_CRD_REG_SIGN_BIT);
 	STORE_RT_REG(p_hwfn, QM_REG_RLPFINCVAL_RT_OFFSET + pf_id, inc_val);
 
 	return 0;
@@ -567,6 +628,7 @@ static int ecore_vp_wfq_rt_init(struct ecore_hwfn *p_hwfn,
 static int ecore_vport_rl_rt_init(struct ecore_hwfn *p_hwfn,
 								  u8 start_vport,
 								  u8 num_vports,
+								  u32 link_speed,
 								  struct init_qm_vport_params *vport_params)
 {
 	u8 i, vport_id;
@@ -579,14 +641,14 @@ static int ecore_vport_rl_rt_init(struct ecore_hwfn *p_hwfn,
 
 	/* Go over all PF VPORTs */
 	for (i = 0, vport_id = start_vport; i < num_vports; i++, vport_id++) {
-		inc_val = QM_RL_INC_VAL(vport_params[i].vport_rl);
-		if (inc_val > QM_RL_MAX_INC_VAL) {
+		inc_val = QM_RL_INC_VAL(vport_params[i].vport_rl ? vport_params[i].vport_rl : link_speed);
+		if (inc_val > QM_VP_RL_MAX_INC_VAL(link_speed)) {
 			DP_NOTICE(p_hwfn, true, "Invalid VPORT rate-limit configuration\n");
 			return -1;
 		}
 
 		STORE_RT_REG(p_hwfn, QM_REG_RLGLBLCRD_RT_OFFSET + vport_id, (u32)QM_RL_CRD_REG_SIGN_BIT);
-		STORE_RT_REG(p_hwfn, QM_REG_RLGLBLUPPERBOUND_RT_OFFSET + vport_id, QM_RL_UPPER_BOUND | (u32)QM_RL_CRD_REG_SIGN_BIT);
+		STORE_RT_REG(p_hwfn, QM_REG_RLGLBLUPPERBOUND_RT_OFFSET + vport_id, QM_VP_RL_UPPER_BOUND(link_speed) | (u32)QM_RL_CRD_REG_SIGN_BIT);
 		STORE_RT_REG(p_hwfn, QM_REG_RLGLBLINCVAL_RT_OFFSET + vport_id, inc_val);
 	}
 
@@ -614,9 +676,9 @@ static bool ecore_poll_on_qm_cmd_ready(struct ecore_hwfn *p_hwfn,
 
 static bool ecore_send_qm_cmd(struct ecore_hwfn *p_hwfn,
 							  struct ecore_ptt *p_ptt,
-					   u32 cmd_addr,
-					   u32 cmd_data_lsb,
-					   u32 cmd_data_msb)
+							  u32 cmd_addr,
+							  u32 cmd_data_lsb,
+							  u32 cmd_data_msb)
 {
 	if (!ecore_poll_on_qm_cmd_ready(p_hwfn, p_ptt))
 		return false;
@@ -633,8 +695,7 @@ static bool ecore_send_qm_cmd(struct ecore_hwfn *p_hwfn,
 
 /******************** INTERFACE IMPLEMENTATION *********************/
 
-u32 ecore_qm_pf_mem_size(u8 pf_id,
-						 u32 num_pf_cids,
+u32 ecore_qm_pf_mem_size(u32 num_pf_cids,
 						 u32 num_vf_cids,
 						 u32 num_tids,
 						 u16 num_pf_pqs,
@@ -693,7 +754,7 @@ int ecore_qm_pf_rt_init(struct ecore_hwfn *p_hwfn,
 						u8 port_id,
 						u8 pf_id,
 						u8 max_phys_tcs_per_port,
-						bool is_first_pf,
+						bool is_pf_loading,
 						u32 num_pf_cids,
 						u32 num_vf_cids,
 						u32 num_tids,
@@ -704,6 +765,7 @@ int ecore_qm_pf_rt_init(struct ecore_hwfn *p_hwfn,
 						u8 num_vports,
 						u16 pf_wfq,
 						u32 pf_rl,
+						u32 link_speed,
 						struct init_qm_pq_params *pq_params,
 						struct init_qm_vport_params *vport_params)
 {
@@ -719,11 +781,11 @@ int ecore_qm_pf_rt_init(struct ecore_hwfn *p_hwfn,
 
 	/* Map Other PQs (if any) */
 #if QM_OTHER_PQS_PER_PF > 0
-	ecore_other_pq_map_rt_init(p_hwfn, port_id, pf_id, num_pf_cids, num_tids, 0);
+	ecore_other_pq_map_rt_init(p_hwfn, pf_id, is_pf_loading, num_pf_cids, num_tids, 0);
 #endif
 
 	/* Map Tx PQs */
-	ecore_tx_pq_map_rt_init(p_hwfn, p_ptt, port_id, pf_id, max_phys_tcs_per_port, is_first_pf, num_pf_cids, num_vf_cids,
+	ecore_tx_pq_map_rt_init(p_hwfn, p_ptt, port_id, pf_id, max_phys_tcs_per_port, is_pf_loading, num_pf_cids, num_vf_cids,
 							start_pq, num_pf_pqs, num_vf_pqs, start_vport, other_mem_size_4kb, pq_params, vport_params);
 
 	/* Init PF WFQ */
@@ -740,7 +802,7 @@ int ecore_qm_pf_rt_init(struct ecore_hwfn *p_hwfn,
 		return -1;
 
 	/* Set VPORT RL */
-	if (ecore_vport_rl_rt_init(p_hwfn, start_vport, num_vports, vport_params))
+	if (ecore_vport_rl_rt_init(p_hwfn, start_vport, num_vports, link_speed, vport_params))
 		return -1;
 
 	return 0;
@@ -772,7 +834,7 @@ int ecore_init_pf_rl(struct ecore_hwfn *p_hwfn,
 	u32 inc_val;
 	
 	inc_val = QM_RL_INC_VAL(pf_rl);
-	if (inc_val > QM_RL_MAX_INC_VAL) {
+	if (inc_val > QM_PF_RL_MAX_INC_VAL) {
 		DP_NOTICE(p_hwfn, true, "Invalid PF rate limit configuration\n");
 		return -1;
 	}
@@ -811,7 +873,8 @@ int ecore_init_vport_wfq(struct ecore_hwfn *p_hwfn,
 int ecore_init_vport_rl(struct ecore_hwfn *p_hwfn,
 						struct ecore_ptt *p_ptt,
 						u8 vport_id,
-						u32 vport_rl)
+						u32 vport_rl,
+						u32 link_speed)
 {
 	u32 inc_val, max_qm_global_rls = MAX_QM_GLOBAL_RLS;
 
@@ -820,8 +883,8 @@ int ecore_init_vport_rl(struct ecore_hwfn *p_hwfn,
 		return -1;
 	}
 
-	inc_val = QM_RL_INC_VAL(vport_rl);
-	if (inc_val > QM_RL_MAX_INC_VAL) {
+	inc_val = QM_RL_INC_VAL(vport_rl ? vport_rl : link_speed);
+	if (inc_val > QM_VP_RL_MAX_INC_VAL(link_speed)) {
 		DP_NOTICE(p_hwfn, true, "Invalid VPORT rate-limit configuration\n");
 		return -1;
 	}
@@ -1203,23 +1266,8 @@ void ecore_init_brb_ram(struct ecore_hwfn *p_hwfn,
 #endif /* UNUSED_HSI_FUNC */
 #ifndef UNUSED_HSI_FUNC
 
-/* In MF, should be called once per engine to set EtherType of OuterTag */
-void ecore_set_engine_mf_ovlan_eth_type(struct ecore_hwfn *p_hwfn,
-	struct ecore_ptt *p_ptt, u32 ethType)
-{
-	/* Update PRS register */
-	STORE_RT_REG(p_hwfn, PRS_REG_TAG_ETHERTYPE_0_RT_OFFSET, ethType);
-
-	/* Update NIG register */
-	STORE_RT_REG(p_hwfn, NIG_REG_TAG_ETHERTYPE_0_RT_OFFSET, ethType);
-
-	/* Update PBF register */
-	STORE_RT_REG(p_hwfn, PBF_REG_TAG_ETHERTYPE_0_RT_OFFSET, ethType);
-}
-
 /* In MF, should be called once per port to set EtherType of OuterTag */
-void ecore_set_port_mf_ovlan_eth_type(struct ecore_hwfn *p_hwfn,
-	struct ecore_ptt *p_ptt, u32 ethType)
+void ecore_set_port_mf_ovlan_eth_type(struct ecore_hwfn *p_hwfn, u32 ethType)
 {
 	/* Update DORQ register */
 	STORE_RT_REG(p_hwfn, DORQ_REG_TAG1_ETHERTYPE_RT_OFFSET, ethType);
@@ -1229,7 +1277,8 @@ void ecore_set_port_mf_ovlan_eth_type(struct ecore_hwfn *p_hwfn,
 
 
 #define SET_TUNNEL_TYPE_ENABLE_BIT(var,offset,enable) var = ((var) & ~(1 << (offset))) | ( (enable) ? (1 << (offset)) : 0)
-#define PRS_ETH_TUNN_FIC_FORMAT        -188897008
+#define PRS_ETH_TUNN_OUTPUT_FORMAT        -188897008
+#define PRS_ETH_OUTPUT_FORMAT             -46832
 
 void ecore_set_vxlan_dest_port(struct ecore_hwfn *p_hwfn,
 	struct ecore_ptt *p_ptt,
@@ -1255,8 +1304,16 @@ void ecore_set_vxlan_enable(struct ecore_hwfn *p_hwfn,
 	reg_val = ecore_rd(p_hwfn, p_ptt, PRS_REG_ENCAPSULATION_TYPE_EN);
 	SET_TUNNEL_TYPE_ENABLE_BIT(reg_val, PRS_REG_ENCAPSULATION_TYPE_EN_VXLAN_ENABLE_SHIFT, vxlan_enable);
 	ecore_wr(p_hwfn, p_ptt, PRS_REG_ENCAPSULATION_TYPE_EN, reg_val);
-	if (reg_val) /* TODO: handle E5 init */
-		ecore_wr(p_hwfn, p_ptt, PRS_REG_OUTPUT_FORMAT_4_0_BB_K2, (u32)PRS_ETH_TUNN_FIC_FORMAT);
+    if (reg_val) /* TODO: handle E5 init */
+    {
+        reg_val = ecore_rd(p_hwfn, p_ptt, PRS_REG_OUTPUT_FORMAT_4_0_BB_K2);
+
+        /* Update output  only if tunnel blocks not included. */
+        if (reg_val == (u32)PRS_ETH_OUTPUT_FORMAT)
+        {
+            ecore_wr(p_hwfn, p_ptt, PRS_REG_OUTPUT_FORMAT_4_0_BB_K2, (u32)PRS_ETH_TUNN_OUTPUT_FORMAT);
+        }
+    }
 
 	/* Update NIG register */
 	reg_val = ecore_rd(p_hwfn, p_ptt, NIG_REG_ENC_TYPE_ENABLE);
@@ -1279,8 +1336,16 @@ void ecore_set_gre_enable(struct ecore_hwfn *p_hwfn,
 	SET_TUNNEL_TYPE_ENABLE_BIT(reg_val, PRS_REG_ENCAPSULATION_TYPE_EN_ETH_OVER_GRE_ENABLE_SHIFT, eth_gre_enable);
 	SET_TUNNEL_TYPE_ENABLE_BIT(reg_val, PRS_REG_ENCAPSULATION_TYPE_EN_IP_OVER_GRE_ENABLE_SHIFT,  ip_gre_enable);
 	ecore_wr(p_hwfn, p_ptt, PRS_REG_ENCAPSULATION_TYPE_EN, reg_val);
-	if (reg_val) /* TODO: handle E5 init */
-		ecore_wr(p_hwfn, p_ptt, PRS_REG_OUTPUT_FORMAT_4_0_BB_K2, (u32)PRS_ETH_TUNN_FIC_FORMAT);
+    if (reg_val) /* TODO: handle E5 init */
+    {
+        reg_val = ecore_rd(p_hwfn, p_ptt, PRS_REG_OUTPUT_FORMAT_4_0_BB_K2);
+
+        /* Update output  only if tunnel blocks not included. */
+        if (reg_val == (u32)PRS_ETH_OUTPUT_FORMAT)
+        {
+            ecore_wr(p_hwfn, p_ptt, PRS_REG_OUTPUT_FORMAT_4_0_BB_K2, (u32)PRS_ETH_TUNN_OUTPUT_FORMAT);
+        }
+    }
 
 	/* Update NIG register */
 	reg_val = ecore_rd(p_hwfn, p_ptt, NIG_REG_ENC_TYPE_ENABLE);
@@ -1320,8 +1385,16 @@ void ecore_set_geneve_enable(struct ecore_hwfn *p_hwfn,
 	SET_TUNNEL_TYPE_ENABLE_BIT(reg_val, PRS_REG_ENCAPSULATION_TYPE_EN_ETH_OVER_GENEVE_ENABLE_SHIFT, eth_geneve_enable);   
 	SET_TUNNEL_TYPE_ENABLE_BIT(reg_val, PRS_REG_ENCAPSULATION_TYPE_EN_IP_OVER_GENEVE_ENABLE_SHIFT, ip_geneve_enable);
 	ecore_wr(p_hwfn, p_ptt, PRS_REG_ENCAPSULATION_TYPE_EN, reg_val);
-	if (reg_val) /* TODO: handle E5 init */
-		ecore_wr(p_hwfn, p_ptt, PRS_REG_OUTPUT_FORMAT_4_0_BB_K2, (u32)PRS_ETH_TUNN_FIC_FORMAT);
+    if (reg_val) /* TODO: handle E5 init */
+    {
+        reg_val = ecore_rd(p_hwfn, p_ptt, PRS_REG_OUTPUT_FORMAT_4_0_BB_K2);
+
+        /* Update output  only if tunnel blocks not included. */
+        if (reg_val == (u32)PRS_ETH_OUTPUT_FORMAT)
+        {
+            ecore_wr(p_hwfn, p_ptt, PRS_REG_OUTPUT_FORMAT_4_0_BB_K2, (u32)PRS_ETH_TUNN_OUTPUT_FORMAT);
+        }
+    }
 
 	/* Update NIG register */
 	ecore_wr(p_hwfn, p_ptt, NIG_REG_NGE_ETH_ENABLE, eth_geneve_enable ? 1 : 0);
@@ -1336,6 +1409,39 @@ void ecore_set_geneve_enable(struct ecore_hwfn *p_hwfn,
 	ecore_wr(p_hwfn, p_ptt, DORQ_REG_L2_EDPM_TUNNEL_NGE_IP_EN_K2_E5, ip_geneve_enable ? 1 : 0);
 }
 
+#define PRS_ETH_VXLAN_NO_L2_ENABLE_OFFSET   4
+#define PRS_ETH_VXLAN_NO_L2_OUTPUT_FORMAT      -927094512
+
+void ecore_set_vxlan_no_l2_enable(struct ecore_hwfn *p_hwfn,
+                                struct ecore_ptt *p_ptt,
+                                bool enable)
+{
+    u32 reg_val, cfg_mask;
+
+    /* read PRS config register */
+    reg_val = ecore_rd(p_hwfn, p_ptt, PRS_REG_MSG_INFO);
+
+    /* set VXLAN_NO_L2_ENABLE mask */
+    cfg_mask = (1 << PRS_ETH_VXLAN_NO_L2_ENABLE_OFFSET);
+
+    if (enable)
+    {
+        /* set VXLAN_NO_L2_ENABLE flag */
+        reg_val |= cfg_mask;
+
+        /* update PRS FIC  register */
+        ecore_wr(p_hwfn, p_ptt, PRS_REG_OUTPUT_FORMAT_4_0_BB_K2, (u32)PRS_ETH_VXLAN_NO_L2_OUTPUT_FORMAT);
+    }
+    else 
+    {
+        /* clear VXLAN_NO_L2_ENABLE flag */
+        reg_val &= ~cfg_mask;
+    }
+
+    /* write PRS config register */
+    ecore_wr(p_hwfn, p_ptt, PRS_REG_MSG_INFO, reg_val);
+}
+
 #ifndef UNUSED_HSI_FUNC
 
 #define T_ETH_PACKET_ACTION_GFT_EVENTID  23
@@ -1347,32 +1453,21 @@ void ecore_set_geneve_enable(struct ecore_hwfn *p_hwfn,
 #define REG_SIZE sizeof(u32)
 
 
-void ecore_set_rfs_mode_disable(struct ecore_hwfn *p_hwfn,
-	struct ecore_ptt *p_ptt,
-	u16 pf_id)
+void ecore_gft_disable(struct ecore_hwfn *p_hwfn,
+    struct ecore_ptt *p_ptt,
+    u16 pf_id)
 {
-	union gft_cam_line_union cam_line;
-	struct gft_ram_line ram_line;
-	u32 i, *ram_line_ptr;
+    /* disable gft search for PF */
+    ecore_wr(p_hwfn, p_ptt, PRS_REG_SEARCH_GFT, 0);
 
-	ram_line_ptr = (u32*)&ram_line;
+    /* Clean ram & cam for next gft session*/
 
-	/* Stop using gft logic, disable gft search */
-	ecore_wr(p_hwfn, p_ptt, PRS_REG_SEARCH_GFT, 0);
-	ecore_wr(p_hwfn, p_ptt, PRS_REG_CM_HDR_GFT, 0x0);
+    /* Zero camline */
+    ecore_wr(p_hwfn, p_ptt, PRS_REG_GFT_CAM + CAM_LINE_SIZE*pf_id, 0);
 
-	/* Clean ram & cam for next rfs/gft session*/
-
-	/* Zero camline */
-	OSAL_MEMSET(&cam_line, 0, sizeof(cam_line));
-	ecore_wr(p_hwfn, p_ptt, PRS_REG_GFT_CAM + CAM_LINE_SIZE*pf_id, cam_line.cam_line_mapped.camline);
-
-	/* Zero ramline */
-	OSAL_MEMSET(&ram_line, 0, sizeof(ram_line));
-
-	/* Each iteration write to reg */
-	for (i = 0; i < RAM_LINE_SIZE / REG_SIZE; i++)
-		ecore_wr(p_hwfn, p_ptt, PRS_REG_GFT_PROFILE_MASK_RAM + RAM_LINE_SIZE*pf_id + i*REG_SIZE, *(ram_line_ptr + i));
+    /* Zero ramline */
+    ecore_wr(p_hwfn, p_ptt, PRS_REG_GFT_PROFILE_MASK_RAM + RAM_LINE_SIZE*pf_id, 0);
+    ecore_wr(p_hwfn, p_ptt, PRS_REG_GFT_PROFILE_MASK_RAM + RAM_LINE_SIZE*pf_id + REG_SIZE, 0);
 }
 
 
@@ -1388,89 +1483,110 @@ void ecore_set_gft_event_id_cm_hdr (struct ecore_hwfn *p_hwfn,
     ecore_wr(p_hwfn, p_ptt, PRS_REG_CM_HDR_GFT, rfs_cm_hdr_event_id);
 }
 
-void ecore_set_rfs_mode_enable(struct ecore_hwfn *p_hwfn,
+void ecore_gft_config(struct ecore_hwfn *p_hwfn,
     struct ecore_ptt *p_ptt,
     u16 pf_id,
     bool tcp,
     bool udp,
     bool ipv4,
-    bool ipv6)
+    bool ipv6,
+    enum gft_profile_type profile_type)
 {
-	u32 rfs_cm_hdr_event_id, *ram_line_ptr;
-	union gft_cam_line_union cam_line;
-	struct gft_ram_line ram_line;
-	int i;
+    u32 reg_val, cam_line, ram_line_lo, ram_line_hi;
 
-	rfs_cm_hdr_event_id = ecore_rd(p_hwfn, p_ptt, PRS_REG_CM_HDR_GFT);
-	ram_line_ptr = (u32*)&ram_line;
+    if (!ipv6 && !ipv4)
+        DP_NOTICE(p_hwfn, true, "gft_config: must accept at least on of - ipv4 or ipv6'\n");
+    if (!tcp && !udp)
+        DP_NOTICE(p_hwfn, true, "gft_config: must accept at least on of - udp or tcp\n");
+    if (profile_type >= MAX_GFT_PROFILE_TYPE)
+        DP_NOTICE(p_hwfn, true, "gft_config: unsupported gft_profile_type\n");
 
-	if (!ipv6 && !ipv4)
-		DP_NOTICE(p_hwfn, true, "set_rfs_mode_enable: must accept at least on of - ipv4 or ipv6\n");
-	if (!tcp && !udp)
-		DP_NOTICE(p_hwfn, true, "set_rfs_mode_enable: must accept at least on of - udp or tcp\n");
+    /* Set RFS event ID to be awakened i Tstorm By Prs */
+    reg_val = T_ETH_PACKET_MATCH_RFS_EVENTID << PRS_REG_CM_HDR_GFT_EVENT_ID_SHIFT;
+    reg_val |= PARSER_ETH_CONN_CM_HDR << PRS_REG_CM_HDR_GFT_CM_HDR_SHIFT;
+    ecore_wr(p_hwfn, p_ptt, PRS_REG_CM_HDR_GFT, reg_val);
 
-	/* Set RFS event ID to be awakened i Tstorm By Prs */
-	rfs_cm_hdr_event_id |=  T_ETH_PACKET_MATCH_RFS_EVENTID << PRS_REG_CM_HDR_GFT_EVENT_ID_SHIFT;
-	rfs_cm_hdr_event_id |=  PARSER_ETH_CONN_CM_HDR << PRS_REG_CM_HDR_GFT_CM_HDR_SHIFT;
-	ecore_wr(p_hwfn, p_ptt, PRS_REG_CM_HDR_GFT, rfs_cm_hdr_event_id);
-    
-	/* Configure Registers for RFS mode */
+    /* Do not load context only cid in PRS on match. */
+    ecore_wr(p_hwfn, p_ptt, PRS_REG_LOAD_L2_FILTER, 0);
 
-	/* Enable gft search */
-	ecore_wr(p_hwfn, p_ptt, PRS_REG_SEARCH_GFT, 1);
+    /* Do not use tenant ID exist bit for gft search*/
+    ecore_wr(p_hwfn, p_ptt, PRS_REG_SEARCH_TENANT_ID, 0);
 
-	/* Do not load context only cid in PRS on match. */
-	ecore_wr(p_hwfn, p_ptt, PRS_REG_LOAD_L2_FILTER, 0);
-      
-	/* Cam line is now valid!! */
-	cam_line.cam_line_mapped.camline = 0;
-	SET_FIELD(cam_line.cam_line_mapped.camline, GFT_CAM_LINE_MAPPED_VALID, 1);
+    /* Set Cam */
+    cam_line = 0;
+    SET_FIELD(cam_line, GFT_CAM_LINE_MAPPED_VALID, 1);
 
-	/* Filters are per PF!! */
-	SET_FIELD(cam_line.cam_line_mapped.camline, GFT_CAM_LINE_MAPPED_PF_ID_MASK, GFT_CAM_LINE_MAPPED_PF_ID_MASK_MASK);
-	SET_FIELD(cam_line.cam_line_mapped.camline, GFT_CAM_LINE_MAPPED_PF_ID, pf_id);
+    /* Filters are per PF!! */
+    SET_FIELD(cam_line, GFT_CAM_LINE_MAPPED_PF_ID_MASK, GFT_CAM_LINE_MAPPED_PF_ID_MASK_MASK);
+    SET_FIELD(cam_line, GFT_CAM_LINE_MAPPED_PF_ID, pf_id);
 
-	if (!(tcp && udp)) {
-		SET_FIELD(cam_line.cam_line_mapped.camline, GFT_CAM_LINE_MAPPED_UPPER_PROTOCOL_TYPE_MASK, GFT_CAM_LINE_MAPPED_UPPER_PROTOCOL_TYPE_MASK_MASK);
-		if (tcp)
-			SET_FIELD(cam_line.cam_line_mapped.camline, GFT_CAM_LINE_MAPPED_UPPER_PROTOCOL_TYPE, GFT_PROFILE_TCP_PROTOCOL);
-		else
-			SET_FIELD(cam_line.cam_line_mapped.camline, GFT_CAM_LINE_MAPPED_UPPER_PROTOCOL_TYPE, GFT_PROFILE_UDP_PROTOCOL);
-	}
+    if (!(tcp && udp)) {
+        SET_FIELD(cam_line, GFT_CAM_LINE_MAPPED_UPPER_PROTOCOL_TYPE_MASK, GFT_CAM_LINE_MAPPED_UPPER_PROTOCOL_TYPE_MASK_MASK);
+        if (tcp)
+            SET_FIELD(cam_line, GFT_CAM_LINE_MAPPED_UPPER_PROTOCOL_TYPE, GFT_PROFILE_TCP_PROTOCOL);
+        else
+            SET_FIELD(cam_line, GFT_CAM_LINE_MAPPED_UPPER_PROTOCOL_TYPE, GFT_PROFILE_UDP_PROTOCOL);
+    }
 
-	if (!(ipv4 && ipv6)) {
-		SET_FIELD(cam_line.cam_line_mapped.camline, GFT_CAM_LINE_MAPPED_IP_VERSION_MASK, 1);
-		if (ipv4)
-			SET_FIELD(cam_line.cam_line_mapped.camline, GFT_CAM_LINE_MAPPED_IP_VERSION, GFT_PROFILE_IPV4);
-		else
-			SET_FIELD(cam_line.cam_line_mapped.camline, GFT_CAM_LINE_MAPPED_IP_VERSION, GFT_PROFILE_IPV6);
-	}
+    if (!(ipv4 && ipv6)) {
+        SET_FIELD(cam_line, GFT_CAM_LINE_MAPPED_IP_VERSION_MASK, 1);
+        if (ipv4)
+            SET_FIELD(cam_line, GFT_CAM_LINE_MAPPED_IP_VERSION, GFT_PROFILE_IPV4);
+        else
+            SET_FIELD(cam_line, GFT_CAM_LINE_MAPPED_IP_VERSION, GFT_PROFILE_IPV6);
+    }
 
-	/* Write characteristics to cam */
-	ecore_wr(p_hwfn, p_ptt, PRS_REG_GFT_CAM + CAM_LINE_SIZE*pf_id, cam_line.cam_line_mapped.camline);
-	cam_line.cam_line_mapped.camline = ecore_rd(p_hwfn, p_ptt, PRS_REG_GFT_CAM + CAM_LINE_SIZE*pf_id);
+    /* Write characteristics to cam */
+    ecore_wr(p_hwfn, p_ptt, PRS_REG_GFT_CAM + CAM_LINE_SIZE*pf_id, cam_line);
+    cam_line = ecore_rd(p_hwfn, p_ptt, PRS_REG_GFT_CAM + CAM_LINE_SIZE*pf_id);
 
-	/* Write line to RAM - compare to filter 4 tuple */
-	ram_line.lo = 0;
-	ram_line.hi= 0;
-	SET_FIELD(ram_line.hi, GFT_RAM_LINE_DST_IP, 1);
-	SET_FIELD(ram_line.hi, GFT_RAM_LINE_SRC_IP, 1);
-	SET_FIELD(ram_line.hi, GFT_RAM_LINE_OVER_IP_PROTOCOL, 1);
-	SET_FIELD(ram_line.lo, GFT_RAM_LINE_ETHERTYPE, 1);
-	SET_FIELD(ram_line.lo, GFT_RAM_LINE_SRC_PORT, 1);
-	SET_FIELD(ram_line.lo, GFT_RAM_LINE_DST_PORT, 1);
+    /* Write line to RAM - compare to filter 4 tuple */
+    ram_line_lo = 0;
+    ram_line_hi = 0;
 
+    /* Tunnel type */
+    SET_FIELD(ram_line_lo, GFT_RAM_LINE_TUNNEL_DST_PORT, 1);
+    SET_FIELD(ram_line_lo, GFT_RAM_LINE_TUNNEL_OVER_IP_PROTOCOL, 1);
 
-	/* Each iteration write to reg */
-	for (i = 0; i < RAM_LINE_SIZE / REG_SIZE; i++)
-		ecore_wr(p_hwfn, p_ptt, PRS_REG_GFT_PROFILE_MASK_RAM + RAM_LINE_SIZE*pf_id + i*REG_SIZE, *(ram_line_ptr + i));
+    if (profile_type == GFT_PROFILE_TYPE_4_TUPLE)
+    {
+        SET_FIELD(ram_line_hi, GFT_RAM_LINE_DST_IP, 1);
+        SET_FIELD(ram_line_hi, GFT_RAM_LINE_SRC_IP, 1);
+        SET_FIELD(ram_line_hi, GFT_RAM_LINE_OVER_IP_PROTOCOL, 1);
+        SET_FIELD(ram_line_lo, GFT_RAM_LINE_ETHERTYPE, 1);
+        SET_FIELD(ram_line_lo, GFT_RAM_LINE_SRC_PORT, 1);
+        SET_FIELD(ram_line_lo, GFT_RAM_LINE_DST_PORT, 1);
+    }
+    else if (profile_type == GFT_PROFILE_TYPE_L4_DST_PORT)
+    {
+        SET_FIELD(ram_line_hi, GFT_RAM_LINE_OVER_IP_PROTOCOL, 1);
+        SET_FIELD(ram_line_lo, GFT_RAM_LINE_ETHERTYPE, 1);
+        SET_FIELD(ram_line_lo, GFT_RAM_LINE_DST_PORT, 1);
+    }
+    else if (profile_type == GFT_PROFILE_TYPE_IP_DST_ADDR)
+    {
+        SET_FIELD(ram_line_hi, GFT_RAM_LINE_DST_IP, 1);
+        SET_FIELD(ram_line_lo, GFT_RAM_LINE_ETHERTYPE, 1);
+    }
+    else if (profile_type == GFT_PROFILE_TYPE_IP_SRC_ADDR)
+    {
+        SET_FIELD(ram_line_hi, GFT_RAM_LINE_SRC_IP, 1);
+        SET_FIELD(ram_line_lo, GFT_RAM_LINE_ETHERTYPE, 1);
+    }
+    else if (profile_type == GFT_PROFILE_TYPE_TUNNEL_TYPE)
+    {
+        SET_FIELD(ram_line_lo, GFT_RAM_LINE_TUNNEL_ETHERTYPE, 1);
+    }
 
-	/* Set default profile so that no filter match will happen */
-	ram_line.lo = 0xffffffff;
-	ram_line.hi = 0x3ff;
+    ecore_wr(p_hwfn, p_ptt, PRS_REG_GFT_PROFILE_MASK_RAM + RAM_LINE_SIZE*pf_id, ram_line_lo);
+    ecore_wr(p_hwfn, p_ptt, PRS_REG_GFT_PROFILE_MASK_RAM + RAM_LINE_SIZE*pf_id + REG_SIZE, ram_line_hi);
 
-	for (i = 0; i < RAM_LINE_SIZE / REG_SIZE; i++)
-		ecore_wr(p_hwfn, p_ptt, PRS_REG_GFT_PROFILE_MASK_RAM + RAM_LINE_SIZE*PRS_GFT_CAM_LINES_NO_MATCH + i*REG_SIZE, *(ram_line_ptr + i));
+    /* Set default profile so that no filter match will happen */
+    ecore_wr(p_hwfn, p_ptt, PRS_REG_GFT_PROFILE_MASK_RAM + RAM_LINE_SIZE*PRS_GFT_CAM_LINES_NO_MATCH, 0xffffffff);
+    ecore_wr(p_hwfn, p_ptt, PRS_REG_GFT_PROFILE_MASK_RAM + RAM_LINE_SIZE*PRS_GFT_CAM_LINES_NO_MATCH + REG_SIZE, 0x3ff);
+
+    /* Enable gft search */
+    ecore_wr(p_hwfn, p_ptt, PRS_REG_SEARCH_GFT, 1);
 }
 
 
@@ -1529,12 +1645,13 @@ u32 ecore_get_mstorm_eth_vf_prods_offset(struct ecore_hwfn *p_hwfn, u8 vf_id, u8
 	return offset;
 }
 
+#ifndef LINUX_REMOVE
 #define CRC8_INIT_VALUE 0xFF
+#endif
 static u8 cdu_crc8_table[CRC8_TABLE_SIZE];
 
 /* Calculate and return CDU validation byte per connection type/region/cid */
-static u8 ecore_calc_cdu_validation_byte(struct ecore_hwfn * p_hwfn, u8 conn_type,
-						u8 region, u32 cid)
+static u8 ecore_calc_cdu_validation_byte(u8 conn_type, u8 region, u32 cid)
 {
 	const u8 validation_cfg = CDU_VALIDATION_DEFAULT_CFG;
 
@@ -1588,8 +1705,7 @@ static u8 ecore_calc_cdu_validation_byte(struct ecore_hwfn * p_hwfn, u8 conn_typ
 }
 
 /* Calcualte and set validation bytes for session context */
-void ecore_calc_session_ctx_validation(struct ecore_hwfn * p_hwfn, void *p_ctx_mem,
-					u16 ctx_size, u8 ctx_type, u32 cid)
+void ecore_calc_session_ctx_validation(void *p_ctx_mem, u16 ctx_size, u8 ctx_type, u32 cid)
 {
 	u8 *x_val_ptr, *t_val_ptr, *u_val_ptr, *p_ctx;
 
@@ -1600,14 +1716,13 @@ void ecore_calc_session_ctx_validation(struct ecore_hwfn * p_hwfn, void *p_ctx_m
 
 	OSAL_MEMSET(p_ctx, 0, ctx_size);
 
-	*x_val_ptr = ecore_calc_cdu_validation_byte(p_hwfn, ctx_type, 3, cid);
-	*t_val_ptr = ecore_calc_cdu_validation_byte(p_hwfn, ctx_type, 4, cid);
-	*u_val_ptr = ecore_calc_cdu_validation_byte(p_hwfn, ctx_type, 5, cid);
+	*x_val_ptr = ecore_calc_cdu_validation_byte(ctx_type, 3, cid);
+	*t_val_ptr = ecore_calc_cdu_validation_byte(ctx_type, 4, cid);
+	*u_val_ptr = ecore_calc_cdu_validation_byte(ctx_type, 5, cid);
 }
 
 /* Calcualte and set validation bytes for task context */
-void ecore_calc_task_ctx_validation(struct ecore_hwfn * p_hwfn, void *p_ctx_mem,
-				u16 ctx_size, u8 ctx_type, u32 tid)
+void ecore_calc_task_ctx_validation(void *p_ctx_mem, u16 ctx_size, u8 ctx_type, u32 tid)
 {
 	u8 *p_ctx, *region1_val_ptr;
 
@@ -1616,8 +1731,7 @@ void ecore_calc_task_ctx_validation(struct ecore_hwfn * p_hwfn, void *p_ctx_mem,
 
 	OSAL_MEMSET(p_ctx, 0, ctx_size);
 
-	*region1_val_ptr = ecore_calc_cdu_validation_byte(p_hwfn, ctx_type,
-								1, tid);
+	*region1_val_ptr = ecore_calc_cdu_validation_byte(ctx_type, 1, tid);
 }
 
 /* Memset session context to 0 while preserving validation bytes */
@@ -1675,3 +1789,59 @@ void ecore_enable_context_validation(struct ecore_hwfn * p_hwfn, struct ecore_pt
 	ctx_validation = CDU_VALIDATION_DEFAULT_CFG << 8;
 	ecore_wr(p_hwfn, p_ptt, CDU_REG_TCFC_CTX_VALID0, ctx_validation);
 }
+
+#define RSS_IND_TABLE_BASE_ADDR       4112
+#define RSS_IND_TABLE_VPORT_SIZE      16
+#define RSS_IND_TABLE_ENTRY_PER_LINE  8
+
+/* Update RSS indirection table entry. */
+void ecore_update_eth_rss_ind_table_entry(struct ecore_hwfn * p_hwfn,
+    struct ecore_ptt *p_ptt,
+    u8 rss_id,
+    u8 ind_table_index,
+    u16 ind_table_value)
+{
+    u32 cnt, rss_addr;
+    u32 * reg_val;
+    u16 rss_ind_entry[RSS_IND_TABLE_ENTRY_PER_LINE];
+    u16 rss_ind_mask [RSS_IND_TABLE_ENTRY_PER_LINE];
+
+    /* get entry address */
+    rss_addr =  RSS_IND_TABLE_BASE_ADDR +
+                RSS_IND_TABLE_VPORT_SIZE * rss_id +
+                ind_table_index/RSS_IND_TABLE_ENTRY_PER_LINE;
+
+    /* prepare update command */
+    ind_table_index %= RSS_IND_TABLE_ENTRY_PER_LINE;
+
+    for (cnt = 0; cnt < RSS_IND_TABLE_ENTRY_PER_LINE; cnt ++)
+    {
+        if (cnt == ind_table_index)
+        {
+            rss_ind_entry[cnt] = ind_table_value;
+            rss_ind_mask[cnt]  = 0xFFFF;
+        }
+        else
+        {
+            rss_ind_entry[cnt] = 0;
+            rss_ind_mask[cnt]  = 0;
+        }
+    }
+
+    /* Update entry in HW*/
+    ecore_wr(p_hwfn, p_ptt, RSS_REG_RSS_RAM_ADDR, rss_addr);
+
+    reg_val = (u32*)rss_ind_mask;
+    ecore_wr(p_hwfn, p_ptt, RSS_REG_RSS_RAM_MASK, reg_val[0]);
+    ecore_wr(p_hwfn, p_ptt, RSS_REG_RSS_RAM_MASK + 4, reg_val[1]);
+    ecore_wr(p_hwfn, p_ptt, RSS_REG_RSS_RAM_MASK + 8, reg_val[2]);
+    ecore_wr(p_hwfn, p_ptt, RSS_REG_RSS_RAM_MASK + 12, reg_val[3]);
+
+    reg_val = (u32*)rss_ind_entry;
+    ecore_wr(p_hwfn, p_ptt, RSS_REG_RSS_RAM_DATA, reg_val[0]);
+    ecore_wr(p_hwfn, p_ptt, RSS_REG_RSS_RAM_DATA + 4, reg_val[1]);
+    ecore_wr(p_hwfn, p_ptt, RSS_REG_RSS_RAM_DATA + 8, reg_val[2]);
+    ecore_wr(p_hwfn, p_ptt, RSS_REG_RSS_RAM_DATA + 12, reg_val[3]);
+}
+
+

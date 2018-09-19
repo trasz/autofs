@@ -556,8 +556,11 @@ in6_control(struct socket *so, u_long cmd, caddr_t data,
 		 */
 		if ((error = in6_update_ifa(ifp, ifra, ia, 0)) != 0)
 			goto out;
-		if (ia != NULL)
+		if (ia != NULL) {
+			if (ia->ia_ifa.ifa_carp)
+				(*carp_detach_p)(&ia->ia_ifa, true);
 			ifa_free(&ia->ia_ifa);
+		}
 		if ((ia = in6ifa_ifpwithaddr(ifp, &ifra->ifra_addr.sin6_addr))
 		    == NULL) {
 			/*
@@ -624,7 +627,7 @@ in6_control(struct socket *so, u_long cmd, caddr_t data,
 			 */
 			if ((error = nd6_prelist_add(&pr0, NULL, &pr)) != 0) {
 				if (carp_attached)
-					(*carp_detach_p)(&ia->ia_ifa);
+					(*carp_detach_p)(&ia->ia_ifa, false);
 				goto out;
 			}
 		}
@@ -677,7 +680,6 @@ aifaddr_out:
 			 * The failure means address duplication was detected.
 			 */
 		}
-		EVENTHANDLER_INVOKE(ifaddr_event, ifp);
 		break;
 	}
 
@@ -1245,7 +1247,7 @@ in6_purgeaddr(struct ifaddr *ifa)
 	int plen, error;
 
 	if (ifa->ifa_carp)
-		(*carp_detach_p)(ifa);
+		(*carp_detach_p)(ifa, false);
 
 	/*
 	 * Remove the loopback route to the interface address.
@@ -1364,7 +1366,7 @@ in6_notify_ifa(struct ifnet *ifp, struct in6_ifaddr *ia,
 	if (ifacount <= 1 && ifp->if_ioctl) {
 		error = (*ifp->if_ioctl)(ifp, SIOCSIFADDR, (caddr_t)ia);
 		if (error)
-			return (error);
+			goto done;
 	}
 
 	/*
@@ -1404,7 +1406,7 @@ in6_notify_ifa(struct ifnet *ifp, struct in6_ifaddr *ia,
 			ia->ia_flags |= IFA_RTSELF;
 		error = rtinit(&ia->ia_ifa, RTM_ADD, ia->ia_flags | rtflags);
 		if (error)
-			return (error);
+			goto done;
 		ia->ia_flags |= IFA_ROUTE;
 	}
 
@@ -1417,6 +1419,11 @@ in6_notify_ifa(struct ifnet *ifp, struct in6_ifaddr *ia,
 		if (error == 0)
 			ia->ia_flags |= IFA_RTSELF;
 	}
+done:
+	WITNESS_WARN(WARN_GIANTOK | WARN_SLEEPOK, NULL,
+	    "Invoking IPv6 network device address event may sleep");
+
+	EVENTHANDLER_INVOKE(ifaddr_event, ifp);
 
 	return (error);
 }
@@ -1449,7 +1456,7 @@ in6ifa_ifpforlinklocal(struct ifnet *ifp, int ignoreflags)
 
 
 /*
- * find the internet address corresponding to a given address.
+ * find the interface address corresponding to a given IPv6 address.
  * ifaddr is returned referenced.
  */
 struct in6_ifaddr *
@@ -2100,9 +2107,6 @@ in6_lltable_free_entry(struct lltable *llt, struct llentry *lle)
 		lltable_unlink_entry(llt, lle);
 	}
 
-	if (callout_stop(&lle->lle_timer) > 0)
-		LLE_REMREF(lle);
-
 	llentry_free(lle);
 }
 
@@ -2142,6 +2146,25 @@ in6_lltable_rtcheck(struct ifnet *ifp,
 		return EINVAL;
 	}
 	return 0;
+}
+
+/*
+ * Called by the datapath to indicate that the entry was used.
+ */
+static void
+in6_lltable_mark_used(struct llentry *lle)
+{
+
+	LLE_REQ_LOCK(lle);
+	lle->r_skip_req = 0;
+
+	/*
+	 * Set the hit time so the callback function
+	 * can determine the remaining time before
+	 * transiting to the DELAY state.
+	 */
+	lle->lle_hittime = time_uptime;
+	LLE_REQ_UNLOCK(lle);
 }
 
 static inline uint32_t
@@ -2376,6 +2399,7 @@ in6_lltattach(struct ifnet *ifp)
 	llt->llt_fill_sa_entry = in6_lltable_fill_sa_entry;
 	llt->llt_free_entry = in6_lltable_free_entry;
 	llt->llt_match_prefix = in6_lltable_match_prefix;
+	llt->llt_mark_used = in6_lltable_mark_used;
  	lltable_link(llt);
 
 	return (llt);

@@ -233,8 +233,11 @@ thread_create(struct thread *td, struct rtprio *rtp,
 	bzero(&newtd->td_startzero,
 	    __rangeof(struct thread, td_startzero, td_endzero));
 	newtd->td_sleeptimo = 0;
+	newtd->td_vslock_sz = 0;
+	bzero(&newtd->td_si, sizeof(newtd->td_si));
 	bcopy(&td->td_startcopy, &newtd->td_startcopy,
 	    __rangeof(struct thread, td_startcopy, td_endcopy));
+	newtd->td_sa = td->td_sa;
 	newtd->td_proc = td->td_proc;
 	newtd->td_rb_list = newtd->td_rbp_list = newtd->td_rb_inact = 0;
 	thread_cow_get(newtd, td);
@@ -372,6 +375,11 @@ kern_thr_exit(struct thread *td)
 	KASSERT(p->p_numthreads > 1, ("too few threads"));
 	racct_sub(p, RACCT_NTHR, 1);
 	tdsigcleanup(td);
+
+#ifdef AUDIT
+	AUDIT_SYSCALL_EXIT(0, td);
+#endif
+
 	PROC_SLOCK(p);
 	thread_stopped(p);
 	thread_exit();

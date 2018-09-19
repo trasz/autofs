@@ -103,6 +103,7 @@ struct ecore_ll2_tx_queue {
 	struct ecore_ll2_tx_packet	cur_completing_packet;
 	u16				cur_completing_bd_idx;
 	void OSAL_IOMEM			*doorbell_addr;
+	struct core_db_data		db_msg;
 	u16				bds_idx;
 	u16				cur_send_frag_num;
 	u16				cur_completing_frag_num;
@@ -111,21 +112,14 @@ struct ecore_ll2_tx_queue {
 
 struct ecore_ll2_info {
 	osal_mutex_t			mutex;
-	enum ecore_ll2_conn_type	conn_type;
+
+	struct ecore_ll2_acquire_data_inputs input;
 	u32				cid;
 	u8				my_id;
 	u8				queue_id;
 	u8				tx_stats_id;
 	bool				b_active;
-	u16				mtu;
-	u8				rx_drop_ttl0_flg;
-	u8				rx_vlan_removal_en;
-	u8				tx_tc;
-	u8				tx_max_bds_per_packet;
 	enum core_tx_dest		tx_dest;
-	enum core_error_handle		ai_err_packet_too_big;
-	enum core_error_handle		ai_err_no_buf;
-	u8				gsi_enable;
 	u8				tx_stats_en;
 	u8				main_func_queue;
 	struct ecore_ll2_rx_queue	rx_queue;
@@ -158,6 +152,7 @@ void ecore_ll2_setup(struct ecore_hwfn *p_hwfn);
 */
 void ecore_ll2_free(struct ecore_hwfn *p_hwfn);
 
+#ifndef LINUX_REMOVE
 /**
  * @brief ecore_ll2_get_fragment_of_tx_packet
  *
@@ -175,5 +170,6 @@ ecore_ll2_get_fragment_of_tx_packet(struct ecore_hwfn *p_hwfn,
 				    u8 connection_handle,
 				    dma_addr_t *addr,
 				    bool *last_fragment);
+#endif
 
 #endif /*__ECORE_LL2_H__*/

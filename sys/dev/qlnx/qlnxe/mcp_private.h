@@ -44,7 +44,9 @@
 #include "eth.h"
 #include "pmm.h"
 #include "ah_eth.h"
+#include "e5_eth.h"
 #endif
+#include "global.h"
 #include "mcp_public.h"
 
 typedef enum active_mf_mode {
@@ -66,7 +68,9 @@ enum ov_current_cfg {
 };
 
 struct dci_info_global {
-	enum ov_current_cfg current_cfg;
+	u16 mba_ver;
+	u8 current_cfg;
+	u8 extern_dci_mgmt;
 	u8 pci_bus_num;
 	u8 boot_progress;
 };
@@ -101,14 +105,16 @@ struct private_global {
 	u32 exp_rom_nvm_addr;
 
 	/* The pmm_config structure holds all active phy/link configuration */
-#ifndef RECOVERY
+#if (!defined MFW_SIM) && (!defined RECOVERY)
 #ifdef b900
 	struct pmm_config eth_cfg;
-#else
+#elif b940
 	struct ah_eth eth_cfg;
+#elif b510
+	struct e5_eth eth_cfg;
+#else
 #endif
 #endif
-
 	u32 lldp_counter;
 
 	u32 avs_init_timestamp;
@@ -120,8 +126,9 @@ struct private_global {
 
 	u32 drv_nvm_state;
 	/* Per PF bitmask */
-#define DRV_NVM_STATE_IN_PROGRESS_MASK		(0x0000ffff)
+#define DRV_NVM_STATE_IN_PROGRESS_MASK		(0x0001ffff)
 #define DRV_NVM_STATE_IN_PROGRESS_OFFSET	(0)
+#define DRV_NVM_STATE_IN_PROGRESS_VAL_MFW	(0x00010000)
 
 	u32 storm_fw_ver;
 
@@ -132,6 +139,18 @@ struct private_global {
 	struct res_alloc_cache res_alloc;
 #define G_RES_ALLOC_P	(&g_spad.private_data.global.res_alloc)
 	u32 resource_max_values[RESOURCE_MAX_NUM];
+	u32 glb_counter_100ms;
+	/*collection of global bits and controls*/
+	u32 flags_and_ctrl;
+#define PRV_GLOBAL_FIO_BMB_INITIATED_MASK				0x00000001
+#define PRV_GLOBAL_FIO_BMB_INITIATED_OFFSET				0
+#define PRV_GLOBAL_ENABLE_NET_THREAD_LONG_RUN_MASK		0x00000002
+#define PRV_GLOBAL_ENABLE_NET_THREAD_LONG_RUN_OFFSET	1
+
+#ifdef b900
+	u32 es_fir_engines : 8, es_fir_valid_bitmap : 8, es_l2_engines : 8, es_l2_valid_bitmap : 8;
+#endif
+	u64 ecc_events;
 };
 
 /**************************************/
@@ -144,11 +163,13 @@ struct private_path {
 #define RECOVERY_MAX_COUNTDOWN_SECONDS 2
 
 	u32 drv_load_vars; /* When the seconds_since_mcp_reset gets here */
+#define DRV_LOAD_DEF_TIMEOUT 10
 #define DRV_LOAD_TIMEOUT_MASK			0x0000ffff
-#define DRV_LOAD_TIMEOUT_SHIFT			0
+#define DRV_LOAD_TIMEOUT_OFFSET			0
 #define DRV_LOAD_NEED_FORCE_MASK		0xffff0000
-#define DRV_LOAD_NEED_FORCE_SHIFT		16
+#define DRV_LOAD_NEED_FORCE_OFFSET		16
 	struct load_rsp_stc drv_load_params;
+	u64 ecc_events;
 };
 
 
@@ -164,21 +185,25 @@ struct drv_port_info_t {
 
 	/* There are maximum 8 PFs per port */
 #define DRV_STATE_LOADED_MASK                       0x0000ff00
-#define DRV_STATE_LOADED_SHIFT                      8
+#define DRV_STATE_LOADED_OFFSET                      8
 
 #define DRV_STATE_PF_TRANSITION_MASK                0x00ff0000
-#define DRV_STATE_PF_TRANSITION_SHIFT               16
+#define DRV_STATE_PF_TRANSITION_OFFSET               16
 
 #define DRV_STATE_PF_PHY_INIT_MASK	                 0xff000000
-#define DRV_STATE_PF_PHY_INIT_SHIFT                 24
+#define DRV_STATE_PF_PHY_INIT_OFFSET                 24
 };
 
 typedef enum _lldp_subscriber_e {
 	LLDP_SUBSCRIBER_MANDATORY = 0,
+	LLDP_SUBSCRIBER_SYSTEM,
 	LLDP_SUBSCRIBER_DCBX_IEEE,
 	LLDP_SUBSCRIBER_DCBX_CEE,
 	LLDP_SUBSCRIBER_EEE,
+	LLDP_SUBSCRIBER_CDCP,
 	LLDP_SUBSCRIBER_DCI,
+	LLDP_SUBSCRIBER_UFP,
+	LLDP_SUBSCRIBER_NCSI,
 	MAX_SUBSCRIBERS
 } lldp_subscriber_e;
 
@@ -186,9 +211,9 @@ typedef struct {
 	u16 valid;
 	u16 type_len;
 #define LLDP_LEN_MASK           (0x01ff)
-#define LLDP_LEN_SHIFT          (0)
+#define LLDP_LEN_OFFSET          (0)
 #define LLDP_TYPE_MASK          (0xfe00)
-#define LLDP_TYPE_SHIFT         (9)
+#define LLDP_TYPE_OFFSET         (9)
 	u8 *value_p;
 } tlv_s;
 
@@ -211,10 +236,9 @@ typedef struct {
 } subscriber_callback_receive_s;
 
 #define MAX_ETH_HEADER      14  /* TODO: to be extended per requirements */
-#define MAX_PACKET_SIZE     (1516)  /* So it can be divided by 4 */
+#define MAX_PACKET_SIZE     (1516)  /* So it can be devided by 4 */
 #define LLDP_CHASSIS_ID_TLV_LEN     7
 #define LLDP_PORT_ID_TLV_LEN     7
-#define MAX_TLV_BUFFER		128 /* In dwords. 512 in bytes*/
 typedef struct {
 	u16 len;
 	u8 header[MAX_ETH_HEADER];
@@ -239,24 +263,24 @@ typedef struct {
 	u8 *received_tlvs[MAX_TLVS];
 } lldp_receive_data_s;
 
-#define MAX_REGISTERED_TLVS	6
+#define MAX_REGISTERED_TLVS	12
 
 typedef struct {
 	u32 config; /* Uses same defines as local config plus some more below*/
 #define DCBX_MODE_MASK				0x00000010
-#define DCBX_MODE_SHIFT				4
+#define DCBX_MODE_OFFSET				4
 #define DCBX_MODE_DRIVER			0
 #define DCBX_MODE_DEFAULT			1
 #define DCBX_CHANGED_MASK			0x00000f00
-#define DCBX_CHANGED_SHIFT			8
+#define DCBX_CHANGED_OFFSET			8
 #define DCBX_CONTROL_CHANGED_MASK		0x00000100
-#define DCBX_CONTROL_CHANGED_SHIFT		8
+#define DCBX_CONTROL_CHANGED_OFFSET		8
 #define DCBX_PFC_CHANGED_MASK			0x00000200
-#define DCBX_PFC_CHANGED_SHIFT			9
+#define DCBX_PFC_CHANGED_OFFSET			9
 #define DCBX_ETS_CHANGED_MASK			0x00000400
-#define DCBX_ETS_CHANGED_SHIFT			10
+#define DCBX_ETS_CHANGED_OFFSET			10
 #define DCBX_APP_CHANGED_MASK			0x00000800
-#define DCBX_APP_CHANGED_SHIFT			11
+#define DCBX_APP_CHANGED_OFFSET			11
 
 	u32 seq_no;
 	u32 ack_no;
@@ -268,17 +292,100 @@ typedef struct {
 #ifdef CONFIG_HP_DCI_SUPPORT
 struct dci_info_port {
 	u32 config;
-#define DCI_PORT_CFG_ENABLE_SHIFT		(0)
-#define DCI_PORT_CFG_ENABLE_MASK		(1 << DCI_PORT_CFG_ENABLE_SHIFT)
-#define DCI_PORT_CFG_ENABLE_DIAG_SHIFT		(1)
-#define DCI_PORT_CFG_ENABLE_DIAG_MASK		(1 << DCI_PORT_CFG_ENABLE_DIAG_SHIFT)
-#define DCI_PORT_CFG_DIAG_L_LOOP_SHIFT		(2)
-#define DCI_PORT_CFG_DIAG_L_LOOP_MASK		(1 << DCI_PORT_CFG_DIAG_L_LOOP_SHIFT)
-#define DCI_PORT_CFG_DIAG_R_LOOP_SHIFT		(3)
-#define DCI_PORT_CFG_DIAG_R_LOOP_MASK		(1 << DCI_PORT_CFG_DIAG_R_LOOP_SHIFT)
+#define DCI_PORT_CFG_ENABLE_OFFSET		(0)
+#define DCI_PORT_CFG_ENABLE_MASK		(1 << DCI_PORT_CFG_ENABLE_OFFSET)
+#define DCI_PORT_CFG_ENABLE_DIAG_OFFSET		(1)
+#define DCI_PORT_CFG_ENABLE_DIAG_MASK		(1 << DCI_PORT_CFG_ENABLE_DIAG_OFFSET)
+#define DCI_PORT_CFG_DIAG_L_LOOP_OFFSET		(2)
+#define DCI_PORT_CFG_DIAG_L_LOOP_MASK		(1 << DCI_PORT_CFG_DIAG_L_LOOP_OFFSET)
+#define DCI_PORT_CFG_DIAG_R_LOOP_OFFSET		(3)
+#define DCI_PORT_CFG_DIAG_R_LOOP_MASK		(1 << DCI_PORT_CFG_DIAG_R_LOOP_OFFSET)
 
 };
 #endif
+
+struct lldp_cdcp {
+	u32 flags;
+#define	NTPMR_TTL_EXPIRED		0x00000001
+#define CDCP_TLV_RCVD			0x00000002
+#define CDCP_TLV_SENT			0x00000004
+
+	u32 remote_mib;
+#define CDCP_ROLE_MASK			0x00000001
+#define CDCP_ROLE_OFFSET			0
+#define CDCP_ROLE_BRIDGE		0x0
+#define CDCP_ROLE_STATION		0x1
+
+#define CDCP_SCOMP_MASK			0x00000002
+#define CDCP_SCOMP_OFFSET		1
+
+#define CDCP_CHAN_CAP_MASK		0x0000fff0
+#define CDCP_CHAN_CAP_OFFSET		4
+
+	u32 num_of_chan;
+};
+
+/* Accommodates link-tlv size for max-pf scids (27) + end-of-tlv size (2) */
+#define UFP_REQ_MAX_PAYLOAD_SIZE		(32)
+
+/* Accommodates max-NIC props-tlv-size (117:5 +(16*7)), link-tlv (27),
+ * end-tlv (2).
+ */
+#define UFP_RSP_MAX_PAYLOAD_SIZE		(160)
+struct ufp_info_port {
+	u8 req_payload[UFP_REQ_MAX_PAYLOAD_SIZE];
+	u8 rsp_payload[UFP_RSP_MAX_PAYLOAD_SIZE];
+	u16 req_len;
+	u16 rsp_len;
+	u8 switch_version;
+	u8 switch_status;
+	u8 flags;
+#define UFP_CAP_ENABLED			(1 << 0)
+#define UFP_REQ_SENT			(1 << 1)
+#define UFP_RSP_SENT			(1 << 2)
+#define UFP_CAP_SENT			(1 << 3)
+	u8 pending_flags;
+#define UFP_REQ_PENDING			(1 << 0)
+#define UFP_RSP_PENDING			(1 << 1)
+};
+
+#define UFP_ENABLED(_port_)			\
+	(g_spad.private_data.port[_port_].ufp_port.flags & UFP_CAP_ENABLED)
+
+/* Max 200-byte packet, accommodates UFP_RSP_MAX_PAYLOAD_SIZE */
+#define ECP_MAX_PKT_SIZE		(200)
+
+/* Tx-state machine, Qbg variable names specified in comments on the right */
+struct ecp_tx_state {
+	u8 tx_pkt[ECP_MAX_PKT_SIZE];
+	BOOL ulp_req_rcvd;	/* requestReceived */
+	BOOL ack_rcvd;		/* ackReceived */
+	u16 req_seq_num;	/* sequence */
+
+	/* State used for timer-based retries */
+	u16 ack_timer_counter;
+#define ECP_TIMEOUT_COUNT		1	/* 1 second to detect ACK timeout */
+	u16 num_retries;	/* retries */
+#define ECP_MAX_RETRIES			3
+	u32 tx_errors;		/* txErrors */
+	u32 ulp_pkt_len;
+};
+
+typedef void (*ulp_rx_indication_t)(u8 port, u16 subtype, u32 pkt_len, u8 *pkt);
+/* Rx state machine, Qbg variable names specified in comments on the right */
+struct ecp_rx_state {
+	BOOL ecpdu_rcvd;	/* ecpduReceived */
+	u16 last_req_seq;	/* lastSeq */
+	u8 first_req_rcvd;
+	u8 rsvd;
+	ulp_rx_indication_t rx_cb_func;
+};
+
+struct ecp_state_s {
+	struct ecp_tx_state tx_state;
+	struct ecp_rx_state rx_state;
+	u16 subtype;
+};
 
 struct private_port {
 	struct drv_port_info_t port_info;
@@ -297,15 +404,21 @@ struct private_port {
 	u32 nig_drain_end_ts;
 	/* time stamp of the end of NIG drain time for the TC pause drain, this timer is used togther for all TC */
 	u32 nig_drain_tc_end_ts;
-	u32 tc_drain_en_bitmap;
-	u32 recv_lldp_tlvs[LLDP_MAX_LLDP_AGENTS][MAX_TLV_BUFFER];
+	u32 tc_drain_en_bitmap;	
 	tlv_s lldp_core_tlv_desc[LLDP_MAX_LLDP_AGENTS][MAX_REGISTERED_TLVS];
 	u8 current_core_tlv_num[LLDP_MAX_LLDP_AGENTS];
 	struct mcp_mac lldp_mac;
 #ifdef CONFIG_HP_DCI_SUPPORT
 	struct dci_info_port dci_port;
 #endif
+	struct lldp_cdcp cdcp_info;
+	struct ufp_info_port ufp_port;
+	struct ecp_state_s ecp_info;
+	struct lldp_stats_stc lldp_stats[LLDP_MAX_LLDP_AGENTS];
 	u32 temperature;
+	u8 prev_ext_lasi_status;
+	u8 rsvd1;
+	u16 rsvd2;
 
 };
 
@@ -339,26 +452,28 @@ struct drv_func_info_t {
 
 	u8_t unload_wol_param; /* See drv_mb_param */
 	u8_t eswitch_mode;
+	u8_t ppfid_bmp;
 };
 
 struct dci_info_func {
 	u8 config;
-#define DCI_FUNC_CFG_FNIC_ENABLE_SHIFT		(0)
-#define DCI_FUNC_CFG_FNIC_ENABLE_MASK		(1 << DCI_FUNC_CFG_FNIC_ENABLE_SHIFT)
-#define DCI_FUNC_CFG_OS_MTU_OVERRIDE_SHIFT	(1)
-#define DCI_FUNC_CFG_OS_MTU_OVERRIDE_MASK	(1 << DCI_FUNC_CFG_OS_MTU_OVERRIDE_SHIFT)
-#define DCI_FUNC_CFG_DIAG_WOL_ENABLE_SHIFT	(2)
-#define DCI_FUNC_CFG_DIAG_WOL_ENABLE_MASK	(1 << DCI_FUNC_CFG_DIAG_WOL_ENABLE_SHIFT)
+#define DCI_FUNC_CFG_FNIC_ENABLE_OFFSET		(0)
+#define DCI_FUNC_CFG_FNIC_ENABLE_MASK		(1 << DCI_FUNC_CFG_FNIC_ENABLE_OFFSET)
+#define DCI_FUNC_CFG_OS_MTU_OVERRIDE_OFFSET	(1)
+#define DCI_FUNC_CFG_OS_MTU_OVERRIDE_MASK	(1 << DCI_FUNC_CFG_OS_MTU_OVERRIDE_OFFSET)
+#define DCI_FUNC_CFG_DIAG_WOL_ENABLE_OFFSET	(2)
+#define DCI_FUNC_CFG_DIAG_WOL_ENABLE_MASK	(1 << DCI_FUNC_CFG_DIAG_WOL_ENABLE_OFFSET)
 
 	u8 drv_state;
 	u16 fcoe_cvid;
 	u8 fcoe_fabric_name[8];
+#define CONNECTION_ID_LENGTH			16
+	u8 local_conn_id[CONNECTION_ID_LENGTH];
 };
 
 struct private_func {
 	struct drv_func_info_t func_info;
 	u32 init_hw_page;
-	u32 num_of_msix;
 	struct pf_sb_t sb;
 	struct dci_info_func dci_func;
 };

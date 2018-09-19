@@ -28,7 +28,6 @@
  *
  */
 
-
 #ifndef __ECORE_INT_H__
 #define __ECORE_INT_H__
 
@@ -42,7 +41,7 @@
 #define ECORE_SB_EVENT_MASK	0x0003
 
 #define SB_ALIGNED_SIZE(p_hwfn)					\
-	ALIGNED_TYPE_SIZE(struct status_block, p_hwfn)
+	ALIGNED_TYPE_SIZE(struct status_block_e4, p_hwfn)
 
 #define ECORE_SB_INVALID_IDX	0xffff
 
@@ -286,6 +285,9 @@ enum _ecore_status_t ecore_int_set_timer_res(struct ecore_hwfn *p_hwfn,
 #else
 #define ECORE_MAPPING_MEMORY_SIZE(dev) NUM_OF_SBS(dev)
 #endif
+
+enum _ecore_status_t ecore_pglueb_rbc_attn_handler(struct ecore_hwfn *p_hwfn,
+						   struct ecore_ptt *p_ptt);
 
 #endif /* __ECORE_INT_H__ */
 

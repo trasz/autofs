@@ -117,6 +117,18 @@ int	bootverbose = BOOTVERBOSE;
 SYSCTL_INT(_debug, OID_AUTO, bootverbose, CTLFLAG_RW, &bootverbose, 0,
 	"Control the output of verbose kernel messages");
 
+#ifdef VERBOSE_SYSINIT
+/*
+ * We'll use the defined value of VERBOSE_SYSINIT from the kernel config to
+ * dictate the default VERBOSE_SYSINIT behavior.  Significant values for this
+ * option and associated tunable are:
+ * - 0, 'compiled in but silent by default'
+ * - 1, 'compiled in but verbose by default' (default)
+ */
+int	verbose_sysinit = VERBOSE_SYSINIT;
+TUNABLE_INT("debug.verbose_sysinit", &verbose_sysinit);
+#endif
+
 #ifdef INVARIANTS
 FEATURE(invariants, "Kernel compiled with INVARIANTS, may affect performance");
 #endif
@@ -135,6 +147,11 @@ SYSINIT(placeholder, SI_SUB_DUMMY, SI_ORDER_ANY, NULL, NULL);
 SET_DECLARE(sysinit_set, struct sysinit);
 struct sysinit **sysinit, **sysinit_end;
 struct sysinit **newsysinit, **newsysinit_end;
+
+EVENTHANDLER_LIST_DECLARE(process_init);
+EVENTHANDLER_LIST_DECLARE(thread_init);
+EVENTHANDLER_LIST_DECLARE(process_ctor);
+EVENTHANDLER_LIST_DECLARE(thread_ctor);
 
 /*
  * Merge a new sysinit set into the current set, reallocating it if
@@ -259,7 +276,7 @@ restart:
 			continue;
 
 #if defined(VERBOSE_SYSINIT)
-		if ((*sipp)->subsystem > last) {
+		if ((*sipp)->subsystem > last && verbose_sysinit != 0) {
 			verbose = 1;
 			last = (*sipp)->subsystem;
 			printf("subsystem %x\n", last);
@@ -369,8 +386,7 @@ SYSINIT(diagwarn2, SI_SUB_LAST, SI_ORDER_THIRD + 2,
 #endif
 
 static int
-null_fetch_syscall_args(struct thread *td __unused,
-    struct syscall_args *sa __unused)
+null_fetch_syscall_args(struct thread *td __unused)
 {
 
 	panic("null_fetch_syscall_args");
@@ -586,10 +602,10 @@ proc0_init(void *dummy __unused)
 	 * Call the init and ctor for the new thread and proc.  We wait
 	 * to do this until all other structures are fairly sane.
 	 */
-	EVENTHANDLER_INVOKE(process_init, p);
-	EVENTHANDLER_INVOKE(thread_init, td);
-	EVENTHANDLER_INVOKE(process_ctor, p);
-	EVENTHANDLER_INVOKE(thread_ctor, td);
+	EVENTHANDLER_DIRECT_INVOKE(process_init, p);
+	EVENTHANDLER_DIRECT_INVOKE(thread_init, td);
+	EVENTHANDLER_DIRECT_INVOKE(process_ctor, p);
+	EVENTHANDLER_DIRECT_INVOKE(thread_ctor, td);
 
 	/*
 	 * Charge root for one process.
@@ -616,17 +632,23 @@ proc0_post(void *dummy __unused)
 	 */
 	sx_slock(&allproc_lock);
 	FOREACH_PROC_IN_SYSTEM(p) {
+		PROC_LOCK(p);
+		if (p->p_state == PRS_NEW) {
+			PROC_UNLOCK(p);
+			continue;
+		}
 		microuptime(&p->p_stats->p_start);
 		PROC_STATLOCK(p);
 		rufetch(p, &ru);	/* Clears thread stats */
-		PROC_STATUNLOCK(p);
 		p->p_rux.rux_runtime = 0;
 		p->p_rux.rux_uticks = 0;
 		p->p_rux.rux_sticks = 0;
 		p->p_rux.rux_iticks = 0;
+		PROC_STATUNLOCK(p);
 		FOREACH_THREAD_IN_PROC(p, td) {
 			td->td_runtime = 0;
 		}
+		PROC_UNLOCK(p);
 	}
 	sx_sunlock(&allproc_lock);
 	PCPU_SET(switchtime, cpu_ticks());

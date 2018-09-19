@@ -88,7 +88,7 @@
 #define CORE_SPQE_PAGE_SIZE_BYTES			4096
 
 /*
- * Usually LL2 queues are opened in pairs TX-RX.
+ * Usually LL2 queues are opened in pairs – TX-RX.
  * There is a hard restriction on number of RX queues (limited by Tstorm RAM) and TX counters (Pstorm RAM).
  * Number of TX queues is almost unlimited.
  * The constants are different so as to allow asymmetric LL2 connections
@@ -99,13 +99,13 @@
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-// Include firmware version number only- do not add constants here to avoid redundunt compilations
+// Include firmware verison number only- do not add constants here to avoid redundunt compilations
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 
 #define FW_MAJOR_VERSION		8
-#define FW_MINOR_VERSION		18
-#define FW_REVISION_VERSION		14
+#define FW_MINOR_VERSION		33
+#define FW_REVISION_VERSION		7
 #define FW_ENGINEERING_VERSION	0
 
 /***********************/
@@ -113,76 +113,69 @@
 /***********************/
 
 /* PCI functions */
-#define MAX_NUM_PORTS_K2		(4)
-#define MAX_NUM_PORTS_BB		(2)
-#define MAX_NUM_PORTS			(MAX_NUM_PORTS_K2)
+#define MAX_NUM_PORTS_BB        (2)
+#define MAX_NUM_PORTS_K2        (4)
+#define MAX_NUM_PORTS_E5        (4)
+#define MAX_NUM_PORTS           (MAX_NUM_PORTS_E5)
 
-#define MAX_NUM_PFS_K2			(16)
-#define MAX_NUM_PFS_BB			(8)
-#define MAX_NUM_PFS				(MAX_NUM_PFS_K2)
-#define MAX_NUM_OF_PFS_IN_CHIP	(16) /* On both engines */
+#define MAX_NUM_PFS_BB          (8)
+#define MAX_NUM_PFS_K2          (16)
+#define MAX_NUM_PFS_E5          (16)
+#define MAX_NUM_PFS             (MAX_NUM_PFS_E5)
+#define MAX_NUM_OF_PFS_IN_CHIP  (16) /* On both engines */
 
-#define MAX_NUM_VFS_BB			(120)
-#define MAX_NUM_VFS_K2			(192)
-#define E4_MAX_NUM_VFS			(MAX_NUM_VFS_K2)
-#define E5_MAX_NUM_VFS			(240)
-#define COMMON_MAX_NUM_VFS		(E5_MAX_NUM_VFS)
+#define MAX_NUM_VFS_BB          (120)
+#define MAX_NUM_VFS_K2          (192)
+#define MAX_NUM_VFS_E4          (MAX_NUM_VFS_K2)
+#define MAX_NUM_VFS_E5          (240)
+#define COMMON_MAX_NUM_VFS      (MAX_NUM_VFS_E5)
 
-#define MAX_NUM_FUNCTIONS_BB	(MAX_NUM_PFS_BB + MAX_NUM_VFS_BB)
-#define MAX_NUM_FUNCTIONS_K2	(MAX_NUM_PFS_K2 + MAX_NUM_VFS_K2)
-#define MAX_NUM_FUNCTIONS		(MAX_NUM_PFS + E4_MAX_NUM_VFS)
+#define MAX_NUM_FUNCTIONS_BB    (MAX_NUM_PFS_BB + MAX_NUM_VFS_BB)
+#define MAX_NUM_FUNCTIONS_K2    (MAX_NUM_PFS_K2 + MAX_NUM_VFS_K2)
+#define MAX_NUM_FUNCTIONS       (MAX_NUM_PFS + MAX_NUM_VFS_E4)
 
 /* in both BB and K2, the VF number starts from 16. so for arrays containing all */
 /* possible PFs and VFs - we need a constant for this size */
-#define MAX_FUNCTION_NUMBER_BB	(MAX_NUM_PFS + MAX_NUM_VFS_BB)
-#define MAX_FUNCTION_NUMBER_K2	(MAX_NUM_PFS + MAX_NUM_VFS_K2)
-#define MAX_FUNCTION_NUMBER		(MAX_NUM_PFS + E4_MAX_NUM_VFS)
+#define MAX_FUNCTION_NUMBER_BB      (MAX_NUM_PFS + MAX_NUM_VFS_BB)
+#define MAX_FUNCTION_NUMBER_K2      (MAX_NUM_PFS + MAX_NUM_VFS_K2)
+#define MAX_FUNCTION_NUMBER_E4      (MAX_NUM_PFS + MAX_NUM_VFS_E4)
+#define MAX_FUNCTION_NUMBER_E5      (MAX_NUM_PFS + MAX_NUM_VFS_E5)
+#define COMMON_MAX_FUNCTION_NUMBER  (MAX_NUM_PFS + MAX_NUM_VFS_E5)
 
-#define MAX_NUM_VPORTS_K2		(208)
-#define MAX_NUM_VPORTS_BB		(160)
-#define MAX_NUM_VPORTS			(MAX_NUM_VPORTS_K2)
+#define MAX_NUM_VPORTS_K2       (208)
+#define MAX_NUM_VPORTS_BB       (160)
+#define MAX_NUM_VPORTS_E4       (MAX_NUM_VPORTS_K2)
+#define MAX_NUM_VPORTS_E5       (256)
+#define COMMON_MAX_NUM_VPORTS   (MAX_NUM_VPORTS_E5)
 
-#define MAX_NUM_L2_QUEUES_K2	(320)
 #define MAX_NUM_L2_QUEUES_BB	(256)
-#define MAX_NUM_L2_QUEUES		(MAX_NUM_L2_QUEUES_K2)
+#define MAX_NUM_L2_QUEUES_K2    (320)
+#define MAX_NUM_L2_QUEUES_E5    (320) /* TODO_E5_VITALY - fix to 512 */
+#define MAX_NUM_L2_QUEUES		(MAX_NUM_L2_QUEUES_E5)
 
 /* Traffic classes in network-facing blocks (PBF, BTB, NIG, BRB, PRS and QM) */
-// 4-Port K2.
-#define NUM_PHYS_TCS_4PORT_K2	(4)
-#define NUM_OF_PHYS_TCS			(8)
-
-#define NUM_TCS_4PORT_K2		(NUM_PHYS_TCS_4PORT_K2 + 1)
-#define NUM_OF_TCS				(NUM_OF_PHYS_TCS + 1)
-
-#define LB_TC					(NUM_OF_PHYS_TCS)
-
-/* Num of possible traffic priority values */
-#define NUM_OF_PRIO				(8)
-
-#define MAX_NUM_VOQS_K2			(NUM_TCS_4PORT_K2 * MAX_NUM_PORTS_K2)
-#define MAX_NUM_VOQS_BB         (NUM_OF_TCS * MAX_NUM_PORTS_BB)
-#define MAX_NUM_VOQS			(MAX_NUM_VOQS_K2)
-#define MAX_PHYS_VOQS			(NUM_OF_PHYS_TCS * MAX_NUM_PORTS_BB)
+#define NUM_PHYS_TCS_4PORT_K2     4
+#define NUM_PHYS_TCS_4PORT_TX_E5  6
+#define NUM_PHYS_TCS_4PORT_RX_E5  4
+#define NUM_OF_PHYS_TCS           8
+#define PURE_LB_TC                NUM_OF_PHYS_TCS
+#define NUM_TCS_4PORT_K2          (NUM_PHYS_TCS_4PORT_K2 + 1)
+#define NUM_TCS_4PORT_TX_E5       (NUM_PHYS_TCS_4PORT_TX_E5 + 1)
+#define NUM_TCS_4PORT_RX_E5       (NUM_PHYS_TCS_4PORT_RX_E5 + 1)
+#define NUM_OF_TCS                (NUM_OF_PHYS_TCS + 1)
 
 /* CIDs */
-#define E4_NUM_OF_CONNECTION_TYPES (8)
-#define E5_NUM_OF_CONNECTION_TYPES (16)
-#define NUM_OF_TASK_TYPES		(8)
-#define NUM_OF_LCIDS			(320)
-#define NUM_OF_LTIDS			(320)
-
-/* Clock values */
-#define MASTER_CLK_FREQ_E4		(375e6)
-#define STORM_CLK_FREQ_E4		(1000e6)
-#define CLK25M_CLK_FREQ_E4		(25e6)
-
-#define STORM_CLK_DUAL_CORE_FREQ_E5 (3000e6)
+#define NUM_OF_CONNECTION_TYPES_E4 (8)
+#define NUM_OF_CONNECTION_TYPES_E5 (16)
+#define NUM_OF_TASK_TYPES       (8)
+#define NUM_OF_LCIDS            (320)
+#define NUM_OF_LTIDS            (320)
 
 /* Global PXP windows (GTT) */
-#define NUM_OF_GTT			19
-#define GTT_DWORD_SIZE_BITS	10
-#define GTT_BYTE_SIZE_BITS	(GTT_DWORD_SIZE_BITS + 2)
-#define GTT_DWORD_SIZE		(1 << GTT_DWORD_SIZE_BITS)
+#define NUM_OF_GTT          19
+#define GTT_DWORD_SIZE_BITS 10
+#define GTT_BYTE_SIZE_BITS  (GTT_DWORD_SIZE_BITS + 2)
+#define GTT_DWORD_SIZE      (1 << GTT_DWORD_SIZE_BITS)
 
 /* Tools Version */
 #define TOOLS_VERSION 10
@@ -375,11 +368,13 @@
 /* number of TX queues in the QM */
 #define MAX_QM_TX_QUEUES_K2			512
 #define MAX_QM_TX_QUEUES_BB			448
+#define MAX_QM_TX_QUEUES_E5			MAX_QM_TX_QUEUES_K2
 #define MAX_QM_TX_QUEUES			MAX_QM_TX_QUEUES_K2
 
 /* number of Other queues in the QM */
 #define MAX_QM_OTHER_QUEUES_BB		64
 #define MAX_QM_OTHER_QUEUES_K2		128
+#define MAX_QM_OTHER_QUEUES_E5		MAX_QM_OTHER_QUEUES_K2
 #define MAX_QM_OTHER_QUEUES			MAX_QM_OTHER_QUEUES_K2
 
 /* number of queues in a PF queue group */
@@ -413,7 +408,9 @@
 #define CAU_FSM_ETH_TX  1
 
 /* Number of Protocol Indices per Status Block */
-#define PIS_PER_SB    12  
+#define PIS_PER_SB_E4    12
+#define PIS_PER_SB_E5    8
+#define MAX_PIS_PER_SB	 OSAL_MAX_T(PIS_PER_SB_E4,PIS_PER_SB_E5)
 
 
 #define CAU_HC_STOPPED_STATE		3			/* fsm is stopped or not valid for this sb */
@@ -427,7 +424,8 @@
 
 #define MAX_SB_PER_PATH_K2					(368)
 #define MAX_SB_PER_PATH_BB					(288)
-#define MAX_TOT_SB_PER_PATH					MAX_SB_PER_PATH_K2
+#define MAX_SB_PER_PATH_E5					(512)
+#define MAX_TOT_SB_PER_PATH					MAX_SB_PER_PATH_E5
 
 #define MAX_SB_PER_PF_MIMD					129
 #define MAX_SB_PER_PF_SIMD					64
@@ -543,10 +541,6 @@
 /* VF BAR */
 #define PXP_VF_BAR0                             0
 
-#define PXP_VF_BAR0_START_GRC                   0x3E00
-#define PXP_VF_BAR0_GRC_LENGTH                  0x200
-#define PXP_VF_BAR0_END_GRC                     (PXP_VF_BAR0_START_GRC + PXP_VF_BAR0_GRC_LENGTH - 1)
-
 #define PXP_VF_BAR0_START_IGU                   0
 #define PXP_VF_BAR0_IGU_LENGTH                  0x3000
 #define PXP_VF_BAR0_END_IGU                     (PXP_VF_BAR0_START_IGU + PXP_VF_BAR0_IGU_LENGTH - 1)
@@ -577,8 +571,16 @@
 #define PXP_VF_BAR0_START_PSDM_ZONE_B           0x3c00
 #define PXP_VF_BAR0_END_PSDM_ZONE_B             (PXP_VF_BAR0_START_PSDM_ZONE_B + PXP_VF_BAR0_SDM_LENGTH_ZONE_B - 1)
 
+#define PXP_VF_BAR0_START_GRC                   0x3E00
+#define PXP_VF_BAR0_GRC_LENGTH                  0x200
+#define PXP_VF_BAR0_END_GRC                     (PXP_VF_BAR0_START_GRC + PXP_VF_BAR0_GRC_LENGTH - 1)
+
 #define PXP_VF_BAR0_START_SDM_ZONE_A            0x4000
 #define PXP_VF_BAR0_END_SDM_ZONE_A              0x10000
+
+#define PXP_VF_BAR0_START_IGU2                   0x10000
+#define PXP_VF_BAR0_IGU2_LENGTH                  0xD000
+#define PXP_VF_BAR0_END_IGU2                     (PXP_VF_BAR0_START_IGU2 + PXP_VF_BAR0_IGU2_LENGTH - 1)
 
 #define PXP_VF_BAR0_GRC_WINDOW_LENGTH           32
 
@@ -588,13 +590,14 @@
 // ILT Records
 #define PXP_NUM_ILT_RECORDS_BB 7600
 #define PXP_NUM_ILT_RECORDS_K2 11000
-#define MAX_NUM_ILT_RECORDS MAX(PXP_NUM_ILT_RECORDS_BB,PXP_NUM_ILT_RECORDS_K2)
+#define MAX_NUM_ILT_RECORDS OSAL_MAX_T(PXP_NUM_ILT_RECORDS_BB,PXP_NUM_ILT_RECORDS_K2)
+
+#define PXP_NUM_ILT_RECORDS_E5 13664
 
 
 // Host Interface
-#define PXP_QUEUES_ZONE_MAX_NUM	320
-
-
+#define PXP_QUEUES_ZONE_MAX_NUM_E4	320
+#define PXP_QUEUES_ZONE_MAX_NUM_E5	512
 
 
 /*****************/
@@ -633,7 +636,8 @@
 /******************/
 
 /* Number of PBF command queue lines. Each line is 32B. */
-#define PBF_MAX_CMD_LINES 3328 
+#define PBF_MAX_CMD_LINES_E4 3328 
+#define PBF_MAX_CMD_LINES_E5 5280  
 
 /* Number of BTB blocks. Each block is 256B. */
 #define BTB_MAX_BLOCKS 1440
@@ -643,18 +647,6 @@
 /*****************/
 
 #define PRS_GFT_CAM_LINES_NO_MATCH  31
-
-/*
- * Async data KCQ CQE 
- */
-struct async_data
-{
-	__le32 cid /* Context ID of the connection */;
-	__le16 itid /* Task Id of the task (for error that happened on a a task) */;
-	u8 error_code /* error code - relevant only if the opcode indicates its an error */;
-	u8 fw_debug_param /* internal fw debug parameter */;
-};
-
 
 /*
  * Interrupt coalescing TimeSet
@@ -686,24 +678,30 @@ struct eth_rx_prod_data
 };
 
 
-struct regpair
+struct tcp_ulp_connect_done_params
 {
-	__le32 lo /* low word for reg-pair */;
-	__le32 hi /* high word for reg-pair */;
+	__le16 mss;
+	u8 snd_wnd_scale;
+	u8 flags;
+#define TCP_ULP_CONNECT_DONE_PARAMS_TS_EN_MASK     0x1
+#define TCP_ULP_CONNECT_DONE_PARAMS_TS_EN_SHIFT    0
+#define TCP_ULP_CONNECT_DONE_PARAMS_RESERVED_MASK  0x7F
+#define TCP_ULP_CONNECT_DONE_PARAMS_RESERVED_SHIFT 1
 };
 
-/*
- * Event Ring VF-PF Channel data
- */
-struct vf_pf_channel_eqe_data
+struct iscsi_connect_done_results
 {
-	struct regpair msg_addr /* VF-PF message address */;
+	__le16 icid /* Context ID of the connection */;
+	__le16 conn_id /* Driver connection ID */;
+	struct tcp_ulp_connect_done_params params /* decided tcp params after connect done */;
 };
+
 
 struct iscsi_eqe_data
 {
-	__le32 cid /* Context ID of the connection */;
-	__le16 conn_id /* Task Id of the task (for error that happened on a a task) */;
+	__le16 icid /* Context ID of the connection */;
+	__le16 conn_id /* Driver connection ID */;
+	__le16 reserved;
 	u8 error_code /* error code - relevant only if the opcode indicates its an error */;
 	u8 error_pdu_opcode_reserved;
 #define ISCSI_EQE_DATA_ERROR_PDU_OPCODE_MASK        0x3F /* The processed PDUs opcode on which happened the error - updated for specific error codes, by defualt=0xFF */
@@ -713,78 +711,6 @@ struct iscsi_eqe_data
 #define ISCSI_EQE_DATA_RESERVED0_MASK               0x1
 #define ISCSI_EQE_DATA_RESERVED0_SHIFT              7
 };
-
-/*
- * RoCE Destroy Event Data
- */
-struct rdma_eqe_destroy_qp
-{
-	__le32 cid /* Dedicated field RoCE destroy QP event */;
-	u8 reserved[4];
-};
-
-/*
- * RDMA Event Data Union
- */
-union rdma_eqe_data
-{
-	struct regpair async_handle /* Host handle for the Async Completions */;
-	struct rdma_eqe_destroy_qp rdma_destroy_qp_data /* RoCE Destroy Event Data */;
-};
-
-/*
- * Event Ring malicious VF data
- */
-struct malicious_vf_eqe_data
-{
-	u8 vfId /* Malicious VF ID */;
-	u8 errId /* Malicious VF error */;
-	__le16 reserved[3];
-};
-
-/*
- * Event Ring initial cleanup data
- */
-struct initial_cleanup_eqe_data
-{
-	u8 vfId /* VF ID */;
-	u8 reserved[7];
-};
-
-/*
- * Event Data Union
- */
-union event_ring_data
-{
-	u8 bytes[8] /* Byte Array */;
-	struct vf_pf_channel_eqe_data vf_pf_channel /* VF-PF Channel data */;
-	struct iscsi_eqe_data iscsi_info /* Dedicated fields to iscsi data */;
-	union rdma_eqe_data rdma_data /* Dedicated field for RDMA data */;
-	struct malicious_vf_eqe_data malicious_vf /* Malicious VF data */;
-	struct initial_cleanup_eqe_data vf_init_cleanup /* VF Initial Cleanup data */;
-};
-
-
-/*
- * Event Ring Entry
- */
-struct event_ring_entry
-{
-	u8 protocol_id /* Event Protocol ID */;
-	u8 opcode /* Event Opcode */;
-	__le16 reserved0 /* Reserved */;
-	__le16 echo /* Echo value from ramrod data on the host */;
-	u8 fw_return_code /* FW return code for SP ramrods */;
-	u8 flags;
-#define EVENT_RING_ENTRY_ASYNC_MASK      0x1 /* 0: synchronous EQE - a completion of SP message. 1: asynchronous EQE */
-#define EVENT_RING_ENTRY_ASYNC_SHIFT     0
-#define EVENT_RING_ENTRY_RESERVED1_MASK  0x7F
-#define EVENT_RING_ENTRY_RESERVED1_SHIFT 1
-	union event_ring_data data;
-};
-
-
-
 
 
 /*
@@ -818,6 +744,31 @@ enum protocol_type
 };
 
 
+struct regpair
+{
+	__le32 lo /* low word for reg-pair */;
+	__le32 hi /* high word for reg-pair */;
+};
+
+/*
+ * RoCE Destroy Event Data
+ */
+struct rdma_eqe_destroy_qp
+{
+	__le32 cid /* Dedicated field RoCE destroy QP event */;
+	u8 reserved[4];
+};
+
+/*
+ * RDMA Event Data Union
+ */
+union rdma_eqe_data
+{
+	struct regpair async_handle /* Host handle for the Async Completions */;
+	struct rdma_eqe_destroy_qp rdma_destroy_qp_data /* RoCE Destroy Event Data */;
+};
+
+
 
 
 /*
@@ -835,7 +786,6 @@ struct ustorm_queue_zone
 	struct ustorm_eth_queue_zone eth;
 	struct common_queue_zone common;
 };
-
 
 
 /*
@@ -884,6 +834,17 @@ struct cau_sb_entry
 #define CAU_SB_ENTRY_PF_NUMBER_SHIFT   27
 #define CAU_SB_ENTRY_TPH_MASK          0x1 /* If set then indicates that the TPH STAG is equal to the SB number. Otherwise the STAG will be equal to all ones. */
 #define CAU_SB_ENTRY_TPH_SHIFT         31
+};
+
+
+/*
+ * Igu cleanup bit values to distinguish between clean or producer consumer update.
+ */
+enum command_type_bit
+{
+	IGU_COMMAND_TYPE_NOP=0,
+	IGU_COMMAND_TYPE_SET=1,
+	MAX_COMMAND_TYPE_BIT
 };
 
 
@@ -1059,7 +1020,7 @@ struct db_rdma_dpm_data
 {
 	__le16 icid /* internal CID */;
 	__le16 prod_val /* aggregated value to update */;
-	struct db_rdma_dpm_params params /* parameters passed to RDMA firmware */;
+	struct db_rdma_dpm_params params /* parametes passed to RDMA firmware */;
 };
 
 
@@ -1113,25 +1074,25 @@ enum igu_seg_access
 
 
 /*
- * Enumeration for L3 type field of parsing_and_err_flags_union. L3Type: 0 - unknown (not ip) ,1 - Ipv4, 2 - Ipv6 (this field can be filled according to the last-ethertype)
+ * Enumeration for L3 type field of parsing_and_err_flags. L3Type: 0 - unknown (not ip) ,1 - Ipv4, 2 - Ipv6 (this field can be filled according to the last-ethertype)
  */
 enum l3_type
 {
-	e_l3Type_unknown,
-	e_l3Type_ipv4,
-	e_l3Type_ipv6,
+	e_l3_type_unknown,
+	e_l3_type_ipv4,
+	e_l3_type_ipv6,
 	MAX_L3_TYPE
 };
 
 
 /*
- * Enumeration for l4Protocol field of parsing_and_err_flags_union. L4-protocol 0 - none, 1 - TCP, 2- UDP. if the packet is IPv4 fragment, and its not the first fragment, the protocol-type should be set to none.
+ * Enumeration for l4Protocol field of parsing_and_err_flags. L4-protocol 0 - none, 1 - TCP, 2- UDP. if the packet is IPv4 fragment, and its not the first fragment, the protocol-type should be set to none.
  */
 enum l4_protocol
 {
-	e_l4Protocol_none,
-	e_l4Protocol_tcp,
-	e_l4Protocol_udp,
+	e_l4_protocol_none,
+	e_l4_protocol_tcp,
+	e_l4_protocol_udp,
 	MAX_L4_PROTOCOL
 };
 
@@ -1146,11 +1107,11 @@ struct parsing_and_err_flags
 #define PARSING_AND_ERR_FLAGS_L3TYPE_SHIFT                     0
 #define PARSING_AND_ERR_FLAGS_L4PROTOCOL_MASK                  0x3 /* L4-protocol 0 - none, 1 - TCP, 2- UDP. if the packet is IPv4 fragment, and its not the first fragment, the protocol-type should be set to none. (use enum l4_protocol) */
 #define PARSING_AND_ERR_FLAGS_L4PROTOCOL_SHIFT                 2
-#define PARSING_AND_ERR_FLAGS_IPV4FRAG_MASK                    0x1 /* Set if the packet is IPv4 fragment. */
+#define PARSING_AND_ERR_FLAGS_IPV4FRAG_MASK                    0x1 /* Set if the packet is IPv4/IPv6 fragment. */
 #define PARSING_AND_ERR_FLAGS_IPV4FRAG_SHIFT                   4
-#define PARSING_AND_ERR_FLAGS_TAG8021QEXIST_MASK               0x1 /* Set if VLAN tag exists. Invalid if tunnel type are IP GRE or IP GENEVE. */
+#define PARSING_AND_ERR_FLAGS_TAG8021QEXIST_MASK               0x1 /* corresponds to the same 8021q tag that is selected for 8021q-tag fiel. This flag should be set if the tag appears in the packet, regardless of its value. */
 #define PARSING_AND_ERR_FLAGS_TAG8021QEXIST_SHIFT              5
-#define PARSING_AND_ERR_FLAGS_L4CHKSMWASCALCULATED_MASK        0x1 /* Set if L4 checksum was calculated. */
+#define PARSING_AND_ERR_FLAGS_L4CHKSMWASCALCULATED_MASK        0x1 /* Set if L4 checksum was calculated. taken from the EOP descriptor. */
 #define PARSING_AND_ERR_FLAGS_L4CHKSMWASCALCULATED_SHIFT       6
 #define PARSING_AND_ERR_FLAGS_TIMESYNCPKT_MASK                 0x1 /* Set for PTP packet. */
 #define PARSING_AND_ERR_FLAGS_TIMESYNCPKT_SHIFT                7
@@ -1162,11 +1123,11 @@ struct parsing_and_err_flags
 #define PARSING_AND_ERR_FLAGS_L4CHKSMERROR_SHIFT               10
 #define PARSING_AND_ERR_FLAGS_TUNNELEXIST_MASK                 0x1 /* Set if GRE/VXLAN/GENEVE tunnel detected. */
 #define PARSING_AND_ERR_FLAGS_TUNNELEXIST_SHIFT                11
-#define PARSING_AND_ERR_FLAGS_TUNNEL8021QTAGEXIST_MASK         0x1 /* Set if VLAN tag exists in tunnel header. */
+#define PARSING_AND_ERR_FLAGS_TUNNEL8021QTAGEXIST_MASK         0x1 /* This flag should be set if the tag appears in the packet tunnel header, regardless of its value.. */
 #define PARSING_AND_ERR_FLAGS_TUNNEL8021QTAGEXIST_SHIFT        12
 #define PARSING_AND_ERR_FLAGS_TUNNELIPHDRERROR_MASK            0x1 /* Set if either tunnel-ipv4-version-mismatch or tunnel-ipv4-hdr-len-error or tunnel-ipv4-cksm is set or tunneling ipv6 ver mismatch */
 #define PARSING_AND_ERR_FLAGS_TUNNELIPHDRERROR_SHIFT           13
-#define PARSING_AND_ERR_FLAGS_TUNNELL4CHKSMWASCALCULATED_MASK  0x1 /* Set if GRE or VXLAN/GENEVE UDP checksum was calculated. */
+#define PARSING_AND_ERR_FLAGS_TUNNELL4CHKSMWASCALCULATED_MASK  0x1 /* taken from the EOP descriptor. */
 #define PARSING_AND_ERR_FLAGS_TUNNELL4CHKSMWASCALCULATED_SHIFT 14
 #define PARSING_AND_ERR_FLAGS_TUNNELL4CHKSMERROR_MASK          0x1 /* Set if tunnel L4 checksum validation failed. Valid only if tunnel L4 checksum was calculated. */
 #define PARSING_AND_ERR_FLAGS_TUNNELL4CHKSMERROR_SHIFT         15
@@ -1333,107 +1294,112 @@ struct pxp_vf_zone_a_permission
  */
 struct rdif_task_context
 {
-	__le32 initialRefTag;
-	__le16 appTagValue;
-	__le16 appTagMask;
+	__le32 initial_ref_tag;
+	__le16 app_tag_value;
+	__le16 app_tag_mask;
 	u8 flags0;
-#define RDIF_TASK_CONTEXT_IGNOREAPPTAG_MASK            0x1
-#define RDIF_TASK_CONTEXT_IGNOREAPPTAG_SHIFT           0
-#define RDIF_TASK_CONTEXT_INITIALREFTAGVALID_MASK      0x1
-#define RDIF_TASK_CONTEXT_INITIALREFTAGVALID_SHIFT     1
-#define RDIF_TASK_CONTEXT_HOSTGUARDTYPE_MASK           0x1 /* 0 = IP checksum, 1 = CRC */
-#define RDIF_TASK_CONTEXT_HOSTGUARDTYPE_SHIFT          2
-#define RDIF_TASK_CONTEXT_SETERRORWITHEOP_MASK         0x1
-#define RDIF_TASK_CONTEXT_SETERRORWITHEOP_SHIFT        3
-#define RDIF_TASK_CONTEXT_PROTECTIONTYPE_MASK          0x3 /* 1/2/3 - Protection Type */
-#define RDIF_TASK_CONTEXT_PROTECTIONTYPE_SHIFT         4
-#define RDIF_TASK_CONTEXT_CRC_SEED_MASK                0x1 /* 0=0x0000, 1=0xffff */
-#define RDIF_TASK_CONTEXT_CRC_SEED_SHIFT               6
-#define RDIF_TASK_CONTEXT_KEEPREFTAGCONST_MASK         0x1 /* Keep reference tag constant */
-#define RDIF_TASK_CONTEXT_KEEPREFTAGCONST_SHIFT        7
-	u8 partialDifData[7];
-	__le16 partialCrcValue;
-	__le16 partialChecksumValue;
-	__le32 offsetInIO;
+#define RDIF_TASK_CONTEXT_IGNORE_APP_TAG_MASK             0x1
+#define RDIF_TASK_CONTEXT_IGNORE_APP_TAG_SHIFT            0
+#define RDIF_TASK_CONTEXT_INITIAL_REF_TAG_VALID_MASK      0x1
+#define RDIF_TASK_CONTEXT_INITIAL_REF_TAG_VALID_SHIFT     1
+#define RDIF_TASK_CONTEXT_HOST_GUARD_TYPE_MASK            0x1 /* 0 = IP checksum, 1 = CRC */
+#define RDIF_TASK_CONTEXT_HOST_GUARD_TYPE_SHIFT           2
+#define RDIF_TASK_CONTEXT_SET_ERROR_WITH_EOP_MASK         0x1
+#define RDIF_TASK_CONTEXT_SET_ERROR_WITH_EOP_SHIFT        3
+#define RDIF_TASK_CONTEXT_PROTECTION_TYPE_MASK            0x3 /* 1/2/3 - Protection Type */
+#define RDIF_TASK_CONTEXT_PROTECTION_TYPE_SHIFT           4
+#define RDIF_TASK_CONTEXT_CRC_SEED_MASK                   0x1 /* 0=0x0000, 1=0xffff */
+#define RDIF_TASK_CONTEXT_CRC_SEED_SHIFT                  6
+#define RDIF_TASK_CONTEXT_KEEP_REF_TAG_CONST_MASK         0x1 /* Keep reference tag constant */
+#define RDIF_TASK_CONTEXT_KEEP_REF_TAG_CONST_SHIFT        7
+	u8 partial_dif_data[7];
+	__le16 partial_crc_value;
+	__le16 partial_checksum_value;
+	__le32 offset_in_io;
 	__le16 flags1;
-#define RDIF_TASK_CONTEXT_VALIDATEGUARD_MASK           0x1
-#define RDIF_TASK_CONTEXT_VALIDATEGUARD_SHIFT          0
-#define RDIF_TASK_CONTEXT_VALIDATEAPPTAG_MASK          0x1
-#define RDIF_TASK_CONTEXT_VALIDATEAPPTAG_SHIFT         1
-#define RDIF_TASK_CONTEXT_VALIDATEREFTAG_MASK          0x1
-#define RDIF_TASK_CONTEXT_VALIDATEREFTAG_SHIFT         2
-#define RDIF_TASK_CONTEXT_FORWARDGUARD_MASK            0x1
-#define RDIF_TASK_CONTEXT_FORWARDGUARD_SHIFT           3
-#define RDIF_TASK_CONTEXT_FORWARDAPPTAG_MASK           0x1
-#define RDIF_TASK_CONTEXT_FORWARDAPPTAG_SHIFT          4
-#define RDIF_TASK_CONTEXT_FORWARDREFTAG_MASK           0x1
-#define RDIF_TASK_CONTEXT_FORWARDREFTAG_SHIFT          5
-#define RDIF_TASK_CONTEXT_INTERVALSIZE_MASK            0x7 /* 0=512B, 1=1KB, 2=2KB, 3=4KB, 4=8KB */
-#define RDIF_TASK_CONTEXT_INTERVALSIZE_SHIFT           6
-#define RDIF_TASK_CONTEXT_HOSTINTERFACE_MASK           0x3 /* 0=None, 1=DIF, 2=DIX */
-#define RDIF_TASK_CONTEXT_HOSTINTERFACE_SHIFT          9
-#define RDIF_TASK_CONTEXT_DIFBEFOREDATA_MASK           0x1 /* DIF tag right at the beginning of DIF interval */
-#define RDIF_TASK_CONTEXT_DIFBEFOREDATA_SHIFT          11
-#define RDIF_TASK_CONTEXT_RESERVED0_MASK               0x1
-#define RDIF_TASK_CONTEXT_RESERVED0_SHIFT              12
-#define RDIF_TASK_CONTEXT_NETWORKINTERFACE_MASK        0x1 /* 0=None, 1=DIF */
-#define RDIF_TASK_CONTEXT_NETWORKINTERFACE_SHIFT       13
-#define RDIF_TASK_CONTEXT_FORWARDAPPTAGWITHMASK_MASK   0x1 /* Forward application tag with mask */
-#define RDIF_TASK_CONTEXT_FORWARDAPPTAGWITHMASK_SHIFT  14
-#define RDIF_TASK_CONTEXT_FORWARDREFTAGWITHMASK_MASK   0x1 /* Forward reference tag with mask */
-#define RDIF_TASK_CONTEXT_FORWARDREFTAGWITHMASK_SHIFT  15
+#define RDIF_TASK_CONTEXT_VALIDATE_GUARD_MASK             0x1
+#define RDIF_TASK_CONTEXT_VALIDATE_GUARD_SHIFT            0
+#define RDIF_TASK_CONTEXT_VALIDATE_APP_TAG_MASK           0x1
+#define RDIF_TASK_CONTEXT_VALIDATE_APP_TAG_SHIFT          1
+#define RDIF_TASK_CONTEXT_VALIDATE_REF_TAG_MASK           0x1
+#define RDIF_TASK_CONTEXT_VALIDATE_REF_TAG_SHIFT          2
+#define RDIF_TASK_CONTEXT_FORWARD_GUARD_MASK              0x1
+#define RDIF_TASK_CONTEXT_FORWARD_GUARD_SHIFT             3
+#define RDIF_TASK_CONTEXT_FORWARD_APP_TAG_MASK            0x1
+#define RDIF_TASK_CONTEXT_FORWARD_APP_TAG_SHIFT           4
+#define RDIF_TASK_CONTEXT_FORWARD_REF_TAG_MASK            0x1
+#define RDIF_TASK_CONTEXT_FORWARD_REF_TAG_SHIFT           5
+#define RDIF_TASK_CONTEXT_INTERVAL_SIZE_MASK              0x7 /* 0=512B, 1=1KB, 2=2KB, 3=4KB, 4=8KB */
+#define RDIF_TASK_CONTEXT_INTERVAL_SIZE_SHIFT             6
+#define RDIF_TASK_CONTEXT_HOST_INTERFACE_MASK             0x3 /* 0=None, 1=DIF, 2=DIX */
+#define RDIF_TASK_CONTEXT_HOST_INTERFACE_SHIFT            9
+#define RDIF_TASK_CONTEXT_DIF_BEFORE_DATA_MASK            0x1 /* DIF tag right at the beginning of DIF interval */
+#define RDIF_TASK_CONTEXT_DIF_BEFORE_DATA_SHIFT           11
+#define RDIF_TASK_CONTEXT_RESERVED0_MASK                  0x1
+#define RDIF_TASK_CONTEXT_RESERVED0_SHIFT                 12
+#define RDIF_TASK_CONTEXT_NETWORK_INTERFACE_MASK          0x1 /* 0=None, 1=DIF */
+#define RDIF_TASK_CONTEXT_NETWORK_INTERFACE_SHIFT         13
+#define RDIF_TASK_CONTEXT_FORWARD_APP_TAG_WITH_MASK_MASK  0x1 /* Forward application tag with mask */
+#define RDIF_TASK_CONTEXT_FORWARD_APP_TAG_WITH_MASK_SHIFT 14
+#define RDIF_TASK_CONTEXT_FORWARD_REF_TAG_WITH_MASK_MASK  0x1 /* Forward reference tag with mask */
+#define RDIF_TASK_CONTEXT_FORWARD_REF_TAG_WITH_MASK_SHIFT 15
 	__le16 state;
-#define RDIF_TASK_CONTEXT_RECEIVEDDIFBYTESLEFT_MASK    0xF
-#define RDIF_TASK_CONTEXT_RECEIVEDDIFBYTESLEFT_SHIFT   0
-#define RDIF_TASK_CONTEXT_TRANSMITEDDIFBYTESLEFT_MASK  0xF
-#define RDIF_TASK_CONTEXT_TRANSMITEDDIFBYTESLEFT_SHIFT 4
-#define RDIF_TASK_CONTEXT_ERRORINIO_MASK               0x1
-#define RDIF_TASK_CONTEXT_ERRORINIO_SHIFT              8
-#define RDIF_TASK_CONTEXT_CHECKSUMOVERFLOW_MASK        0x1
-#define RDIF_TASK_CONTEXT_CHECKSUMOVERFLOW_SHIFT       9
-#define RDIF_TASK_CONTEXT_REFTAGMASK_MASK              0xF /* mask for refernce tag handling */
-#define RDIF_TASK_CONTEXT_REFTAGMASK_SHIFT             10
-#define RDIF_TASK_CONTEXT_RESERVED1_MASK               0x3
-#define RDIF_TASK_CONTEXT_RESERVED1_SHIFT              14
+#define RDIF_TASK_CONTEXT_RECEIVED_DIF_BYTES_LEFT_MASK    0xF
+#define RDIF_TASK_CONTEXT_RECEIVED_DIF_BYTES_LEFT_SHIFT   0
+#define RDIF_TASK_CONTEXT_TRANSMITED_DIF_BYTES_LEFT_MASK  0xF
+#define RDIF_TASK_CONTEXT_TRANSMITED_DIF_BYTES_LEFT_SHIFT 4
+#define RDIF_TASK_CONTEXT_ERROR_IN_IO_MASK                0x1
+#define RDIF_TASK_CONTEXT_ERROR_IN_IO_SHIFT               8
+#define RDIF_TASK_CONTEXT_CHECKSUM_OVERFLOW_MASK          0x1
+#define RDIF_TASK_CONTEXT_CHECKSUM_OVERFLOW_SHIFT         9
+#define RDIF_TASK_CONTEXT_REF_TAG_MASK_MASK               0xF /* mask for refernce tag handling */
+#define RDIF_TASK_CONTEXT_REF_TAG_MASK_SHIFT              10
+#define RDIF_TASK_CONTEXT_RESERVED1_MASK                  0x3
+#define RDIF_TASK_CONTEXT_RESERVED1_SHIFT                 14
 	__le32 reserved2;
 };
 
 
 
 /*
- * RSS hash type
+ * status block structure
  */
-enum rss_hash_type
+struct status_block_e4
 {
-	RSS_HASH_TYPE_DEFAULT=0,
-	RSS_HASH_TYPE_IPV4=1,
-	RSS_HASH_TYPE_TCP_IPV4=2,
-	RSS_HASH_TYPE_IPV6=3,
-	RSS_HASH_TYPE_TCP_IPV6=4,
-	RSS_HASH_TYPE_UDP_IPV4=5,
-	RSS_HASH_TYPE_UDP_IPV6=6,
-	MAX_RSS_HASH_TYPE
+	__le16 pi_array[PIS_PER_SB_E4];
+	__le32 sb_num;
+#define STATUS_BLOCK_E4_SB_NUM_MASK      0x1FF
+#define STATUS_BLOCK_E4_SB_NUM_SHIFT     0
+#define STATUS_BLOCK_E4_ZERO_PAD_MASK    0x7F
+#define STATUS_BLOCK_E4_ZERO_PAD_SHIFT   9
+#define STATUS_BLOCK_E4_ZERO_PAD2_MASK   0xFFFF
+#define STATUS_BLOCK_E4_ZERO_PAD2_SHIFT  16
+	__le32 prod_index;
+#define STATUS_BLOCK_E4_PROD_INDEX_MASK  0xFFFFFF
+#define STATUS_BLOCK_E4_PROD_INDEX_SHIFT 0
+#define STATUS_BLOCK_E4_ZERO_PAD3_MASK   0xFF
+#define STATUS_BLOCK_E4_ZERO_PAD3_SHIFT  24
 };
 
 
 /*
  * status block structure
  */
-struct status_block
+struct status_block_e5
 {
-	__le16 pi_array[PIS_PER_SB];
+	__le16 pi_array[PIS_PER_SB_E5];
 	__le32 sb_num;
-#define STATUS_BLOCK_SB_NUM_MASK      0x1FF
-#define STATUS_BLOCK_SB_NUM_SHIFT     0
-#define STATUS_BLOCK_ZERO_PAD_MASK    0x7F
-#define STATUS_BLOCK_ZERO_PAD_SHIFT   9
-#define STATUS_BLOCK_ZERO_PAD2_MASK   0xFFFF
-#define STATUS_BLOCK_ZERO_PAD2_SHIFT  16
+#define STATUS_BLOCK_E5_SB_NUM_MASK      0x1FF
+#define STATUS_BLOCK_E5_SB_NUM_SHIFT     0
+#define STATUS_BLOCK_E5_ZERO_PAD_MASK    0x7F
+#define STATUS_BLOCK_E5_ZERO_PAD_SHIFT   9
+#define STATUS_BLOCK_E5_ZERO_PAD2_MASK   0xFFFF
+#define STATUS_BLOCK_E5_ZERO_PAD2_SHIFT  16
 	__le32 prod_index;
-#define STATUS_BLOCK_PROD_INDEX_MASK  0xFFFFFF
-#define STATUS_BLOCK_PROD_INDEX_SHIFT 0
-#define STATUS_BLOCK_ZERO_PAD3_MASK   0xFF
-#define STATUS_BLOCK_ZERO_PAD3_SHIFT  24
+#define STATUS_BLOCK_E5_PROD_INDEX_MASK  0xFFFFFF
+#define STATUS_BLOCK_E5_PROD_INDEX_SHIFT 0
+#define STATUS_BLOCK_E5_ZERO_PAD3_MASK   0xFF
+#define STATUS_BLOCK_E5_ZERO_PAD3_SHIFT  24
 };
 
 
@@ -1442,85 +1408,85 @@ struct status_block
  */
 struct tdif_task_context
 {
-	__le32 initialRefTag;
-	__le16 appTagValue;
-	__le16 appTagMask;
-	__le16 partialCrcValueB;
-	__le16 partialChecksumValueB;
+	__le32 initial_ref_tag;
+	__le16 app_tag_value;
+	__le16 app_tag_mask;
+	__le16 partial_crc_value_b;
+	__le16 partial_checksum_value_b;
 	__le16 stateB;
-#define TDIF_TASK_CONTEXT_RECEIVEDDIFBYTESLEFTB_MASK    0xF
-#define TDIF_TASK_CONTEXT_RECEIVEDDIFBYTESLEFTB_SHIFT   0
-#define TDIF_TASK_CONTEXT_TRANSMITEDDIFBYTESLEFTB_MASK  0xF
-#define TDIF_TASK_CONTEXT_TRANSMITEDDIFBYTESLEFTB_SHIFT 4
-#define TDIF_TASK_CONTEXT_ERRORINIOB_MASK               0x1
-#define TDIF_TASK_CONTEXT_ERRORINIOB_SHIFT              8
-#define TDIF_TASK_CONTEXT_CHECKSUMOVERFLOW_MASK         0x1
-#define TDIF_TASK_CONTEXT_CHECKSUMOVERFLOW_SHIFT        9
-#define TDIF_TASK_CONTEXT_RESERVED0_MASK                0x3F
-#define TDIF_TASK_CONTEXT_RESERVED0_SHIFT               10
+#define TDIF_TASK_CONTEXT_RECEIVED_DIF_BYTES_LEFT_B_MASK    0xF
+#define TDIF_TASK_CONTEXT_RECEIVED_DIF_BYTES_LEFT_B_SHIFT   0
+#define TDIF_TASK_CONTEXT_TRANSMITED_DIF_BYTES_LEFT_B_MASK  0xF
+#define TDIF_TASK_CONTEXT_TRANSMITED_DIF_BYTES_LEFT_B_SHIFT 4
+#define TDIF_TASK_CONTEXT_ERROR_IN_IO_B_MASK                0x1
+#define TDIF_TASK_CONTEXT_ERROR_IN_IO_B_SHIFT               8
+#define TDIF_TASK_CONTEXT_CHECKSUM_VERFLOW_MASK             0x1
+#define TDIF_TASK_CONTEXT_CHECKSUM_VERFLOW_SHIFT            9
+#define TDIF_TASK_CONTEXT_RESERVED0_MASK                    0x3F
+#define TDIF_TASK_CONTEXT_RESERVED0_SHIFT                   10
 	u8 reserved1;
 	u8 flags0;
-#define TDIF_TASK_CONTEXT_IGNOREAPPTAG_MASK             0x1
-#define TDIF_TASK_CONTEXT_IGNOREAPPTAG_SHIFT            0
-#define TDIF_TASK_CONTEXT_INITIALREFTAGVALID_MASK       0x1
-#define TDIF_TASK_CONTEXT_INITIALREFTAGVALID_SHIFT      1
-#define TDIF_TASK_CONTEXT_HOSTGUARDTYPE_MASK            0x1 /* 0 = IP checksum, 1 = CRC */
-#define TDIF_TASK_CONTEXT_HOSTGUARDTYPE_SHIFT           2
-#define TDIF_TASK_CONTEXT_SETERRORWITHEOP_MASK          0x1
-#define TDIF_TASK_CONTEXT_SETERRORWITHEOP_SHIFT         3
-#define TDIF_TASK_CONTEXT_PROTECTIONTYPE_MASK           0x3 /* 1/2/3 - Protection Type */
-#define TDIF_TASK_CONTEXT_PROTECTIONTYPE_SHIFT          4
-#define TDIF_TASK_CONTEXT_CRC_SEED_MASK                 0x1 /* 0=0x0000, 1=0xffff */
-#define TDIF_TASK_CONTEXT_CRC_SEED_SHIFT                6
-#define TDIF_TASK_CONTEXT_RESERVED2_MASK                0x1
-#define TDIF_TASK_CONTEXT_RESERVED2_SHIFT               7
+#define TDIF_TASK_CONTEXT_IGNORE_APP_TAG_MASK               0x1
+#define TDIF_TASK_CONTEXT_IGNORE_APP_TAG_SHIFT              0
+#define TDIF_TASK_CONTEXT_INITIAL_REF_TAG_VALID_MASK        0x1
+#define TDIF_TASK_CONTEXT_INITIAL_REF_TAG_VALID_SHIFT       1
+#define TDIF_TASK_CONTEXT_HOST_GUARD_TYPE_MASK              0x1 /* 0 = IP checksum, 1 = CRC */
+#define TDIF_TASK_CONTEXT_HOST_GUARD_TYPE_SHIFT             2
+#define TDIF_TASK_CONTEXT_SET_ERROR_WITH_EOP_MASK           0x1
+#define TDIF_TASK_CONTEXT_SET_ERROR_WITH_EOP_SHIFT          3
+#define TDIF_TASK_CONTEXT_PROTECTION_TYPE_MASK              0x3 /* 1/2/3 - Protection Type */
+#define TDIF_TASK_CONTEXT_PROTECTION_TYPE_SHIFT             4
+#define TDIF_TASK_CONTEXT_CRC_SEED_MASK                     0x1 /* 0=0x0000, 1=0xffff */
+#define TDIF_TASK_CONTEXT_CRC_SEED_SHIFT                    6
+#define TDIF_TASK_CONTEXT_RESERVED2_MASK                    0x1
+#define TDIF_TASK_CONTEXT_RESERVED2_SHIFT                   7
 	__le32 flags1;
-#define TDIF_TASK_CONTEXT_VALIDATEGUARD_MASK            0x1
-#define TDIF_TASK_CONTEXT_VALIDATEGUARD_SHIFT           0
-#define TDIF_TASK_CONTEXT_VALIDATEAPPTAG_MASK           0x1
-#define TDIF_TASK_CONTEXT_VALIDATEAPPTAG_SHIFT          1
-#define TDIF_TASK_CONTEXT_VALIDATEREFTAG_MASK           0x1
-#define TDIF_TASK_CONTEXT_VALIDATEREFTAG_SHIFT          2
-#define TDIF_TASK_CONTEXT_FORWARDGUARD_MASK             0x1
-#define TDIF_TASK_CONTEXT_FORWARDGUARD_SHIFT            3
-#define TDIF_TASK_CONTEXT_FORWARDAPPTAG_MASK            0x1
-#define TDIF_TASK_CONTEXT_FORWARDAPPTAG_SHIFT           4
-#define TDIF_TASK_CONTEXT_FORWARDREFTAG_MASK            0x1
-#define TDIF_TASK_CONTEXT_FORWARDREFTAG_SHIFT           5
-#define TDIF_TASK_CONTEXT_INTERVALSIZE_MASK             0x7 /* 0=512B, 1=1KB, 2=2KB, 3=4KB, 4=8KB */
-#define TDIF_TASK_CONTEXT_INTERVALSIZE_SHIFT            6
-#define TDIF_TASK_CONTEXT_HOSTINTERFACE_MASK            0x3 /* 0=None, 1=DIF, 2=DIX */
-#define TDIF_TASK_CONTEXT_HOSTINTERFACE_SHIFT           9
-#define TDIF_TASK_CONTEXT_DIFBEFOREDATA_MASK            0x1 /* DIF tag right at the beginning of DIF interval */
-#define TDIF_TASK_CONTEXT_DIFBEFOREDATA_SHIFT           11
-#define TDIF_TASK_CONTEXT_RESERVED3_MASK                0x1 /* reserved */
-#define TDIF_TASK_CONTEXT_RESERVED3_SHIFT               12
-#define TDIF_TASK_CONTEXT_NETWORKINTERFACE_MASK         0x1 /* 0=None, 1=DIF */
-#define TDIF_TASK_CONTEXT_NETWORKINTERFACE_SHIFT        13
-#define TDIF_TASK_CONTEXT_RECEIVEDDIFBYTESLEFTA_MASK    0xF
-#define TDIF_TASK_CONTEXT_RECEIVEDDIFBYTESLEFTA_SHIFT   14
-#define TDIF_TASK_CONTEXT_TRANSMITEDDIFBYTESLEFTA_MASK  0xF
-#define TDIF_TASK_CONTEXT_TRANSMITEDDIFBYTESLEFTA_SHIFT 18
-#define TDIF_TASK_CONTEXT_ERRORINIOA_MASK               0x1
-#define TDIF_TASK_CONTEXT_ERRORINIOA_SHIFT              22
-#define TDIF_TASK_CONTEXT_CHECKSUMOVERFLOWA_MASK        0x1
-#define TDIF_TASK_CONTEXT_CHECKSUMOVERFLOWA_SHIFT       23
-#define TDIF_TASK_CONTEXT_REFTAGMASK_MASK               0xF /* mask for refernce tag handling */
-#define TDIF_TASK_CONTEXT_REFTAGMASK_SHIFT              24
-#define TDIF_TASK_CONTEXT_FORWARDAPPTAGWITHMASK_MASK    0x1 /* Forward application tag with mask */
-#define TDIF_TASK_CONTEXT_FORWARDAPPTAGWITHMASK_SHIFT   28
-#define TDIF_TASK_CONTEXT_FORWARDREFTAGWITHMASK_MASK    0x1 /* Forward reference tag with mask */
-#define TDIF_TASK_CONTEXT_FORWARDREFTAGWITHMASK_SHIFT   29
-#define TDIF_TASK_CONTEXT_KEEPREFTAGCONST_MASK          0x1 /* Keep reference tag constant */
-#define TDIF_TASK_CONTEXT_KEEPREFTAGCONST_SHIFT         30
-#define TDIF_TASK_CONTEXT_RESERVED4_MASK                0x1
-#define TDIF_TASK_CONTEXT_RESERVED4_SHIFT               31
-	__le32 offsetInIOB;
-	__le16 partialCrcValueA;
-	__le16 partialChecksumValueA;
-	__le32 offsetInIOA;
-	u8 partialDifDataA[8];
-	u8 partialDifDataB[8];
+#define TDIF_TASK_CONTEXT_VALIDATE_GUARD_MASK               0x1
+#define TDIF_TASK_CONTEXT_VALIDATE_GUARD_SHIFT              0
+#define TDIF_TASK_CONTEXT_VALIDATE_APP_TAG_MASK             0x1
+#define TDIF_TASK_CONTEXT_VALIDATE_APP_TAG_SHIFT            1
+#define TDIF_TASK_CONTEXT_VALIDATE_REF_TAG_MASK             0x1
+#define TDIF_TASK_CONTEXT_VALIDATE_REF_TAG_SHIFT            2
+#define TDIF_TASK_CONTEXT_FORWARD_GUARD_MASK                0x1
+#define TDIF_TASK_CONTEXT_FORWARD_GUARD_SHIFT               3
+#define TDIF_TASK_CONTEXT_FORWARD_APP_TAG_MASK              0x1
+#define TDIF_TASK_CONTEXT_FORWARD_APP_TAG_SHIFT             4
+#define TDIF_TASK_CONTEXT_FORWARD_REF_TAG_MASK              0x1
+#define TDIF_TASK_CONTEXT_FORWARD_REF_TAG_SHIFT             5
+#define TDIF_TASK_CONTEXT_INTERVAL_SIZE_MASK                0x7 /* 0=512B, 1=1KB, 2=2KB, 3=4KB, 4=8KB */
+#define TDIF_TASK_CONTEXT_INTERVAL_SIZE_SHIFT               6
+#define TDIF_TASK_CONTEXT_HOST_INTERFACE_MASK               0x3 /* 0=None, 1=DIF, 2=DIX */
+#define TDIF_TASK_CONTEXT_HOST_INTERFACE_SHIFT              9
+#define TDIF_TASK_CONTEXT_DIF_BEFORE_DATA_MASK              0x1 /* DIF tag right at the beginning of DIF interval */
+#define TDIF_TASK_CONTEXT_DIF_BEFORE_DATA_SHIFT             11
+#define TDIF_TASK_CONTEXT_RESERVED3_MASK                    0x1 /* reserved */
+#define TDIF_TASK_CONTEXT_RESERVED3_SHIFT                   12
+#define TDIF_TASK_CONTEXT_NETWORK_INTERFACE_MASK            0x1 /* 0=None, 1=DIF */
+#define TDIF_TASK_CONTEXT_NETWORK_INTERFACE_SHIFT           13
+#define TDIF_TASK_CONTEXT_RECEIVED_DIF_BYTES_LEFT_A_MASK    0xF
+#define TDIF_TASK_CONTEXT_RECEIVED_DIF_BYTES_LEFT_A_SHIFT   14
+#define TDIF_TASK_CONTEXT_TRANSMITED_DIF_BYTES_LEFT_A_MASK  0xF
+#define TDIF_TASK_CONTEXT_TRANSMITED_DIF_BYTES_LEFT_A_SHIFT 18
+#define TDIF_TASK_CONTEXT_ERROR_IN_IO_A_MASK                0x1
+#define TDIF_TASK_CONTEXT_ERROR_IN_IO_A_SHIFT               22
+#define TDIF_TASK_CONTEXT_CHECKSUM_OVERFLOW_A_MASK          0x1
+#define TDIF_TASK_CONTEXT_CHECKSUM_OVERFLOW_A_SHIFT         23
+#define TDIF_TASK_CONTEXT_REF_TAG_MASK_MASK                 0xF /* mask for refernce tag handling */
+#define TDIF_TASK_CONTEXT_REF_TAG_MASK_SHIFT                24
+#define TDIF_TASK_CONTEXT_FORWARD_APP_TAG_WITH_MASK_MASK    0x1 /* Forward application tag with mask */
+#define TDIF_TASK_CONTEXT_FORWARD_APP_TAG_WITH_MASK_SHIFT   28
+#define TDIF_TASK_CONTEXT_FORWARD_REF_TAG_WITH_MASK_MASK    0x1 /* Forward reference tag with mask */
+#define TDIF_TASK_CONTEXT_FORWARD_REF_TAG_WITH_MASK_SHIFT   29
+#define TDIF_TASK_CONTEXT_KEEP_REF_TAG_CONST_MASK           0x1 /* Keep reference tag constant */
+#define TDIF_TASK_CONTEXT_KEEP_REF_TAG_CONST_SHIFT          30
+#define TDIF_TASK_CONTEXT_RESERVED4_MASK                    0x1
+#define TDIF_TASK_CONTEXT_RESERVED4_SHIFT                   31
+	__le32 offset_in_io_b;
+	__le16 partial_crc_value_a;
+	__le16 partial_checksum_value_a;
+	__le32 offset_in_io_a;
+	u8 partial_dif_data_a[8];
+	u8 partial_dif_data_b[8];
 };
 
 
@@ -1575,7 +1541,7 @@ struct timers_context
 
 
 /*
- * Enum for next_protocol field of tunnel_parsing_flags
+ * Enum for next_protocol field of tunnel_parsing_flags / tunnelTypeDesc
  */
 enum tunnel_next_protocol
 {

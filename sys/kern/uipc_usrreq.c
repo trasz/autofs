@@ -981,16 +981,22 @@ uipc_send(struct socket *so, int flags, struct mbuf *m, struct sockaddr *nam,
 			unp2->unp_flags &= ~UNP_WANTCRED;
 			control = unp_addsockcred(td, control);
 		}
+
 		/*
-		 * Send to paired receive port, and then reduce send buffer
-		 * hiwater marks to maintain backpressure.  Wake up readers.
+		 * Send to paired receive port and wake up readers.  Don't
+		 * check for space available in the receive buffer if we're
+		 * attaching ancillary data; Unix domain sockets only check
+		 * for space in the sending sockbuf, and that check is
+		 * performed one level up the stack.  At that level we cannot
+		 * precisely account for the amount of buffer space used
+		 * (e.g., because control messages are not yet internalized).
 		 */
 		switch (so->so_type) {
 		case SOCK_STREAM:
 			if (control != NULL) {
-				if (sbappendcontrol_locked(&so2->so_rcv, m,
-				    control))
-					control = NULL;
+				sbappendcontrol_locked(&so2->so_rcv, m,
+				    control);
+				control = NULL;
 			} else
 				sbappend_locked(&so2->so_rcv, m, flags);
 			break;
@@ -999,14 +1005,8 @@ uipc_send(struct socket *so, int flags, struct mbuf *m, struct sockaddr *nam,
 			const struct sockaddr *from;
 
 			from = &sun_noname;
-			/*
-			 * Don't check for space available in so2->so_rcv.
-			 * Unix domain sockets only check for space in the
-			 * sending sockbuf, and that check is performed one
-			 * level up the stack.
-			 */
 			if (sbappendaddr_nospacecheck_locked(&so2->so_rcv,
-				from, m, control))
+			    from, m, control))
 				control = NULL;
 			break;
 			}
@@ -1056,7 +1056,11 @@ uipc_send(struct socket *so, int flags, struct mbuf *m, struct sockaddr *nam,
 release:
 	if (control != NULL)
 		m_freem(control);
-	if (m != NULL)
+	/*
+	 * In case of PRUS_NOTREADY, uipc_ready() is responsible
+	 * for freeing memory.
+	 */   
+	if (m != NULL && (flags & PRUS_NOTREADY) == 0)
 		m_freem(m);
 	return (error);
 }
@@ -1071,7 +1075,12 @@ uipc_ready(struct socket *so, struct mbuf *m, int count)
 	unp = sotounpcb(so);
 
 	UNP_LINK_RLOCK();
-	unp2 = unp->unp_conn;
+	if ((unp2 = unp->unp_conn) == NULL) {
+		UNP_LINK_RUNLOCK();
+		for (int i = 0; i < count; i++)
+			m = m_free(m);
+		return (ECONNRESET);
+	}
 	UNP_PCB_LOCK(unp2);
 	so2 = unp2->unp_socket;
 
@@ -1820,6 +1829,13 @@ unp_externalize(struct mbuf *control, struct mbuf **controlp, int flags)
 				    &fdep[i]->fde_caps);
 				unp_externalize_fp(fdep[i]->fde_file);
 			}
+
+			/*
+			 * The new type indicates that the mbuf data refers to
+			 * kernel resources that may need to be released before
+			 * the mbuf is freed.
+			 */
+			m_chtype(*controlp, MT_EXTCONTROL);
 			FILEDESC_XUNLOCK(fdesc);
 			free(fdep[0], M_FILECAPS);
 		} else {
@@ -1899,6 +1915,7 @@ unp_internalize(struct mbuf **controlp, struct thread *td)
 	struct filedescent *fde, **fdep, *fdev;
 	struct file *fp;
 	struct timeval *tv;
+	struct timespec *ts;
 	int i, *fdp;
 	void *data;
 	socklen_t clen = control->m_len, datalen;
@@ -2017,6 +2034,30 @@ unp_internalize(struct mbuf **controlp, struct thread *td)
 			bt = (struct bintime *)
 			    CMSG_DATA(mtod(*controlp, struct cmsghdr *));
 			bintime(bt);
+			break;
+
+		case SCM_REALTIME:
+			*controlp = sbcreatecontrol(NULL, sizeof(*ts),
+			    SCM_REALTIME, SOL_SOCKET);
+			if (*controlp == NULL) {
+				error = ENOBUFS;
+				goto out;
+			}
+			ts = (struct timespec *)
+			    CMSG_DATA(mtod(*controlp, struct cmsghdr *));
+			nanotime(ts);
+			break;
+
+		case SCM_MONOTONIC:
+			*controlp = sbcreatecontrol(NULL, sizeof(*ts),
+			    SCM_MONOTONIC, SOL_SOCKET);
+			if (*controlp == NULL) {
+				error = ENOBUFS;
+				goto out;
+			}
+			ts = (struct timespec *)
+			    CMSG_DATA(mtod(*controlp, struct cmsghdr *));
+			nanouptime(ts);
 			break;
 
 		default:

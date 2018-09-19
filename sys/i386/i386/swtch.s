@@ -74,16 +74,12 @@
  */
 ENTRY(cpu_throw)
 	movl	PCPU(CPUID), %esi
-	movl	4(%esp),%ecx			/* Old thread */
-	testl	%ecx,%ecx			/* no thread? */
-	jz	1f
 	/* release bit from old pm_active */
 	movl	PCPU(CURPMAP), %ebx
 #ifdef SMP
 	lock
 #endif
 	btrl	%esi, PM_ACTIVE(%ebx)		/* clear old */
-1:
 	movl	8(%esp),%ecx			/* New thread */
 	movl	TD_PCB(%ecx),%edx
 	movl	PCB_CR3(%edx),%eax
@@ -262,7 +258,6 @@ sw1:
 	popfl
 
 	movl	%edx, PCPU(CURPCB)
-	movl	TD_TID(%ecx),%eax
 	movl	%ecx, PCPU(CURTHREAD)		/* into next thread */
 
 	/*
@@ -283,6 +278,10 @@ sw1:
 	pushl	%edx				/* Preserve pointer to pcb. */
 	addl	$P_MD,%eax			/* Pointer to mdproc is arg. */
 	pushl	%eax
+	/*
+	 * Holding dt_lock prevents context switches, so dt_lock cannot
+	 * be held now and set_user_ldt() will not deadlock acquiring it.
+	 */
 	call	set_user_ldt
 	addl	$4,%esp
 	popl	%edx
@@ -292,6 +291,12 @@ sw1:
 	.globl	cpu_switch_load_gs
 cpu_switch_load_gs:
 	mov	PCB_GS(%edx),%gs
+
+	pushl	%edx
+	pushl	PCPU(CURTHREAD)
+	call	npxswitch
+	popl	%edx
+	popl	%edx
 
 	/* Test if debug registers should be restored. */
 	testl	$PCB_DBREGS,PCB_FLAGS(%edx)

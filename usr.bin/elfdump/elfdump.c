@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2003 David O'Brien.  All rights reserved.
  * Copyright (c) 2001 Jake Burkholder
  * All rights reserved.
@@ -661,7 +663,7 @@ main(int ac, char **av)
 		case SHT_NOTE:
 			name = elf_get_word(e, v, SH_NAME);
 			if (flags & ED_NOTE &&
-			    strcmp(shstrtab + name, ".note.ABI-tag") == 0)
+			    strcmp(shstrtab + name, ".note.tag") == 0)
 				elf_print_note(e, v);
 			break;
 		case SHT_DYNSYM:

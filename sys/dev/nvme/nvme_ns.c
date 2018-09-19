@@ -476,19 +476,34 @@ nvme_ns_bio_process(struct nvme_namespace *ns, struct bio *bp,
 }
 
 int
-nvme_ns_construct(struct nvme_namespace *ns, uint16_t id,
+nvme_ns_construct(struct nvme_namespace *ns, uint32_t id,
     struct nvme_controller *ctrlr)
 {
+	struct make_dev_args                    md_args;
 	struct nvme_completion_poll_status	status;
+	int                                     res;
 	int					unit;
 
 	ns->ctrlr = ctrlr;
 	ns->id = id;
 	ns->stripesize = 0;
 
-	if (pci_get_devid(ctrlr->dev) == 0x09538086 && ctrlr->cdata.vs[3] != 0)
-		ns->stripesize =
-		    (1 << ctrlr->cdata.vs[3]) * ctrlr->min_page_size;
+	/*
+	 * Older Intel devices advertise in vendor specific space an alignment
+	 * that improves performance.  If present use for the stripe size.  NVMe
+	 * 1.3 standardized this as NOIOB, and newer Intel drives use that.
+	 */
+	switch (pci_get_devid(ctrlr->dev)) {
+	case 0x09538086:		/* Intel DC PC3500 */
+	case 0x0a538086:		/* Intel DC PC3520 */
+	case 0x0a548086:		/* Intel DC PC4500 */
+		if (ctrlr->cdata.vs[3] != 0)
+			ns->stripesize =
+			    (1 << ctrlr->cdata.vs[3]) * ctrlr->min_page_size;
+		break;
+	default:
+		break;
+	}
 
 	/*
 	 * Namespaces are reconstructed after a controller reset, so check
@@ -512,13 +527,22 @@ nvme_ns_construct(struct nvme_namespace *ns, uint16_t id,
 	}
 
 	/*
+	 * If the size of is zero, chances are this isn't a valid
+	 * namespace (eg one that's not been configured yet). The
+	 * standard says the entire id will be zeros, so this is a
+	 * cheap way to test for that.
+	 */
+	if (ns->data.nsze == 0)
+		return (ENXIO);
+
+	/*
 	 * Note: format is a 0-based value, so > is appropriate here,
 	 *  not >=.
 	 */
 	if (ns->data.flbas.format > ns->data.nlbaf) {
 		printf("lba format %d exceeds number supported (%d)\n",
 		    ns->data.flbas.format, ns->data.nlbaf+1);
-		return (1);
+		return (ENXIO);
 	}
 
 	if (ctrlr->cdata.oncs.dsm)
@@ -540,27 +564,19 @@ nvme_ns_construct(struct nvme_namespace *ns, uint16_t id,
 	 */
 	unit = device_get_unit(ctrlr->dev) * NVME_MAX_NAMESPACES + ns->id - 1;
 
-/*
- * MAKEDEV_ETERNAL was added in r210923, for cdevs that will never
- *  be destroyed.  This avoids refcounting on the cdev object.
- *  That should be OK case here, as long as we're not supporting PCIe
- *  surprise removal nor namespace deletion.
- */
-#ifdef MAKEDEV_ETERNAL_KLD
-	ns->cdev = make_dev_credf(MAKEDEV_ETERNAL_KLD, &nvme_ns_cdevsw, unit,
-	    NULL, UID_ROOT, GID_WHEEL, 0600, "nvme%dns%d",
+	make_dev_args_init(&md_args);
+	md_args.mda_devsw = &nvme_ns_cdevsw;
+	md_args.mda_unit = unit;
+	md_args.mda_mode = 0600;
+	md_args.mda_si_drv1 = ns;
+	res = make_dev_s(&md_args, &ns->cdev, "nvme%dns%d",
 	    device_get_unit(ctrlr->dev), ns->id);
-#else
-	ns->cdev = make_dev_credf(0, &nvme_ns_cdevsw, unit,
-	    NULL, UID_ROOT, GID_WHEEL, 0600, "nvme%dns%d",
-	    device_get_unit(ctrlr->dev), ns->id);
-#endif
+	if (res != 0)
+		return (ENXIO);
+
 #ifdef NVME_UNMAPPED_BIO_SUPPORT
 	ns->cdev->si_flags |= SI_UNMAPPED;
 #endif
-
-	if (ns->cdev != NULL)
-		ns->cdev->si_drv1 = ns;
 
 	return (0);
 }

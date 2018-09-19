@@ -1,4 +1,5 @@
 /*-
+ * Copyright (c) 2017 Dell EMC
  * Copyright (c) 2000 David O'Brien
  * Copyright (c) 1995-1996 Søren Schmidt
  * Copyright (c) 1996 Peter Wemm
@@ -52,6 +53,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/pioctl.h>
 #include <sys/proc.h>
 #include <sys/procfs.h>
+#include <sys/ptrace.h>
 #include <sys/racct.h>
 #include <sys/resourcevar.h>
 #include <sys/rwlock.h>
@@ -318,7 +320,7 @@ __elfN(get_brandinfo)(struct image_params *imgp, const char *interp,
 		    strcmp((const char *)&hdr->e_ident[OLD_EI_BRAND],
 		    bi->compat_3_brand) == 0))) {
 			/* Looks good, but give brand a chance to veto */
-			if (!bi->header_supported ||
+			if (bi->header_supported == NULL ||
 			    bi->header_supported(imgp)) {
 				/*
 				 * Again, prefer strictly matching
@@ -366,7 +368,8 @@ __elfN(get_brandinfo)(struct image_params *imgp, const char *interp,
 			    /* ELF image p_filesz includes terminating zero */
 			    strlen(bi->interp_path) + 1 == interp_name_len &&
 			    strncmp(interp, bi->interp_path, interp_name_len)
-			    == 0)
+			    == 0 && (bi->header_supported == NULL ||
+			    bi->header_supported(imgp)))
 				return (bi);
 		}
 	}
@@ -378,7 +381,9 @@ __elfN(get_brandinfo)(struct image_params *imgp, const char *interp,
 		    (interp != NULL && (bi->flags & BI_BRAND_ONLY_STATIC) != 0))
 			continue;
 		if (hdr->e_machine == bi->machine &&
-		    __elfN(fallback_brand) == bi->brand)
+		    __elfN(fallback_brand) == bi->brand &&
+		    (bi->header_supported == NULL ||
+		    bi->header_supported(imgp)))
 			return (bi);
 	}
 	return (NULL);
@@ -596,7 +601,7 @@ __elfN(load_section)(struct image_params *imgp, vm_ooffset_t offset,
 	/* This had damn well better be true! */
 	if (map_len != 0) {
 		rv = __elfN(map_insert)(imgp, map, NULL, 0, map_addr,
-		    map_addr + map_len, VM_PROT_ALL, 0);
+		    map_addr + map_len, prot, 0);
 		if (rv != KERN_SUCCESS)
 			return (EINVAL);
 	}
@@ -617,10 +622,12 @@ __elfN(load_section)(struct image_params *imgp, vm_ooffset_t offset,
 	}
 
 	/*
-	 * set it to the specified protection.
+	 * Remove write access to the page if it was only granted by map_insert
+	 * to allow copyout.
 	 */
-	vm_map_protect(map, trunc_page(map_addr), round_page(map_addr +
-	    map_len), prot, FALSE);
+	if ((prot & VM_PROT_WRITE) == 0)
+		vm_map_protect(map, trunc_page(map_addr), round_page(map_addr +
+		    map_len), prot, FALSE);
 
 	return (0);
 }
@@ -832,7 +839,8 @@ __CONCAT(exec_, __elfN(imgact))(struct image_params *imgp)
 			break;
 		case PT_INTERP:
 			/* Path to interpreter */
-			if (phdr[i].p_filesz > MAXPATHLEN) {
+			if (phdr[i].p_filesz < 2 ||
+			    phdr[i].p_filesz > MAXPATHLEN) {
 				uprintf("Invalid PT_INTERP\n");
 				error = ENOEXEC;
 				goto ret;
@@ -854,7 +862,8 @@ __CONCAT(exec_, __elfN(imgact))(struct image_params *imgp)
 				    UIO_SYSSPACE, IO_NODELOCKED, td->td_ucred,
 				    NOCRED, NULL, td);
 				if (error != 0) {
-					uprintf("i/o error PT_INTERP\n");
+					uprintf("i/o error PT_INTERP %d\n",
+					    error);
 					goto ret;
 				}
 				interp_buf[interp_name_len] = '\0';
@@ -862,6 +871,11 @@ __CONCAT(exec_, __elfN(imgact))(struct image_params *imgp)
 			} else {
 				interp = __DECONST(char *, imgp->image_header) +
 				    phdr[i].p_offset;
+				if (interp[interp_name_len - 1] != '\0') {
+					uprintf("Invalid PT_INTERP\n");
+					error = ENOEXEC;
+					goto ret;
+				}
 			}
 			break;
 		case PT_GNU_STACK:
@@ -1108,9 +1122,7 @@ __elfN(freebsd_fixup)(register_t **stack_base, struct image_params *imgp)
 	AUXARGS_ENTRY(pos, AT_FLAGS, args->flags);
 	AUXARGS_ENTRY(pos, AT_ENTRY, args->entry);
 	AUXARGS_ENTRY(pos, AT_BASE, args->base);
-#ifdef AT_EHDRFLAGS
 	AUXARGS_ENTRY(pos, AT_EHDRFLAGS, args->hdr_eflags);
-#endif
 	if (imgp->execpathp != 0)
 		AUXARGS_ENTRY(pos, AT_EXECPATH, imgp->execpathp);
 	AUXARGS_ENTRY(pos, AT_OSRELDATE,
@@ -1131,6 +1143,12 @@ __elfN(freebsd_fixup)(register_t **stack_base, struct image_params *imgp)
 	AUXARGS_ENTRY(pos, AT_STACKPROT, imgp->sysent->sv_shared_page_obj
 	    != NULL && imgp->stack_prot != 0 ? imgp->stack_prot :
 	    imgp->sysent->sv_stackprot);
+	if ((imgp->sysent->sv_flags & SV_HWCAP) != 0) {
+		if (imgp->sysent->sv_hwcap != NULL)
+			AUXARGS_ENTRY(pos, AT_HWCAP, *imgp->sysent->sv_hwcap);
+		if (imgp->sysent->sv_hwcap2 != NULL)
+			AUXARGS_ENTRY(pos, AT_HWCAP2, *imgp->sysent->sv_hwcap2);
+	}
 	AUXARGS_ENTRY(pos, AT_NULL, 0);
 
 	free(imgp->auxargs, M_TEMP);
@@ -1202,6 +1220,7 @@ static void __elfN(note_prpsinfo)(void *, struct sbuf *, size_t *);
 static void __elfN(note_prstatus)(void *, struct sbuf *, size_t *);
 static void __elfN(note_threadmd)(void *, struct sbuf *, size_t *);
 static void __elfN(note_thrmisc)(void *, struct sbuf *, size_t *);
+static void __elfN(note_ptlwpinfo)(void *, struct sbuf *, size_t *);
 static void __elfN(note_procstat_auxv)(void *, struct sbuf *, size_t *);
 static void __elfN(note_procstat_proc)(void *, struct sbuf *, size_t *);
 static void __elfN(note_procstat_psstrings)(void *, struct sbuf *, size_t *);
@@ -1631,6 +1650,8 @@ __elfN(prepare_notes)(struct thread *td, struct note_info_list *list,
 		    __elfN(note_fpregset), thr);
 		size += register_note(list, NT_THRMISC,
 		    __elfN(note_thrmisc), thr);
+		size += register_note(list, NT_PTLWPINFO,
+		    __elfN(note_ptlwpinfo), thr);
 		size += register_note(list, -1,
 		    __elfN(note_threadmd), thr);
 
@@ -1844,6 +1865,7 @@ __elfN(putnote)(struct note_info *ninfo, struct sbuf *sb)
 
 #if defined(COMPAT_FREEBSD32) && __ELF_WORD_SIZE == 32
 #include <compat/freebsd32/freebsd32.h>
+#include <compat/freebsd32/freebsd32_signal.h>
 
 typedef struct prstatus32 elf_prstatus_t;
 typedef struct prpsinfo32 elf_prpsinfo_t;
@@ -1990,6 +2012,45 @@ __elfN(note_thrmisc)(void *arg, struct sbuf *sb, size_t *sizep)
 		sbuf_bcat(sb, &thrmisc, sizeof(thrmisc));
 	}
 	*sizep = sizeof(thrmisc);
+}
+
+static void
+__elfN(note_ptlwpinfo)(void *arg, struct sbuf *sb, size_t *sizep)
+{
+	struct thread *td;
+	size_t size;
+	int structsize;
+#if defined(COMPAT_FREEBSD32) && __ELF_WORD_SIZE == 32
+	struct ptrace_lwpinfo32 pl;
+#else
+	struct ptrace_lwpinfo pl;
+#endif
+
+	td = (struct thread *)arg;
+	size = sizeof(structsize) + sizeof(pl);
+	if (sb != NULL) {
+		KASSERT(*sizep == size, ("invalid size"));
+		structsize = sizeof(pl);
+		sbuf_bcat(sb, &structsize, sizeof(structsize));
+		bzero(&pl, sizeof(pl));
+		pl.pl_lwpid = td->td_tid;
+		pl.pl_event = PL_EVENT_NONE;
+		pl.pl_sigmask = td->td_sigmask;
+		pl.pl_siglist = td->td_siglist;
+		if (td->td_si.si_signo != 0) {
+			pl.pl_event = PL_EVENT_SIGNAL;
+			pl.pl_flags |= PL_FLAG_SI;
+#if defined(COMPAT_FREEBSD32) && __ELF_WORD_SIZE == 32
+			siginfo_to_siginfo32(&td->td_si, &pl.pl_siginfo);
+#else
+			pl.pl_siginfo = td->td_si;
+#endif
+		}
+		strcpy(pl.pl_tdname, td->td_name);
+		/* XXX TODO: supply more information in struct ptrace_lwpinfo*/
+		sbuf_bcat(sb, &pl, sizeof(pl));
+	}
+	*sizep = size;
 }
 
 /*

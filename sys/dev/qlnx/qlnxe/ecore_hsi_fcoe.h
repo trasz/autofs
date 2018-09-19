@@ -28,7 +28,6 @@
  *
  */
 
-
 #ifndef __ECORE_HSI_FCOE__
 #define __ECORE_HSI_FCOE__ 
 /****************************************/
@@ -160,8 +159,10 @@ struct pstorm_fcoe_conn_st_ctx
 #define PSTORM_FCOE_CONN_ST_CTX_INNER_VLAN_FLAG_SHIFT    2
 #define PSTORM_FCOE_CONN_ST_CTX_OUTER_VLAN_FLAG_MASK     0x1 /* Outer Vlan flag */
 #define PSTORM_FCOE_CONN_ST_CTX_OUTER_VLAN_FLAG_SHIFT    3
-#define PSTORM_FCOE_CONN_ST_CTX_RESERVED_MASK            0xF
-#define PSTORM_FCOE_CONN_ST_CTX_RESERVED_SHIFT           4
+#define PSTORM_FCOE_CONN_ST_CTX_SINGLE_VLAN_FLAG_MASK    0x1 /* Indicaiton that there should be a single vlan (for UFP mode) */
+#define PSTORM_FCOE_CONN_ST_CTX_SINGLE_VLAN_FLAG_SHIFT   4
+#define PSTORM_FCOE_CONN_ST_CTX_RESERVED_MASK            0x7
+#define PSTORM_FCOE_CONN_ST_CTX_RESERVED_SHIFT           5
 	u8 did_2 /* DID FC address - Third byte that is sent to NW via PBF */;
 	u8 did_1 /* DID FC address - Second byte that is sent to NW via PBF */;
 	u8 did_0 /* DID FC address - First byte that is sent to NW via PBF */;
@@ -240,7 +241,7 @@ struct xstorm_fcoe_conn_st_ctx
 struct e4_xstorm_fcoe_conn_ag_ctx
 {
 	u8 reserved0 /* cdu_validation */;
-	u8 fcoe_state /* state */;
+	u8 state /* state */;
 	u8 flags0;
 #define E4_XSTORM_FCOE_CONN_AG_CTX_EXIST_IN_QM0_MASK       0x1 /* exist_in_qm0 */
 #define E4_XSTORM_FCOE_CONN_AG_CTX_EXIST_IN_QM0_SHIFT      0
@@ -491,7 +492,7 @@ struct ustorm_fcoe_conn_st_ctx
 struct e4_tstorm_fcoe_conn_ag_ctx
 {
 	u8 reserved0 /* cdu_validation */;
-	u8 fcoe_state /* state */;
+	u8 state /* state */;
 	u8 flags0;
 #define E4_TSTORM_FCOE_CONN_AG_CTX_EXIST_IN_QM0_MASK          0x1 /* exist_in_qm0 */
 #define E4_TSTORM_FCOE_CONN_AG_CTX_EXIST_IN_QM0_SHIFT         0
@@ -671,9 +672,10 @@ struct tstorm_fcoe_conn_st_ctx
 #define TSTORM_FCOE_CONN_ST_CTX_MODE_SHIFT         0
 #define TSTORM_FCOE_CONN_ST_CTX_RESERVED_MASK      0x3F
 #define TSTORM_FCOE_CONN_ST_CTX_RESERVED_SHIFT     2
-	u8 q_relative_offset /* CQ, RQ and CMDQ relative offset for connection */;
+	u8 cq_relative_offset /* CQ relative offset for connection */;
+	u8 cmdq_relative_offset /* CmdQ relative offset for connection */;
 	u8 bdq_resource_id /* The BDQ resource ID to which this function is mapped */;
-	u8 reserved0[5] /* Alignment to 128b */;
+	u8 reserved0[4] /* Alignment to 128b */;
 };
 
 struct e4_mstorm_fcoe_conn_ag_ctx
@@ -720,7 +722,8 @@ struct e4_mstorm_fcoe_conn_ag_ctx
 struct fcoe_mstorm_fcoe_conn_st_ctx_fp
 {
 	__le16 xfer_prod /* XferQ producer */;
-	__le16 reserved1;
+	u8 num_cqs /* Number of CQs per function (internal to FW) */;
+	u8 reserved1;
 	u8 protection_info;
 #define FCOE_MSTORM_FCOE_CONN_ST_CTX_FP_SUPPORT_PROTECTION_MASK  0x1 /* Does this connection support protection (if couple of GOS share this connection it is enough that one of them support protection) */
 #define FCOE_MSTORM_FCOE_CONN_ST_CTX_FP_SUPPORT_PROTECTION_SHIFT 0
@@ -763,7 +766,7 @@ struct mstorm_fcoe_conn_st_ctx
 /*
  * fcoe connection context
  */
-struct fcoe_conn_context
+struct e4_fcoe_conn_context
 {
 	struct ystorm_fcoe_conn_st_ctx ystorm_st_context /* ystorm storm context */;
 	struct pstorm_fcoe_conn_st_ctx pstorm_st_context /* pstorm storm context */;
@@ -780,360 +783,6 @@ struct fcoe_conn_context
 	struct tstorm_fcoe_conn_st_ctx tstorm_st_context /* tstorm storm context */;
 	struct e4_mstorm_fcoe_conn_ag_ctx mstorm_ag_context /* mstorm aggregative context */;
 	struct mstorm_fcoe_conn_st_ctx mstorm_st_context /* mstorm storm context */;
-};
-
-
-/*
- * FCoE connection offload params passed by driver to FW in FCoE offload ramrod 
- */
-struct fcoe_conn_offload_ramrod_params
-{
-	struct fcoe_conn_offload_ramrod_data offload_ramrod_data;
-};
-
-
-/*
- * FCoE connection terminate params passed by driver to FW in FCoE terminate conn ramrod 
- */
-struct fcoe_conn_terminate_ramrod_params
-{
-	struct fcoe_conn_terminate_ramrod_data terminate_ramrod_data;
-};
-
-
-/*
- * FCoE event type
- */
-enum fcoe_event_type
-{
-	FCOE_EVENT_INIT_FUNC /* Slowpath completion on INIT_FUNC ramrod */,
-	FCOE_EVENT_DESTROY_FUNC /* Slowpath completion on DESTROY_FUNC ramrod */,
-	FCOE_EVENT_STAT_FUNC /* Slowpath completion on STAT_FUNC ramrod */,
-	FCOE_EVENT_OFFLOAD_CONN /* Slowpath completion on OFFLOAD_CONN ramrod */,
-	FCOE_EVENT_TERMINATE_CONN /* Slowpath completion on TERMINATE_CONN ramrod */,
-	FCOE_EVENT_ERROR /* Error event */,
-	MAX_FCOE_EVENT_TYPE
-};
-
-
-/*
- * FCoE init params passed by driver to FW in FCoE init ramrod 
- */
-struct fcoe_init_ramrod_params
-{
-	struct fcoe_init_func_ramrod_data init_ramrod_data;
-};
-
-
-
-
-/*
- * FCoE ramrod Command IDs 
- */
-enum fcoe_ramrod_cmd_id
-{
-	FCOE_RAMROD_CMD_ID_INIT_FUNC /* FCoE function init ramrod */,
-	FCOE_RAMROD_CMD_ID_DESTROY_FUNC /* FCoE function destroy ramrod */,
-	FCOE_RAMROD_CMD_ID_STAT_FUNC /* FCoE statistics ramrod */,
-	FCOE_RAMROD_CMD_ID_OFFLOAD_CONN /* FCoE connection offload ramrod */,
-	FCOE_RAMROD_CMD_ID_TERMINATE_CONN /* FCoE connection offload ramrod. Command ID known only to FW and VBD */,
-	MAX_FCOE_RAMROD_CMD_ID
-};
-
-
-/*
- * FCoE statistics params buffer passed by driver to FW in FCoE statistics ramrod 
- */
-struct fcoe_stat_ramrod_params
-{
-	struct fcoe_stat_ramrod_data stat_ramrod_data;
-};
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-struct e4_ystorm_fcoe_conn_ag_ctx
-{
-	u8 byte0 /* cdu_validation */;
-	u8 byte1 /* state */;
-	u8 flags0;
-#define E4_YSTORM_FCOE_CONN_AG_CTX_BIT0_MASK     0x1 /* exist_in_qm0 */
-#define E4_YSTORM_FCOE_CONN_AG_CTX_BIT0_SHIFT    0
-#define E4_YSTORM_FCOE_CONN_AG_CTX_BIT1_MASK     0x1 /* exist_in_qm1 */
-#define E4_YSTORM_FCOE_CONN_AG_CTX_BIT1_SHIFT    1
-#define E4_YSTORM_FCOE_CONN_AG_CTX_CF0_MASK      0x3 /* cf0 */
-#define E4_YSTORM_FCOE_CONN_AG_CTX_CF0_SHIFT     2
-#define E4_YSTORM_FCOE_CONN_AG_CTX_CF1_MASK      0x3 /* cf1 */
-#define E4_YSTORM_FCOE_CONN_AG_CTX_CF1_SHIFT     4
-#define E4_YSTORM_FCOE_CONN_AG_CTX_CF2_MASK      0x3 /* cf2 */
-#define E4_YSTORM_FCOE_CONN_AG_CTX_CF2_SHIFT     6
-	u8 flags1;
-#define E4_YSTORM_FCOE_CONN_AG_CTX_CF0EN_MASK    0x1 /* cf0en */
-#define E4_YSTORM_FCOE_CONN_AG_CTX_CF0EN_SHIFT   0
-#define E4_YSTORM_FCOE_CONN_AG_CTX_CF1EN_MASK    0x1 /* cf1en */
-#define E4_YSTORM_FCOE_CONN_AG_CTX_CF1EN_SHIFT   1
-#define E4_YSTORM_FCOE_CONN_AG_CTX_CF2EN_MASK    0x1 /* cf2en */
-#define E4_YSTORM_FCOE_CONN_AG_CTX_CF2EN_SHIFT   2
-#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE0EN_MASK  0x1 /* rule0en */
-#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE0EN_SHIFT 3
-#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE1EN_MASK  0x1 /* rule1en */
-#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE1EN_SHIFT 4
-#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE2EN_MASK  0x1 /* rule2en */
-#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE2EN_SHIFT 5
-#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE3EN_MASK  0x1 /* rule3en */
-#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE3EN_SHIFT 6
-#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE4EN_MASK  0x1 /* rule4en */
-#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE4EN_SHIFT 7
-	u8 byte2 /* byte2 */;
-	u8 byte3 /* byte3 */;
-	__le16 word0 /* word0 */;
-	__le32 reg0 /* reg0 */;
-	__le32 reg1 /* reg1 */;
-	__le16 word1 /* word1 */;
-	__le16 word2 /* word2 */;
-	__le16 word3 /* word3 */;
-	__le16 word4 /* word4 */;
-	__le32 reg2 /* reg2 */;
-	__le32 reg3 /* reg3 */;
-};
-
-
-struct e5_mstorm_fcoe_conn_ag_ctx
-{
-	u8 byte0 /* cdu_validation */;
-	u8 byte1 /* state_and_core_id */;
-	u8 flags0;
-#define E5_MSTORM_FCOE_CONN_AG_CTX_BIT0_MASK     0x1 /* exist_in_qm0 */
-#define E5_MSTORM_FCOE_CONN_AG_CTX_BIT0_SHIFT    0
-#define E5_MSTORM_FCOE_CONN_AG_CTX_BIT1_MASK     0x1 /* exist_in_qm1 */
-#define E5_MSTORM_FCOE_CONN_AG_CTX_BIT1_SHIFT    1
-#define E5_MSTORM_FCOE_CONN_AG_CTX_CF0_MASK      0x3 /* cf0 */
-#define E5_MSTORM_FCOE_CONN_AG_CTX_CF0_SHIFT     2
-#define E5_MSTORM_FCOE_CONN_AG_CTX_CF1_MASK      0x3 /* cf1 */
-#define E5_MSTORM_FCOE_CONN_AG_CTX_CF1_SHIFT     4
-#define E5_MSTORM_FCOE_CONN_AG_CTX_CF2_MASK      0x3 /* cf2 */
-#define E5_MSTORM_FCOE_CONN_AG_CTX_CF2_SHIFT     6
-	u8 flags1;
-#define E5_MSTORM_FCOE_CONN_AG_CTX_CF0EN_MASK    0x1 /* cf0en */
-#define E5_MSTORM_FCOE_CONN_AG_CTX_CF0EN_SHIFT   0
-#define E5_MSTORM_FCOE_CONN_AG_CTX_CF1EN_MASK    0x1 /* cf1en */
-#define E5_MSTORM_FCOE_CONN_AG_CTX_CF1EN_SHIFT   1
-#define E5_MSTORM_FCOE_CONN_AG_CTX_CF2EN_MASK    0x1 /* cf2en */
-#define E5_MSTORM_FCOE_CONN_AG_CTX_CF2EN_SHIFT   2
-#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE0EN_MASK  0x1 /* rule0en */
-#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE0EN_SHIFT 3
-#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE1EN_MASK  0x1 /* rule1en */
-#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE1EN_SHIFT 4
-#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE2EN_MASK  0x1 /* rule2en */
-#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE2EN_SHIFT 5
-#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE3EN_MASK  0x1 /* rule3en */
-#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE3EN_SHIFT 6
-#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE4EN_MASK  0x1 /* rule4en */
-#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE4EN_SHIFT 7
-	__le16 word0 /* word0 */;
-	__le16 word1 /* word1 */;
-	__le32 reg0 /* reg0 */;
-	__le32 reg1 /* reg1 */;
-};
-
-
-struct e5_tstorm_fcoe_conn_ag_ctx
-{
-	u8 reserved0 /* cdu_validation */;
-	u8 state_and_core_id /* state_and_core_id */;
-	u8 flags0;
-#define E5_TSTORM_FCOE_CONN_AG_CTX_EXIST_IN_QM0_MASK          0x1 /* exist_in_qm0 */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_EXIST_IN_QM0_SHIFT         0
-#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT1_MASK                  0x1 /* exist_in_qm1 */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT1_SHIFT                 1
-#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT2_MASK                  0x1 /* bit2 */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT2_SHIFT                 2
-#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT3_MASK                  0x1 /* bit3 */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT3_SHIFT                 3
-#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT4_MASK                  0x1 /* bit4 */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT4_SHIFT                 4
-#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT5_MASK                  0x1 /* bit5 */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT5_SHIFT                 5
-#define E5_TSTORM_FCOE_CONN_AG_CTX_DUMMY_TIMER_CF_MASK        0x3 /* timer0cf */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_DUMMY_TIMER_CF_SHIFT       6
-	u8 flags1;
-#define E5_TSTORM_FCOE_CONN_AG_CTX_FLUSH_Q0_CF_MASK           0x3 /* timer1cf */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_FLUSH_Q0_CF_SHIFT          0
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF2_MASK                   0x3 /* timer2cf */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF2_SHIFT                  2
-#define E5_TSTORM_FCOE_CONN_AG_CTX_TIMER_STOP_ALL_CF_MASK     0x3 /* timer_stop_all */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_TIMER_STOP_ALL_CF_SHIFT    4
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF4_MASK                   0x3 /* cf4 */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF4_SHIFT                  6
-	u8 flags2;
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF5_MASK                   0x3 /* cf5 */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF5_SHIFT                  0
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF6_MASK                   0x3 /* cf6 */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF6_SHIFT                  2
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF7_MASK                   0x3 /* cf7 */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF7_SHIFT                  4
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF8_MASK                   0x3 /* cf8 */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF8_SHIFT                  6
-	u8 flags3;
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF9_MASK                   0x3 /* cf9 */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF9_SHIFT                  0
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF10_MASK                  0x3 /* cf10 */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF10_SHIFT                 2
-#define E5_TSTORM_FCOE_CONN_AG_CTX_DUMMY_TIMER_CF_EN_MASK     0x1 /* cf0en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_DUMMY_TIMER_CF_EN_SHIFT    4
-#define E5_TSTORM_FCOE_CONN_AG_CTX_FLUSH_Q0_CF_EN_MASK        0x1 /* cf1en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_FLUSH_Q0_CF_EN_SHIFT       5
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF2EN_MASK                 0x1 /* cf2en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF2EN_SHIFT                6
-#define E5_TSTORM_FCOE_CONN_AG_CTX_TIMER_STOP_ALL_CF_EN_MASK  0x1 /* cf3en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_TIMER_STOP_ALL_CF_EN_SHIFT 7
-	u8 flags4;
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF4EN_MASK                 0x1 /* cf4en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF4EN_SHIFT                0
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF5EN_MASK                 0x1 /* cf5en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF5EN_SHIFT                1
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF6EN_MASK                 0x1 /* cf6en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF6EN_SHIFT                2
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF7EN_MASK                 0x1 /* cf7en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF7EN_SHIFT                3
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF8EN_MASK                 0x1 /* cf8en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF8EN_SHIFT                4
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF9EN_MASK                 0x1 /* cf9en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF9EN_SHIFT                5
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF10EN_MASK                0x1 /* cf10en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_CF10EN_SHIFT               6
-#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE0EN_MASK               0x1 /* rule0en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE0EN_SHIFT              7
-	u8 flags5;
-#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE1EN_MASK               0x1 /* rule1en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE1EN_SHIFT              0
-#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE2EN_MASK               0x1 /* rule2en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE2EN_SHIFT              1
-#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE3EN_MASK               0x1 /* rule3en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE3EN_SHIFT              2
-#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE4EN_MASK               0x1 /* rule4en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE4EN_SHIFT              3
-#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE5EN_MASK               0x1 /* rule5en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE5EN_SHIFT              4
-#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE6EN_MASK               0x1 /* rule6en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE6EN_SHIFT              5
-#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE7EN_MASK               0x1 /* rule7en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE7EN_SHIFT              6
-#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE8EN_MASK               0x1 /* rule8en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE8EN_SHIFT              7
-	u8 flags6;
-#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED1_MASK          0x1 /* bit6 */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED1_SHIFT         0
-#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED2_MASK          0x1 /* bit7 */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED2_SHIFT         1
-#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED3_MASK          0x1 /* bit8 */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED3_SHIFT         2
-#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED4_MASK          0x3 /* cf11 */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED4_SHIFT         3
-#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED5_MASK          0x1 /* cf11en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED5_SHIFT         5
-#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED6_MASK          0x1 /* rule9en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED6_SHIFT         6
-#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED7_MASK          0x1 /* rule10en */
-#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED7_SHIFT         7
-	u8 byte2 /* byte2 */;
-	__le16 word0 /* word0 */;
-	__le32 reg0 /* reg0 */;
-};
-
-
-struct e5_ustorm_fcoe_conn_ag_ctx
-{
-	u8 byte0 /* cdu_validation */;
-	u8 byte1 /* state_and_core_id */;
-	u8 flags0;
-#define E5_USTORM_FCOE_CONN_AG_CTX_BIT0_MASK          0x1 /* exist_in_qm0 */
-#define E5_USTORM_FCOE_CONN_AG_CTX_BIT0_SHIFT         0
-#define E5_USTORM_FCOE_CONN_AG_CTX_BIT1_MASK          0x1 /* exist_in_qm1 */
-#define E5_USTORM_FCOE_CONN_AG_CTX_BIT1_SHIFT         1
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF0_MASK           0x3 /* timer0cf */
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF0_SHIFT          2
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF1_MASK           0x3 /* timer1cf */
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF1_SHIFT          4
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF2_MASK           0x3 /* timer2cf */
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF2_SHIFT          6
-	u8 flags1;
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF3_MASK           0x3 /* timer_stop_all */
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF3_SHIFT          0
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF4_MASK           0x3 /* cf4 */
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF4_SHIFT          2
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF5_MASK           0x3 /* cf5 */
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF5_SHIFT          4
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF6_MASK           0x3 /* cf6 */
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF6_SHIFT          6
-	u8 flags2;
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF0EN_MASK         0x1 /* cf0en */
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF0EN_SHIFT        0
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF1EN_MASK         0x1 /* cf1en */
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF1EN_SHIFT        1
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF2EN_MASK         0x1 /* cf2en */
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF2EN_SHIFT        2
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF3EN_MASK         0x1 /* cf3en */
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF3EN_SHIFT        3
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF4EN_MASK         0x1 /* cf4en */
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF4EN_SHIFT        4
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF5EN_MASK         0x1 /* cf5en */
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF5EN_SHIFT        5
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF6EN_MASK         0x1 /* cf6en */
-#define E5_USTORM_FCOE_CONN_AG_CTX_CF6EN_SHIFT        6
-#define E5_USTORM_FCOE_CONN_AG_CTX_RULE0EN_MASK       0x1 /* rule0en */
-#define E5_USTORM_FCOE_CONN_AG_CTX_RULE0EN_SHIFT      7
-	u8 flags3;
-#define E5_USTORM_FCOE_CONN_AG_CTX_RULE1EN_MASK       0x1 /* rule1en */
-#define E5_USTORM_FCOE_CONN_AG_CTX_RULE1EN_SHIFT      0
-#define E5_USTORM_FCOE_CONN_AG_CTX_RULE2EN_MASK       0x1 /* rule2en */
-#define E5_USTORM_FCOE_CONN_AG_CTX_RULE2EN_SHIFT      1
-#define E5_USTORM_FCOE_CONN_AG_CTX_RULE3EN_MASK       0x1 /* rule3en */
-#define E5_USTORM_FCOE_CONN_AG_CTX_RULE3EN_SHIFT      2
-#define E5_USTORM_FCOE_CONN_AG_CTX_RULE4EN_MASK       0x1 /* rule4en */
-#define E5_USTORM_FCOE_CONN_AG_CTX_RULE4EN_SHIFT      3
-#define E5_USTORM_FCOE_CONN_AG_CTX_RULE5EN_MASK       0x1 /* rule5en */
-#define E5_USTORM_FCOE_CONN_AG_CTX_RULE5EN_SHIFT      4
-#define E5_USTORM_FCOE_CONN_AG_CTX_RULE6EN_MASK       0x1 /* rule6en */
-#define E5_USTORM_FCOE_CONN_AG_CTX_RULE6EN_SHIFT      5
-#define E5_USTORM_FCOE_CONN_AG_CTX_RULE7EN_MASK       0x1 /* rule7en */
-#define E5_USTORM_FCOE_CONN_AG_CTX_RULE7EN_SHIFT      6
-#define E5_USTORM_FCOE_CONN_AG_CTX_RULE8EN_MASK       0x1 /* rule8en */
-#define E5_USTORM_FCOE_CONN_AG_CTX_RULE8EN_SHIFT      7
-	u8 flags4;
-#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED1_MASK  0x1 /* bit2 */
-#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED1_SHIFT 0
-#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED2_MASK  0x1 /* bit3 */
-#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED2_SHIFT 1
-#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED3_MASK  0x3 /* cf7 */
-#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED3_SHIFT 2
-#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED4_MASK  0x3 /* cf8 */
-#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED4_SHIFT 4
-#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED5_MASK  0x1 /* cf7en */
-#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED5_SHIFT 6
-#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED6_MASK  0x1 /* cf8en */
-#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED6_SHIFT 7
-	u8 byte2 /* byte2 */;
-	__le16 word0 /* conn_dpi */;
-	__le16 word1 /* word1 */;
-	__le32 reg0 /* reg0 */;
-	__le32 reg1 /* reg1 */;
-	__le32 reg2 /* reg2 */;
-	__le32 reg3 /* reg3 */;
-	__le16 word2 /* word2 */;
-	__le16 word3 /* word3 */;
 };
 
 
@@ -1390,6 +1039,382 @@ struct e5_xstorm_fcoe_conn_ag_ctx
 	__le16 word11 /* word11 */;
 	__le32 reg7 /* reg7 */;
 };
+
+struct e5_tstorm_fcoe_conn_ag_ctx
+{
+	u8 reserved0 /* cdu_validation */;
+	u8 state_and_core_id /* state_and_core_id */;
+	u8 flags0;
+#define E5_TSTORM_FCOE_CONN_AG_CTX_EXIST_IN_QM0_MASK          0x1 /* exist_in_qm0 */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_EXIST_IN_QM0_SHIFT         0
+#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT1_MASK                  0x1 /* exist_in_qm1 */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT1_SHIFT                 1
+#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT2_MASK                  0x1 /* bit2 */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT2_SHIFT                 2
+#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT3_MASK                  0x1 /* bit3 */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT3_SHIFT                 3
+#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT4_MASK                  0x1 /* bit4 */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT4_SHIFT                 4
+#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT5_MASK                  0x1 /* bit5 */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_BIT5_SHIFT                 5
+#define E5_TSTORM_FCOE_CONN_AG_CTX_DUMMY_TIMER_CF_MASK        0x3 /* timer0cf */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_DUMMY_TIMER_CF_SHIFT       6
+	u8 flags1;
+#define E5_TSTORM_FCOE_CONN_AG_CTX_FLUSH_Q0_CF_MASK           0x3 /* timer1cf */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_FLUSH_Q0_CF_SHIFT          0
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF2_MASK                   0x3 /* timer2cf */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF2_SHIFT                  2
+#define E5_TSTORM_FCOE_CONN_AG_CTX_TIMER_STOP_ALL_CF_MASK     0x3 /* timer_stop_all */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_TIMER_STOP_ALL_CF_SHIFT    4
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF4_MASK                   0x3 /* cf4 */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF4_SHIFT                  6
+	u8 flags2;
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF5_MASK                   0x3 /* cf5 */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF5_SHIFT                  0
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF6_MASK                   0x3 /* cf6 */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF6_SHIFT                  2
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF7_MASK                   0x3 /* cf7 */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF7_SHIFT                  4
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF8_MASK                   0x3 /* cf8 */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF8_SHIFT                  6
+	u8 flags3;
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF9_MASK                   0x3 /* cf9 */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF9_SHIFT                  0
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF10_MASK                  0x3 /* cf10 */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF10_SHIFT                 2
+#define E5_TSTORM_FCOE_CONN_AG_CTX_DUMMY_TIMER_CF_EN_MASK     0x1 /* cf0en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_DUMMY_TIMER_CF_EN_SHIFT    4
+#define E5_TSTORM_FCOE_CONN_AG_CTX_FLUSH_Q0_CF_EN_MASK        0x1 /* cf1en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_FLUSH_Q0_CF_EN_SHIFT       5
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF2EN_MASK                 0x1 /* cf2en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF2EN_SHIFT                6
+#define E5_TSTORM_FCOE_CONN_AG_CTX_TIMER_STOP_ALL_CF_EN_MASK  0x1 /* cf3en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_TIMER_STOP_ALL_CF_EN_SHIFT 7
+	u8 flags4;
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF4EN_MASK                 0x1 /* cf4en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF4EN_SHIFT                0
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF5EN_MASK                 0x1 /* cf5en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF5EN_SHIFT                1
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF6EN_MASK                 0x1 /* cf6en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF6EN_SHIFT                2
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF7EN_MASK                 0x1 /* cf7en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF7EN_SHIFT                3
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF8EN_MASK                 0x1 /* cf8en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF8EN_SHIFT                4
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF9EN_MASK                 0x1 /* cf9en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF9EN_SHIFT                5
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF10EN_MASK                0x1 /* cf10en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_CF10EN_SHIFT               6
+#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE0EN_MASK               0x1 /* rule0en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE0EN_SHIFT              7
+	u8 flags5;
+#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE1EN_MASK               0x1 /* rule1en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE1EN_SHIFT              0
+#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE2EN_MASK               0x1 /* rule2en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE2EN_SHIFT              1
+#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE3EN_MASK               0x1 /* rule3en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE3EN_SHIFT              2
+#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE4EN_MASK               0x1 /* rule4en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE4EN_SHIFT              3
+#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE5EN_MASK               0x1 /* rule5en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE5EN_SHIFT              4
+#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE6EN_MASK               0x1 /* rule6en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE6EN_SHIFT              5
+#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE7EN_MASK               0x1 /* rule7en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE7EN_SHIFT              6
+#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE8EN_MASK               0x1 /* rule8en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_RULE8EN_SHIFT              7
+	u8 flags6;
+#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED1_MASK          0x1 /* bit6 */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED1_SHIFT         0
+#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED2_MASK          0x1 /* bit7 */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED2_SHIFT         1
+#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED3_MASK          0x1 /* bit8 */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED3_SHIFT         2
+#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED4_MASK          0x3 /* cf11 */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED4_SHIFT         3
+#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED5_MASK          0x1 /* cf11en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED5_SHIFT         5
+#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED6_MASK          0x1 /* rule9en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED6_SHIFT         6
+#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED7_MASK          0x1 /* rule10en */
+#define E5_TSTORM_FCOE_CONN_AG_CTX_E4_RESERVED7_SHIFT         7
+	u8 byte2 /* byte2 */;
+	__le16 word0 /* word0 */;
+	__le32 reg0 /* reg0 */;
+};
+
+struct e5_ustorm_fcoe_conn_ag_ctx
+{
+	u8 byte0 /* cdu_validation */;
+	u8 byte1 /* state_and_core_id */;
+	u8 flags0;
+#define E5_USTORM_FCOE_CONN_AG_CTX_BIT0_MASK          0x1 /* exist_in_qm0 */
+#define E5_USTORM_FCOE_CONN_AG_CTX_BIT0_SHIFT         0
+#define E5_USTORM_FCOE_CONN_AG_CTX_BIT1_MASK          0x1 /* exist_in_qm1 */
+#define E5_USTORM_FCOE_CONN_AG_CTX_BIT1_SHIFT         1
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF0_MASK           0x3 /* timer0cf */
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF0_SHIFT          2
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF1_MASK           0x3 /* timer1cf */
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF1_SHIFT          4
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF2_MASK           0x3 /* timer2cf */
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF2_SHIFT          6
+	u8 flags1;
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF3_MASK           0x3 /* timer_stop_all */
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF3_SHIFT          0
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF4_MASK           0x3 /* cf4 */
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF4_SHIFT          2
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF5_MASK           0x3 /* cf5 */
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF5_SHIFT          4
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF6_MASK           0x3 /* cf6 */
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF6_SHIFT          6
+	u8 flags2;
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF0EN_MASK         0x1 /* cf0en */
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF0EN_SHIFT        0
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF1EN_MASK         0x1 /* cf1en */
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF1EN_SHIFT        1
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF2EN_MASK         0x1 /* cf2en */
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF2EN_SHIFT        2
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF3EN_MASK         0x1 /* cf3en */
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF3EN_SHIFT        3
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF4EN_MASK         0x1 /* cf4en */
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF4EN_SHIFT        4
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF5EN_MASK         0x1 /* cf5en */
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF5EN_SHIFT        5
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF6EN_MASK         0x1 /* cf6en */
+#define E5_USTORM_FCOE_CONN_AG_CTX_CF6EN_SHIFT        6
+#define E5_USTORM_FCOE_CONN_AG_CTX_RULE0EN_MASK       0x1 /* rule0en */
+#define E5_USTORM_FCOE_CONN_AG_CTX_RULE0EN_SHIFT      7
+	u8 flags3;
+#define E5_USTORM_FCOE_CONN_AG_CTX_RULE1EN_MASK       0x1 /* rule1en */
+#define E5_USTORM_FCOE_CONN_AG_CTX_RULE1EN_SHIFT      0
+#define E5_USTORM_FCOE_CONN_AG_CTX_RULE2EN_MASK       0x1 /* rule2en */
+#define E5_USTORM_FCOE_CONN_AG_CTX_RULE2EN_SHIFT      1
+#define E5_USTORM_FCOE_CONN_AG_CTX_RULE3EN_MASK       0x1 /* rule3en */
+#define E5_USTORM_FCOE_CONN_AG_CTX_RULE3EN_SHIFT      2
+#define E5_USTORM_FCOE_CONN_AG_CTX_RULE4EN_MASK       0x1 /* rule4en */
+#define E5_USTORM_FCOE_CONN_AG_CTX_RULE4EN_SHIFT      3
+#define E5_USTORM_FCOE_CONN_AG_CTX_RULE5EN_MASK       0x1 /* rule5en */
+#define E5_USTORM_FCOE_CONN_AG_CTX_RULE5EN_SHIFT      4
+#define E5_USTORM_FCOE_CONN_AG_CTX_RULE6EN_MASK       0x1 /* rule6en */
+#define E5_USTORM_FCOE_CONN_AG_CTX_RULE6EN_SHIFT      5
+#define E5_USTORM_FCOE_CONN_AG_CTX_RULE7EN_MASK       0x1 /* rule7en */
+#define E5_USTORM_FCOE_CONN_AG_CTX_RULE7EN_SHIFT      6
+#define E5_USTORM_FCOE_CONN_AG_CTX_RULE8EN_MASK       0x1 /* rule8en */
+#define E5_USTORM_FCOE_CONN_AG_CTX_RULE8EN_SHIFT      7
+	u8 flags4;
+#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED1_MASK  0x1 /* bit2 */
+#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED1_SHIFT 0
+#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED2_MASK  0x1 /* bit3 */
+#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED2_SHIFT 1
+#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED3_MASK  0x3 /* cf7 */
+#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED3_SHIFT 2
+#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED4_MASK  0x3 /* cf8 */
+#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED4_SHIFT 4
+#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED5_MASK  0x1 /* cf7en */
+#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED5_SHIFT 6
+#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED6_MASK  0x1 /* cf8en */
+#define E5_USTORM_FCOE_CONN_AG_CTX_E4_RESERVED6_SHIFT 7
+	u8 byte2 /* byte2 */;
+	__le16 word0 /* conn_dpi */;
+	__le16 word1 /* word1 */;
+	__le32 reg0 /* reg0 */;
+	__le32 reg1 /* reg1 */;
+	__le32 reg2 /* reg2 */;
+	__le32 reg3 /* reg3 */;
+	__le16 word2 /* word2 */;
+	__le16 word3 /* word3 */;
+};
+
+struct e5_mstorm_fcoe_conn_ag_ctx
+{
+	u8 byte0 /* cdu_validation */;
+	u8 byte1 /* state_and_core_id */;
+	u8 flags0;
+#define E5_MSTORM_FCOE_CONN_AG_CTX_BIT0_MASK     0x1 /* exist_in_qm0 */
+#define E5_MSTORM_FCOE_CONN_AG_CTX_BIT0_SHIFT    0
+#define E5_MSTORM_FCOE_CONN_AG_CTX_BIT1_MASK     0x1 /* exist_in_qm1 */
+#define E5_MSTORM_FCOE_CONN_AG_CTX_BIT1_SHIFT    1
+#define E5_MSTORM_FCOE_CONN_AG_CTX_CF0_MASK      0x3 /* cf0 */
+#define E5_MSTORM_FCOE_CONN_AG_CTX_CF0_SHIFT     2
+#define E5_MSTORM_FCOE_CONN_AG_CTX_CF1_MASK      0x3 /* cf1 */
+#define E5_MSTORM_FCOE_CONN_AG_CTX_CF1_SHIFT     4
+#define E5_MSTORM_FCOE_CONN_AG_CTX_CF2_MASK      0x3 /* cf2 */
+#define E5_MSTORM_FCOE_CONN_AG_CTX_CF2_SHIFT     6
+	u8 flags1;
+#define E5_MSTORM_FCOE_CONN_AG_CTX_CF0EN_MASK    0x1 /* cf0en */
+#define E5_MSTORM_FCOE_CONN_AG_CTX_CF0EN_SHIFT   0
+#define E5_MSTORM_FCOE_CONN_AG_CTX_CF1EN_MASK    0x1 /* cf1en */
+#define E5_MSTORM_FCOE_CONN_AG_CTX_CF1EN_SHIFT   1
+#define E5_MSTORM_FCOE_CONN_AG_CTX_CF2EN_MASK    0x1 /* cf2en */
+#define E5_MSTORM_FCOE_CONN_AG_CTX_CF2EN_SHIFT   2
+#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE0EN_MASK  0x1 /* rule0en */
+#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE0EN_SHIFT 3
+#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE1EN_MASK  0x1 /* rule1en */
+#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE1EN_SHIFT 4
+#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE2EN_MASK  0x1 /* rule2en */
+#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE2EN_SHIFT 5
+#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE3EN_MASK  0x1 /* rule3en */
+#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE3EN_SHIFT 6
+#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE4EN_MASK  0x1 /* rule4en */
+#define E5_MSTORM_FCOE_CONN_AG_CTX_RULE4EN_SHIFT 7
+	__le16 word0 /* word0 */;
+	__le16 word1 /* word1 */;
+	__le32 reg0 /* reg0 */;
+	__le32 reg1 /* reg1 */;
+};
+
+/*
+ * fcoe connection context
+ */
+struct e5_fcoe_conn_context
+{
+	struct ystorm_fcoe_conn_st_ctx ystorm_st_context /* ystorm storm context */;
+	struct pstorm_fcoe_conn_st_ctx pstorm_st_context /* pstorm storm context */;
+	struct regpair pstorm_st_padding[2] /* padding */;
+	struct xstorm_fcoe_conn_st_ctx xstorm_st_context /* xstorm storm context */;
+	struct e5_xstorm_fcoe_conn_ag_ctx xstorm_ag_context /* xstorm aggregative context */;
+	struct ustorm_fcoe_conn_st_ctx ustorm_st_context /* ustorm storm context */;
+	struct regpair ustorm_st_padding[2] /* padding */;
+	struct e5_tstorm_fcoe_conn_ag_ctx tstorm_ag_context /* tstorm aggregative context */;
+	struct regpair tstorm_ag_padding[2] /* padding */;
+	struct timers_context timer_context /* timer context */;
+	struct e5_ustorm_fcoe_conn_ag_ctx ustorm_ag_context /* ustorm aggregative context */;
+	struct tstorm_fcoe_conn_st_ctx tstorm_st_context /* tstorm storm context */;
+	struct e5_mstorm_fcoe_conn_ag_ctx mstorm_ag_context /* mstorm aggregative context */;
+	struct mstorm_fcoe_conn_st_ctx mstorm_st_context /* mstorm storm context */;
+};
+
+
+/*
+ * FCoE connection offload params passed by driver to FW in FCoE offload ramrod 
+ */
+struct fcoe_conn_offload_ramrod_params
+{
+	struct fcoe_conn_offload_ramrod_data offload_ramrod_data;
+};
+
+
+/*
+ * FCoE connection terminate params passed by driver to FW in FCoE terminate conn ramrod 
+ */
+struct fcoe_conn_terminate_ramrod_params
+{
+	struct fcoe_conn_terminate_ramrod_data terminate_ramrod_data;
+};
+
+
+/*
+ * FCoE event type
+ */
+enum fcoe_event_type
+{
+	FCOE_EVENT_INIT_FUNC /* Slowpath completion on INIT_FUNC ramrod */,
+	FCOE_EVENT_DESTROY_FUNC /* Slowpath completion on DESTROY_FUNC ramrod */,
+	FCOE_EVENT_STAT_FUNC /* Slowpath completion on STAT_FUNC ramrod */,
+	FCOE_EVENT_OFFLOAD_CONN /* Slowpath completion on OFFLOAD_CONN ramrod */,
+	FCOE_EVENT_TERMINATE_CONN /* Slowpath completion on TERMINATE_CONN ramrod */,
+	FCOE_EVENT_ERROR /* Error event */,
+	MAX_FCOE_EVENT_TYPE
+};
+
+
+/*
+ * FCoE init params passed by driver to FW in FCoE init ramrod 
+ */
+struct fcoe_init_ramrod_params
+{
+	struct fcoe_init_func_ramrod_data init_ramrod_data;
+};
+
+
+
+
+/*
+ * FCoE ramrod Command IDs 
+ */
+enum fcoe_ramrod_cmd_id
+{
+	FCOE_RAMROD_CMD_ID_INIT_FUNC /* FCoE function init ramrod */,
+	FCOE_RAMROD_CMD_ID_DESTROY_FUNC /* FCoE function destroy ramrod */,
+	FCOE_RAMROD_CMD_ID_STAT_FUNC /* FCoE statistics ramrod */,
+	FCOE_RAMROD_CMD_ID_OFFLOAD_CONN /* FCoE connection offload ramrod */,
+	FCOE_RAMROD_CMD_ID_TERMINATE_CONN /* FCoE connection offload ramrod. Command ID known only to FW and VBD */,
+	MAX_FCOE_RAMROD_CMD_ID
+};
+
+
+/*
+ * FCoE statistics params buffer passed by driver to FW in FCoE statistics ramrod 
+ */
+struct fcoe_stat_ramrod_params
+{
+	struct fcoe_stat_ramrod_data stat_ramrod_data;
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+struct e4_ystorm_fcoe_conn_ag_ctx
+{
+	u8 byte0 /* cdu_validation */;
+	u8 byte1 /* state */;
+	u8 flags0;
+#define E4_YSTORM_FCOE_CONN_AG_CTX_BIT0_MASK     0x1 /* exist_in_qm0 */
+#define E4_YSTORM_FCOE_CONN_AG_CTX_BIT0_SHIFT    0
+#define E4_YSTORM_FCOE_CONN_AG_CTX_BIT1_MASK     0x1 /* exist_in_qm1 */
+#define E4_YSTORM_FCOE_CONN_AG_CTX_BIT1_SHIFT    1
+#define E4_YSTORM_FCOE_CONN_AG_CTX_CF0_MASK      0x3 /* cf0 */
+#define E4_YSTORM_FCOE_CONN_AG_CTX_CF0_SHIFT     2
+#define E4_YSTORM_FCOE_CONN_AG_CTX_CF1_MASK      0x3 /* cf1 */
+#define E4_YSTORM_FCOE_CONN_AG_CTX_CF1_SHIFT     4
+#define E4_YSTORM_FCOE_CONN_AG_CTX_CF2_MASK      0x3 /* cf2 */
+#define E4_YSTORM_FCOE_CONN_AG_CTX_CF2_SHIFT     6
+	u8 flags1;
+#define E4_YSTORM_FCOE_CONN_AG_CTX_CF0EN_MASK    0x1 /* cf0en */
+#define E4_YSTORM_FCOE_CONN_AG_CTX_CF0EN_SHIFT   0
+#define E4_YSTORM_FCOE_CONN_AG_CTX_CF1EN_MASK    0x1 /* cf1en */
+#define E4_YSTORM_FCOE_CONN_AG_CTX_CF1EN_SHIFT   1
+#define E4_YSTORM_FCOE_CONN_AG_CTX_CF2EN_MASK    0x1 /* cf2en */
+#define E4_YSTORM_FCOE_CONN_AG_CTX_CF2EN_SHIFT   2
+#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE0EN_MASK  0x1 /* rule0en */
+#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE0EN_SHIFT 3
+#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE1EN_MASK  0x1 /* rule1en */
+#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE1EN_SHIFT 4
+#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE2EN_MASK  0x1 /* rule2en */
+#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE2EN_SHIFT 5
+#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE3EN_MASK  0x1 /* rule3en */
+#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE3EN_SHIFT 6
+#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE4EN_MASK  0x1 /* rule4en */
+#define E4_YSTORM_FCOE_CONN_AG_CTX_RULE4EN_SHIFT 7
+	u8 byte2 /* byte2 */;
+	u8 byte3 /* byte3 */;
+	__le16 word0 /* word0 */;
+	__le32 reg0 /* reg0 */;
+	__le32 reg1 /* reg1 */;
+	__le16 word1 /* word1 */;
+	__le16 word2 /* word2 */;
+	__le16 word3 /* word3 */;
+	__le16 word4 /* word4 */;
+	__le32 reg2 /* reg2 */;
+	__le32 reg3 /* reg3 */;
+};
+
+
+
+
 
 
 struct e5_ystorm_fcoe_conn_ag_ctx

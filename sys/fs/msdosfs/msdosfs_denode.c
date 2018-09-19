@@ -55,6 +55,7 @@
 #include <sys/kernel.h>
 #include <sys/malloc.h>
 #include <sys/mount.h>
+#include <sys/vmmeter.h>
 #include <sys/vnode.h>
 
 #include <vm/vm.h>
@@ -294,7 +295,7 @@ deupdat(struct denode *dep, int waitfor)
 		    DE_MODIFIED);
 		return (0);
 	}
-	getnanotime(&ts);
+	vfs_timestamp(&ts);
 	DETIMES(dep, &ts, &ts, &ts);
 	if ((dep->de_flag & DE_MODIFIED) == 0 && waitfor == 0)
 		return (0);

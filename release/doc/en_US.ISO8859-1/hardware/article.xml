@@ -7,7 +7,9 @@
 %devauto;
 ]>
 <article xmlns="http://docbook.org/ns/docbook"
-  xmlns:xlink="http://www.w3.org/1999/xlink" version="5.0">
+  xmlns:xlink="http://www.w3.org/1999/xlink"
+  xml:id="top"
+  version="5.0">
 
   <info>
     <title>&os; &release.current; Hardware Notes</title>
@@ -37,6 +39,7 @@
       <year>2015</year>
       <year>2016</year>
       <year>2017</year>
+      <year>2018</year>
       <holder role="mailto:doc@FreeBSD.org">The &os; Documentation
 	Project</holder>
     </copyright>
@@ -819,6 +822,8 @@
 
       &hwlist.age;
 
+      &hwlist.alc;
+
       &hwlist.ale;
 
       &hwlist.aue;
@@ -851,6 +856,8 @@
       &hwlist.cxgb;
 
       &hwlist.cxgbe;
+
+      &hwlist.cxgbev;
 
       &hwlist.dc;
 
@@ -892,6 +899,8 @@
       &hwlist.kue;
 
       &hwlist.lge;
+
+      &hwlist.liquidio;
 
       &hwlist.mlx4en;
 
@@ -1091,6 +1100,8 @@
       &hwlist.ctau;
 
       &hwlist.cm;
+
+      &hwlist.mos;
     </sect2>
 
     <sect2 xml:id="serial">

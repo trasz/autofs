@@ -33,6 +33,7 @@
 #include "opt_ddb.h"
 
 #include <machine/asmacros.h>
+#include <machine/specialreg.h>
 #include <machine/pmap.h>
 
 #include "assym.s"
@@ -50,7 +51,6 @@ ENTRY(bzero)
 	movq	%rsi,%rcx
 	xorl	%eax,%eax
 	shrq	$3,%rcx
-	cld
 	rep
 	stosq
 	movq	%rsi,%rcx
@@ -76,7 +76,6 @@ ENTRY(bcmp)
 	PUSH_FRAME_POINTER
 	movq	%rdx,%rcx
 	shrq	$3,%rcx
-	cld					/* compare forwards */
 	repe
 	cmpsq
 	jne	1f
@@ -108,7 +107,6 @@ ENTRY(bcopy)
 	jb	1f
 
 	shrq	$3,%rcx				/* copy by 64-bit words */
-	cld					/* nope, copy forwards */
 	rep
 	movsq
 	movq	%rdx,%rcx
@@ -147,7 +145,6 @@ ENTRY(memcpy)
 	movq	%rdi,%rax
 	movq	%rdx,%rcx
 	shrq	$3,%rcx				/* copy by 64-bit words */
-	cld					/* copy forwards */
 	rep
 	movsq
 	movq	%rdx,%rcx
@@ -194,7 +191,6 @@ ENTRY(fillw)
 	movq	%rdi,%rax
 	movq	%rsi,%rdi
 	movq	%rdx,%rcx
-	cld
 	rep
 	stosw
 	POP_FRAME_POINTER
@@ -214,7 +210,7 @@ END(fillw)
  */
 
 /*
- * copyout(from_kernel, to_user, len)  - MP SAFE
+ * copyout(from_kernel, to_user, len)
  *         %rdi,        %rsi,    %rdx
  */
 ENTRY(copyout)
@@ -225,12 +221,11 @@ ENTRY(copyout)
 	jz	done_copyout
 
 	/*
-	 * Check explicitly for non-user addresses.  If 486 write protection
-	 * is being used, this check is essential because we are in kernel
-	 * mode so the h/w does not provide any protection against writing
-	 * kernel addresses.
+	 * Check explicitly for non-user addresses.  This check is essential
+	 * because it prevents usermode from writing into the kernel.  We do
+	 * not verify anywhere else that the user did not specify a rogue
+	 * address.
 	 */
-
 	/*
 	 * First, prevent address wrapping.
 	 */
@@ -252,7 +247,6 @@ ENTRY(copyout)
 	movq	%rdx,%rcx
 
 	shrq	$3,%rcx
-	cld
 	rep
 	movsq
 	movb	%dl,%cl
@@ -277,7 +271,7 @@ copyout_fault:
 END(copyout)
 
 /*
- * copyin(from_user, to_kernel, len) - MP SAFE
+ * copyin(from_user, to_kernel, len)
  *        %rdi,      %rsi,      %rdx
  */
 ENTRY(copyin)
@@ -301,7 +295,6 @@ ENTRY(copyin)
 	movq	%rdx,%rcx
 	movb	%cl,%al
 	shrq	$3,%rcx				/* copy longword-wise */
-	cld
 	rep
 	movsq
 	movb	%al,%cl
@@ -494,7 +487,7 @@ fusufault:
 
 /*
  * Store a 64-bit word, a 32-bit word, a 16-bit word, or an 8-bit byte to
- * user memory.  All these functions are MPSAFE.
+ * user memory.
  * addr = %rdi, value = %rsi
  */
 ALTENTRY(suword64)
@@ -569,10 +562,10 @@ ENTRY(subyte)
 END(subyte)
 
 /*
- * copyinstr(from, to, maxlen, int *lencopied) - MP SAFE
+ * copyinstr(from, to, maxlen, int *lencopied)
  *           %rdi, %rsi, %rdx, %rcx
  *
- *	copy a string from from to to, stop when a 0 character is reached.
+ *	copy a string from 'from' to 'to', stop when a 0 character is reached.
  *	return ENAMETOOLONG if string is longer than maxlen, and
  *	EFAULT on protection violations. If lencopied is non-zero,
  *	return the actual length in *lencopied.
@@ -598,7 +591,6 @@ ENTRY(copyinstr)
 	movq	%rax,%r8
 1:
 	incq	%rdx
-	cld
 
 2:
 	decq	%rdx
@@ -640,7 +632,7 @@ cpystrflt_x:
 END(copyinstr)
 
 /*
- * copystr(from, to, maxlen, int *lencopied) - MP SAFE
+ * copystr(from, to, maxlen, int *lencopied)
  *         %rdi, %rsi, %rdx, %rcx
  */
 ENTRY(copystr)
@@ -649,7 +641,6 @@ ENTRY(copystr)
 
 	xchgq	%rdi,%rsi
 	incq	%rdx
-	cld
 1:
 	decq	%rdx
 	jz	4f
@@ -680,7 +671,6 @@ END(copystr)
 
 /*
  * Handling of special amd64 registers and descriptor tables etc
- * %rdi
  */
 /* void lgdt(struct region_descriptor *rdp); */
 ENTRY(lgdt)
@@ -787,3 +777,151 @@ msr_onfault:
 	movl	$EFAULT,%eax
 	POP_FRAME_POINTER
 	ret
+
+/*
+ * void pmap_pti_pcid_invalidate(uint64_t ucr3, uint64_t kcr3);
+ * Invalidates address space addressed by ucr3, then returns to kcr3.
+ * Done in assembler to ensure no other memory accesses happen while
+ * on ucr3.
+ */
+	ALIGN_TEXT
+ENTRY(pmap_pti_pcid_invalidate)
+	pushfq
+	cli
+	movq	%rdi,%cr3	/* to user page table */
+	movq	%rsi,%cr3	/* back to kernel */
+	popfq
+	retq
+
+/*
+ * void pmap_pti_pcid_invlpg(uint64_t ucr3, uint64_t kcr3, vm_offset_t va);
+ * Invalidates virtual address va in address space ucr3, then returns to kcr3.
+ */
+	ALIGN_TEXT
+ENTRY(pmap_pti_pcid_invlpg)
+	pushfq
+	cli
+	movq	%rdi,%cr3	/* to user page table */
+	invlpg	(%rdx)
+	movq	%rsi,%cr3	/* back to kernel */
+	popfq
+	retq
+
+/*
+ * void pmap_pti_pcid_invlrng(uint64_t ucr3, uint64_t kcr3, vm_offset_t sva,
+ *     vm_offset_t eva);
+ * Invalidates virtual addresses between sva and eva in address space ucr3,
+ * then returns to kcr3.
+ */
+	ALIGN_TEXT
+ENTRY(pmap_pti_pcid_invlrng)
+	pushfq
+	cli
+	movq	%rdi,%cr3	/* to user page table */
+1:	invlpg	(%rdx)
+	addq	$PAGE_SIZE,%rdx
+	cmpq	%rdx,%rcx
+	ja	1b
+	movq	%rsi,%cr3	/* back to kernel */
+	popfq
+	retq
+
+	.altmacro
+	.macro	ibrs_seq_label l
+handle_ibrs_\l:
+	.endm
+	.macro	ibrs_call_label l
+	call	handle_ibrs_\l
+	.endm
+	.macro	ibrs_seq count
+	ll=1
+	.rept	\count
+	ibrs_call_label	%(ll)
+	nop
+	ibrs_seq_label %(ll)
+	addq	$8,%rsp
+	ll=ll+1
+	.endr
+	.endm
+
+/* all callers already saved %rax, %rdx, and %rcx */
+ENTRY(handle_ibrs_entry)
+	cmpb	$0,hw_ibrs_active(%rip)
+	je	1f
+	movl	$MSR_IA32_SPEC_CTRL,%ecx
+	rdmsr
+	orl	$(IA32_SPEC_CTRL_IBRS|IA32_SPEC_CTRL_STIBP),%eax
+	orl	$(IA32_SPEC_CTRL_IBRS|IA32_SPEC_CTRL_STIBP)>>32,%edx
+	wrmsr
+	movb	$1,PCPU(IBPB_SET)
+	testl	$CPUID_STDEXT_SMEP,cpu_stdext_feature(%rip)
+	jne	1f
+	ibrs_seq 32
+1:	ret
+END(handle_ibrs_entry)
+
+ENTRY(handle_ibrs_exit)
+	cmpb	$0,PCPU(IBPB_SET)
+	je	1f
+	movl	$MSR_IA32_SPEC_CTRL,%ecx
+	rdmsr
+	andl	$~(IA32_SPEC_CTRL_IBRS|IA32_SPEC_CTRL_STIBP),%eax
+	andl	$~((IA32_SPEC_CTRL_IBRS|IA32_SPEC_CTRL_STIBP)>>32),%edx
+	wrmsr
+	movb	$0,PCPU(IBPB_SET)
+1:	ret
+END(handle_ibrs_exit)
+
+/* registers-neutral version, but needs stack */
+ENTRY(handle_ibrs_exit_rs)
+	cmpb	$0,PCPU(IBPB_SET)
+	je	1f
+	pushq	%rax
+	pushq	%rdx
+	pushq	%rcx
+	movl	$MSR_IA32_SPEC_CTRL,%ecx
+	rdmsr
+	andl	$~(IA32_SPEC_CTRL_IBRS|IA32_SPEC_CTRL_STIBP),%eax
+	andl	$~((IA32_SPEC_CTRL_IBRS|IA32_SPEC_CTRL_STIBP)>>32),%edx
+	wrmsr
+	popq	%rcx
+	popq	%rdx
+	popq	%rax
+	movb	$0,PCPU(IBPB_SET)
+1:	ret
+END(handle_ibrs_exit_rs)
+
+	.noaltmacro
+
+/*
+ * Flush L1D cache.  Load enough of the data from the kernel text
+ * to flush existing L1D content.
+ *
+ * N.B. The function does not follow ABI calling conventions, it corrupts %rbx.
+ * The vmm.ko caller expects that only %rax, %rdx, %rbx, %rcx, %r9, and %rflags
+ * registers are clobbered.  The NMI handler caller only needs %r13 preserved.
+ */
+ENTRY(flush_l1d_sw)
+#define	L1D_FLUSH_SIZE	(64 * 1024)
+	movq	$KERNBASE, %r9
+	movq	$-L1D_FLUSH_SIZE, %rcx
+	/*
+	 * pass 1: Preload TLB.
+	 * Kernel text is mapped using superpages.  TLB preload is
+	 * done for the benefit of older CPUs which split 2M page
+	 * into 4k TLB entries.
+	 */
+1:	movb	L1D_FLUSH_SIZE(%r9, %rcx), %al
+	addq	$PAGE_SIZE, %rcx
+	jne	1b
+	xorl	%eax, %eax
+	cpuid
+	movq	$-L1D_FLUSH_SIZE, %rcx
+	/* pass 2: Read each cache line. */
+2:	movb	L1D_FLUSH_SIZE(%r9, %rcx), %al
+	addq	$64, %rcx
+	jne	2b
+	lfence
+	ret
+#undef	L1D_FLUSH_SIZE
+END(flush_l1d_sw)

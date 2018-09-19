@@ -14,6 +14,7 @@
 #include "CodeGenFunction.h"
 #include "CGObjCRuntime.h"
 #include "CodeGenModule.h"
+#include "ConstantEmitter.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclTemplate.h"
@@ -85,7 +86,7 @@ public:
   void EmitMoveFromReturnSlot(const Expr *E, RValue Src);
 
   void EmitArrayInit(Address DestPtr, llvm::ArrayType *AType,
-                     QualType elementType, InitListExpr *E);
+                     QualType ArrayQTy, InitListExpr *E);
 
   AggValueSlot::NeedsGCBarriers_t needsGC(QualType T) {
     if (CGF.getLangOpts().getGC() && TypeRequiresGCollection(T))
@@ -111,30 +112,20 @@ public:
   void VisitGenericSelectionExpr(GenericSelectionExpr *GE) {
     Visit(GE->getResultExpr());
   }
+  void VisitCoawaitExpr(CoawaitExpr *E) {
+    CGF.EmitCoawaitExpr(*E, Dest, IsResultUnused);
+  }
+  void VisitCoyieldExpr(CoyieldExpr *E) {
+    CGF.EmitCoyieldExpr(*E, Dest, IsResultUnused);
+  }
+  void VisitUnaryCoawait(UnaryOperator *E) { Visit(E->getSubExpr()); }
   void VisitUnaryExtension(UnaryOperator *E) { Visit(E->getSubExpr()); }
   void VisitSubstNonTypeTemplateParmExpr(SubstNonTypeTemplateParmExpr *E) {
     return Visit(E->getReplacement());
   }
 
   // l-values.
-  void VisitDeclRefExpr(DeclRefExpr *E) {
-    // For aggregates, we should always be able to emit the variable
-    // as an l-value unless it's a reference.  This is due to the fact
-    // that we can't actually ever see a normal l2r conversion on an
-    // aggregate in C++, and in C there's no language standard
-    // actively preventing us from listing variables in the captures
-    // list of a block.
-    if (E->getDecl()->getType()->isReferenceType()) {
-      if (CodeGenFunction::ConstantEmission result
-            = CGF.tryEmitAsConstant(E)) {
-        EmitFinalDestCopy(E->getType(), result.getReferenceLValue(CGF, E));
-        return;
-      }
-    }
-
-    EmitAggLoadOfLValue(E);
-  }
-
+  void VisitDeclRefExpr(DeclRefExpr *E) { EmitAggLoadOfLValue(E); }
   void VisitMemberExpr(MemberExpr *ME) { EmitAggLoadOfLValue(ME); }
   void VisitUnaryDeref(UnaryOperator *E) { EmitAggLoadOfLValue(E); }
   void VisitStringLiteral(StringLiteral *E) { EmitAggLoadOfLValue(E); }
@@ -402,11 +393,14 @@ static bool isTrivialFiller(Expr *E) {
 
 /// \brief Emit initialization of an array from an initializer list.
 void AggExprEmitter::EmitArrayInit(Address DestPtr, llvm::ArrayType *AType,
-                                   QualType elementType, InitListExpr *E) {
+                                   QualType ArrayQTy, InitListExpr *E) {
   uint64_t NumInitElements = E->getNumInits();
 
   uint64_t NumArrayElements = AType->getNumElements();
   assert(NumInitElements <= NumArrayElements);
+
+  QualType elementType =
+      CGF.getContext().getAsArrayType(ArrayQTy)->getElementType();
 
   // DestPtr is an array*.  Construct an elementType* by drilling
   // down a level.
@@ -418,6 +412,29 @@ void AggExprEmitter::EmitArrayInit(Address DestPtr, llvm::ArrayType *AType,
   CharUnits elementSize = CGF.getContext().getTypeSizeInChars(elementType);
   CharUnits elementAlign =
     DestPtr.getAlignment().alignmentOfArrayElement(elementSize);
+
+  // Consider initializing the array by copying from a global. For this to be
+  // more efficient than per-element initialization, the size of the elements
+  // with explicit initializers should be large enough.
+  if (NumInitElements * elementSize.getQuantity() > 16 &&
+      elementType.isTriviallyCopyableType(CGF.getContext())) {
+    CodeGen::CodeGenModule &CGM = CGF.CGM;
+    ConstantEmitter Emitter(CGM);
+    LangAS AS = ArrayQTy.getAddressSpace();
+    if (llvm::Constant *C = Emitter.tryEmitForInitializer(E, AS, ArrayQTy)) {
+      auto GV = new llvm::GlobalVariable(
+          CGM.getModule(), C->getType(),
+          CGM.isTypeConstant(ArrayQTy, /* ExcludeCtorDtor= */ true),
+          llvm::GlobalValue::PrivateLinkage, C, "constinit",
+          /* InsertBefore= */ nullptr, llvm::GlobalVariable::NotThreadLocal,
+          CGM.getContext().getTargetAddressSpace(AS));
+      Emitter.finalize(GV);
+      CharUnits Align = CGM.getContext().getTypeAlignInChars(ArrayQTy);
+      GV->setAlignment(Align.getQuantity());
+      EmitFinalDestCopy(ArrayQTy, CGF.MakeAddrLValue(GV, ArrayQTy, Align));
+      return;
+    }
+  }
 
   // Exception safety requires us to destroy all the
   // already-constructed members if an initializer throws.
@@ -505,12 +522,20 @@ void AggExprEmitter::EmitArrayInit(Address DestPtr, llvm::ArrayType *AType,
     currentElement->addIncoming(element, entryBB);
 
     // Emit the actual filler expression.
-    LValue elementLV =
-      CGF.MakeAddrLValue(Address(currentElement, elementAlign), elementType);
-    if (filler)
-      EmitInitializationToLValue(filler, elementLV);
-    else
-      EmitNullInitializationToLValue(elementLV);
+    {
+      // C++1z [class.temporary]p5:
+      //   when a default constructor is called to initialize an element of
+      //   an array with no corresponding initializer [...] the destruction of
+      //   every temporary created in a default argument is sequenced before
+      //   the construction of the next array element, if any
+      CodeGenFunction::RunCleanupsScope CleanupsScope(CGF);
+      LValue elementLV =
+        CGF.MakeAddrLValue(Address(currentElement, elementAlign), elementType);
+      if (filler)
+        EmitInitializationToLValue(filler, elementLV);
+      else
+        EmitNullInitializationToLValue(elementLV);
+    }
 
     // Move on to the next element.
     llvm::Value *nextElement =
@@ -694,7 +719,7 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
       return Visit(E->getSubExpr());
     }
 
-    // fallthrough
+    LLVM_FALLTHROUGH;
 
   case CK_NoOp:
   case CK_UserDefinedConversion:
@@ -1158,11 +1183,8 @@ void AggExprEmitter::VisitInitListExpr(InitListExpr *E) {
 
   // Handle initialization of an array.
   if (E->getType()->isArrayType()) {
-    QualType elementType =
-        CGF.getContext().getAsArrayType(E->getType())->getElementType();
-
     auto AType = cast<llvm::ArrayType>(Dest.getAddress().getElementType());
-    EmitArrayInit(Dest.getAddress(), AType, elementType, E);
+    EmitArrayInit(Dest.getAddress(), AType, E->getType(), E);
     return;
   }
 
@@ -1267,7 +1289,7 @@ void AggExprEmitter::VisitInitListExpr(InitListExpr *E) {
       // Store the initializer into the field.
       EmitInitializationToLValue(E->getInit(curInitIndex++), LV);
     } else {
-      // We're out of initalizers; default-initialize to null
+      // We're out of initializers; default-initialize to null
       EmitNullInitializationToLValue(LV);
     }
 
