@@ -443,8 +443,8 @@ contigmalloc(unsigned long size, struct malloc_type *type, int flags,
 {
 	void *ret;
 
-	ret = (void *)kmem_alloc_contig(kernel_arena, size, flags, low, high,
-	    alignment, boundary, VM_MEMATTR_DEFAULT);
+	ret = (void *)kmem_alloc_contig(size, flags, low, high, alignment,
+	    boundary, VM_MEMATTR_DEFAULT);
 	if (ret != NULL)
 		malloc_type_allocated(type, round_page(size));
 	return (ret);
@@ -475,7 +475,7 @@ void
 contigfree(void *addr, unsigned long size, struct malloc_type *type)
 {
 
-	kmem_free(kernel_arena, (vm_offset_t)addr, size);
+	kmem_free((vm_offset_t)addr, size);
 	malloc_type_freed(type, round_page(size));
 }
 
@@ -549,7 +549,7 @@ malloc_dbg(caddr_t *vap, size_t *sizep, struct malloc_type *mtp,
  *	the allocation fails.
  */
 void *
-malloc(size_t size, struct malloc_type *mtp, int flags)
+(malloc)(size_t size, struct malloc_type *mtp, int flags)
 {
 	int indx;
 	caddr_t va;
@@ -564,7 +564,7 @@ malloc(size_t size, struct malloc_type *mtp, int flags)
 		return (va);
 #endif
 
-	if (size <= kmem_zmax) {
+	if (size <= kmem_zmax && (flags & M_EXEC) == 0) {
 		if (size & KMEM_ZMASK)
 			size = (size & ~KMEM_ZMASK) + KMEM_ZBASE;
 		indx = kmemsize[size >> KMEM_ZSHIFT];
@@ -609,7 +609,7 @@ malloc_domain(size_t size, struct malloc_type *mtp, int domain,
 	if (malloc_dbg(&va, &size, mtp, flags) != 0)
 		return (va);
 #endif
-	if (size <= kmem_zmax) {
+	if (size <= kmem_zmax && (flags & M_EXEC) == 0) {
 		if (size & KMEM_ZMASK)
 			size = (size & ~KMEM_ZMASK) + KMEM_ZBASE;
 		indx = kmemsize[size >> KMEM_ZSHIFT];
