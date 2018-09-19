@@ -2,6 +2,8 @@
 /*	$NetBSD: msdosfs_lookup.c,v 1.37 1997/11/17 15:36:54 ws Exp $	*/
 
 /*-
+ * SPDX-License-Identifier: BSD-4-Clause
+ *
  * Copyright (C) 1994, 1995, 1997 Wolfgang Solfrank.
  * Copyright (C) 1994, 1995, 1997 TooLs GmbH.
  * All rights reserved.
@@ -455,7 +457,7 @@ found:
 	 */
 	brelse(bp);
 	bp = NULL;
-	
+
 foundroot:
 	/*
 	 * If we entered at foundroot, then we are looking for the . or ..
@@ -1011,7 +1013,7 @@ uniqdosname(struct denode *dep, struct componentname *cnp, u_char *cp)
 	daddr_t bn;
 	struct buf *bp;
 	int error;
-	
+
 	if (pmp->pm_flags & MSDOSFSMNT_SHORTNAME)
 		return (unix2dosfn((const u_char *)cnp->cn_nameptr, cp,
 		    cnp->cn_namelen, 0, pmp) ? 0 : EINVAL);

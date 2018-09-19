@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 2001-2007, by Cisco Systems, Inc. All rights reserved.
  * Copyright (c) 2008-2012, by Randall Stewart. All rights reserved.
  * Copyright (c) 2008-2012, by Michael Tuexen. All rights reserved.
@@ -97,8 +99,7 @@ void
 sctp_handle_forward_tsn(struct sctp_tcb *,
     struct sctp_forward_tsn_chunk *, int *, struct mbuf *, int);
 
-struct sctp_tmit_chunk *
-                sctp_try_advance_peer_ack_point(struct sctp_tcb *, struct sctp_association *);
+struct sctp_tmit_chunk *sctp_try_advance_peer_ack_point(struct sctp_tcb *, struct sctp_association *);
 
 void sctp_service_queues(struct sctp_tcb *, struct sctp_association *);
 

@@ -14,7 +14,6 @@ include 	"dpaa/config.dpaa"
 makeoptions	DEBUG=-g		#Build kernel with gdb(1) debug symbols
 makeoptions	WITH_CTF=1
 makeoptions	WERROR="-Werror -Wno-format -Wno-redundant-decls"
-makeoptions	NO_MODULES=yes
 
 options 	FPU_EMU
 
@@ -48,6 +47,7 @@ options 	MSDOSFS
 options 	NFS_ROOT
 options 	NFSCL
 options 	NFSLOCKD
+options 	PRINTF_BUFR_SIZE=128	# Prevent printf output being interspersed.
 options 	PROCFS
 options 	PSEUDOFS
 options 	SCHED_ULE
@@ -95,6 +95,7 @@ device		random
 #device		rl
 device		scbus
 device		scc
+device  	sdhci
 device		sec
 device  	spibus
 device  	spigen

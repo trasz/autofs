@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -205,6 +207,12 @@ get_list(char *list)
 	/* overlapping ranges */
 	if (autostop && maxval > autostop) {
 		maxval = autostop;
+		needpos(maxval + 1);
+	}
+
+	/* reversed range with autostart */
+	if (maxval < autostart) {
+		maxval = autostart;
 		needpos(maxval + 1);
 	}
 

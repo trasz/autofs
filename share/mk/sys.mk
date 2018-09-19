@@ -118,14 +118,9 @@ NO_META_IGNORE_HOST_HEADERS=	1
 # This needs to be done early - before .PATH is computed
 # Don't do this for 'make showconfig' as it enables all options where meta mode
 # is not expected.
-.if !make(showconfig) && !make(print-dir)
+.if !make(showconfig) && !make(print-dir) && !make(test-system-*) && \
+    empty(.MAKEFLAGS:M-[nN])
 .sinclude <auto.obj.mk>
-# The .OBJDIR was not set, disable MK_AUTO_OBJ so downstream checks won't
-# assume .OBJDIR is proper.
-.if defined(__objdir) && ${.OBJDIR} != ${__objdir}
-.MAKEOVERRIDES+= MK_AUTO_OBJ
-MK_AUTO_OBJ=	no
-.endif
 .endif
 .endif	# ${MK_AUTO_OBJ} == "yes"
 .else # bmake
@@ -148,7 +143,7 @@ MK_AUTO_OBJ=	no
 .if defined(%POSIX)
 .SUFFIXES:	.o .c .y .l .a .sh .f
 .else
-.SUFFIXES:	.out .a .ln .o .bco .llo .c .cc .cpp .cxx .C .m .F .f .e .r .y .l .S .asm .s .cl .p .h .sh
+.SUFFIXES:	.out .a .o .bco .llo .c .cc .cpp .cxx .C .m .F .f .e .r .y .l .S .asm .s .cl .p .h .sh
 .endif
 
 AR		?=	ar
@@ -249,14 +244,7 @@ LFLAGS		?=
 # compiler driver flags (e.g. -mabi=*) that conflict with flags to LD.
 LD		?=	ld
 LDFLAGS		?=
-_LDFLAGS	=	${LDFLAGS:S/-Wl,//g:N-mabi=*}
-
-LINT		?=	lint
-LINTFLAGS	?=	-cghapbx
-LINTKERNFLAGS	?=	${LINTFLAGS}
-LINTOBJFLAGS	?=	-cghapbxu -i
-LINTOBJKERNFLAGS?=	${LINTOBJFLAGS}
-LINTLIBFLAGS	?=	-cghapbxu -C ${LIB}
+_LDFLAGS	=	${LDFLAGS:S/-Wl,//g:N-mabi=*:N-fuse-ld=*}
 
 MAKE		?=	make
 
@@ -327,7 +315,8 @@ SHELL=	${__MAKE_SHELL}
 .MAKE.EXPAND_VARIABLES= yes
 
 # Tell bmake the makefile preference
-.MAKE.MAKEFILE_PREFERENCE= BSDmakefile makefile Makefile
+MAKEFILE_PREFERENCE?= BSDmakefile makefile Makefile
+.MAKE.MAKEFILE_PREFERENCE= ${MAKEFILE_PREFERENCE}
 
 # Tell bmake to always pass job tokens, regardless of target depending on
 # .MAKE or looking like ${MAKE}/${.MAKE}/$(MAKE)/$(.MAKE)/make.

@@ -1,4 +1,6 @@
-/*
+/*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1988, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -82,7 +84,7 @@ main(int argc, char **argv)
 	if (caph_limit_stdio() == -1)
 		err(1, "unable to limit stdio");
 
-	if (cap_enter() < 0 && errno != ENOSYS)
+	if (caph_enter() < 0)
 		err(1, "unable to enter capability mode");
 
 	Cflag = cflag = dflag = sflag = 0;

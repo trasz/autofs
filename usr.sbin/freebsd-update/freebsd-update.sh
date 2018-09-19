@@ -1,6 +1,8 @@
 #!/bin/sh
 
 #-
+# SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+#
 # Copyright 2004-2007 Colin Percival
 # All rights reserved
 #
@@ -1052,7 +1054,7 @@ fetch_make_patchlist () {
 				continue
 			fi
 			echo "${X}|${Y}"
-		done | uniq
+		done | sort -u
 }
 
 # Print user-friendly progress statistics
@@ -3298,7 +3300,7 @@ export PATH=/sbin:/bin:/usr/sbin:/usr/bin:${PATH}
 
 # Set a pager if the user doesn't
 if [ -z "$PAGER" ]; then
-	PAGER=/usr/bin/more
+	PAGER=/usr/bin/less
 fi
 
 # Set LC_ALL in order to avoid problems with character ranges like [A-Z].

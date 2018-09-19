@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1991, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
  * (c) UNIX System Laboratories, Inc.
@@ -92,7 +94,8 @@ ufs_quotactl(mp, cmds, id, arg)
 	void *arg;
 {
 #ifndef QUOTA
-	if ((cmds >> SUBCMDSHIFT) == Q_QUOTAON)
+	if ((cmds >> SUBCMDSHIFT) == Q_QUOTAON ||
+	    (cmds >> SUBCMDSHIFT) == Q_QUOTAOFF)
 		vfs_unbusy(mp);
 
 	return (EOPNOTSUPP);
@@ -115,13 +118,13 @@ ufs_quotactl(mp, cmds, id, arg)
 			break;
 
 		default:
-			if (cmd == Q_QUOTAON)
+			if (cmd == Q_QUOTAON || cmd == Q_QUOTAOFF)
 				vfs_unbusy(mp);
 			return (EINVAL);
 		}
 	}
 	if ((u_int)type >= MAXQUOTAS) {
-		if (cmd == Q_QUOTAON)
+		if (cmd == Q_QUOTAON || cmd == Q_QUOTAOFF)
 			vfs_unbusy(mp);
 		return (EINVAL);
 	}
@@ -132,7 +135,11 @@ ufs_quotactl(mp, cmds, id, arg)
 		break;
 
 	case Q_QUOTAOFF:
+		vfs_ref(mp);
+		vfs_unbusy(mp);
+		vn_start_write(NULL, &mp, V_WAIT | V_MNTREF);
 		error = quotaoff(td, mp, type);
+		vn_finished_write(mp);
 		break;
 
 	case Q_SETQUOTA32:

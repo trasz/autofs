@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1982, 1986, 1991, 1993
  *	The Regents of the University of California.  All rights reserved.
  * (c) UNIX System Laboratories, Inc.
@@ -46,6 +48,8 @@ __FBSDID("$FreeBSD$");
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/callout.h>
+#include <sys/epoch.h>
+#include <sys/gtaskqueue.h>
 #include <sys/kdb.h>
 #include <sys/kernel.h>
 #include <sys/kthread.h>
@@ -181,12 +185,70 @@ static int blktime_threshold = 900;
 static int sleepfreq = 3;
 
 static void
+deadlres_td_on_lock(struct proc *p, struct thread *td, int blkticks)
+{
+	int tticks;
+
+	sx_assert(&allproc_lock, SX_LOCKED);
+	PROC_LOCK_ASSERT(p, MA_OWNED);
+	THREAD_LOCK_ASSERT(td, MA_OWNED);
+	/*
+	 * The thread should be blocked on a turnstile, simply check
+	 * if the turnstile channel is in good state.
+	 */
+	MPASS(td->td_blocked != NULL);
+
+	tticks = ticks - td->td_blktick;
+	if (tticks > blkticks)
+		/*
+		 * Accordingly with provided thresholds, this thread is stuck
+		 * for too long on a turnstile.
+		 */
+		panic("%s: possible deadlock detected for %p, "
+		    "blocked for %d ticks\n", __func__, td, tticks);
+}
+
+static void
+deadlres_td_sleep_q(struct proc *p, struct thread *td, int slpticks)
+{
+	void *wchan;
+	int i, slptype, tticks;
+
+	sx_assert(&allproc_lock, SX_LOCKED);
+	PROC_LOCK_ASSERT(p, MA_OWNED);
+	THREAD_LOCK_ASSERT(td, MA_OWNED);
+	/*
+	 * Check if the thread is sleeping on a lock, otherwise skip the check.
+	 * Drop the thread lock in order to avoid a LOR with the sleepqueue
+	 * spinlock.
+	 */
+	wchan = td->td_wchan;
+	tticks = ticks - td->td_slptick;
+	slptype = sleepq_type(wchan);
+	if ((slptype == SLEEPQ_SX || slptype == SLEEPQ_LK) &&
+	    tticks > slpticks) {
+
+		/*
+		 * Accordingly with provided thresholds, this thread is stuck
+		 * for too long on a sleepqueue.
+		 * However, being on a sleepqueue, we might still check for the
+		 * blessed list.
+		 */
+		for (i = 0; blessed[i] != NULL; i++)
+			if (!strcmp(blessed[i], td->td_wmesg))
+				return;
+
+		panic("%s: possible deadlock detected for %p, "
+		    "blocked for %d ticks\n", __func__, td, tticks);
+	}
+}
+
+static void
 deadlkres(void)
 {
 	struct proc *p;
 	struct thread *td;
-	void *wchan;
-	int blkticks, i, slpticks, slptype, tryl, tticks;
+	int blkticks, slpticks, tryl;
 
 	tryl = 0;
 	for (;;) {
@@ -194,14 +256,15 @@ deadlkres(void)
 		slpticks = slptime_threshold * hz;
 
 		/*
-		 * Avoid to sleep on the sx_lock in order to avoid a possible
-		 * priority inversion problem leading to starvation.
+		 * Avoid to sleep on the sx_lock in order to avoid a
+		 * possible priority inversion problem leading to
+		 * starvation.
 		 * If the lock can't be held after 100 tries, panic.
 		 */
 		if (!sx_try_slock(&allproc_lock)) {
 			if (tryl > 100)
-		panic("%s: possible deadlock detected on allproc_lock\n",
-				    __func__);
+				panic("%s: possible deadlock detected "
+				    "on allproc_lock\n", __func__);
 			tryl++;
 			pause("allproc", sleepfreq * hz);
 			continue;
@@ -214,80 +277,15 @@ deadlkres(void)
 				continue;
 			}
 			FOREACH_THREAD_IN_PROC(p, td) {
-
 				thread_lock(td);
-				if (TD_ON_LOCK(td)) {
-
-					/*
-					 * The thread should be blocked on a
-					 * turnstile, simply check if the
-					 * turnstile channel is in good state.
-					 */
-					MPASS(td->td_blocked != NULL);
-
-					tticks = ticks - td->td_blktick;
-					thread_unlock(td);
-					if (tticks > blkticks) {
-
-						/*
-						 * Accordingly with provided
-						 * thresholds, this thread is
-						 * stuck for too long on a
-						 * turnstile.
-						 */
-						PROC_UNLOCK(p);
-						sx_sunlock(&allproc_lock);
-	panic("%s: possible deadlock detected for %p, blocked for %d ticks\n",
-						    __func__, td, tticks);
-					}
-				} else if (TD_IS_SLEEPING(td) &&
-				    TD_ON_SLEEPQ(td)) {
-
-					/*
-					 * Check if the thread is sleeping on a
-					 * lock, otherwise skip the check.
-					 * Drop the thread lock in order to
-					 * avoid a LOR with the sleepqueue
-					 * spinlock.
-					 */
-					wchan = td->td_wchan;
-					tticks = ticks - td->td_slptick;
-					thread_unlock(td);
-					slptype = sleepq_type(wchan);
-					if ((slptype == SLEEPQ_SX ||
-					    slptype == SLEEPQ_LK) &&
-					    tticks > slpticks) {
-
-						/*
-						 * Accordingly with provided
-						 * thresholds, this thread is
-						 * stuck for too long on a
-						 * sleepqueue.
-						 * However, being on a
-						 * sleepqueue, we might still
-						 * check for the blessed
-						 * list.
-						 */
-						tryl = 0;
-						for (i = 0; blessed[i] != NULL;
-						    i++) {
-							if (!strcmp(blessed[i],
-							    td->td_wmesg)) {
-								tryl = 1;
-								break;
-							}
-						}
-						if (tryl != 0) {
-							tryl = 0;
-							continue;
-						}
-						PROC_UNLOCK(p);
-						sx_sunlock(&allproc_lock);
-	panic("%s: possible deadlock detected for %p, blocked for %d ticks\n",
-						    __func__, td, tticks);
-					}
-				} else
-					thread_unlock(td);
+				if (TD_ON_LOCK(td))
+					deadlres_td_on_lock(p, td,
+					    blkticks);
+				else if (TD_IS_SLEEPING(td) &&
+				    TD_ON_SLEEPQ(td))
+					deadlres_td_sleep_q(p, td,
+					    slpticks);
+				thread_unlock(td);
 			}
 			PROC_UNLOCK(p);
 		}
@@ -333,14 +331,18 @@ read_cpu_time(long *cp_time)
 	}
 }
 
-#ifdef SW_WATCHDOG
 #include <sys/watchdog.h>
 
 static int watchdog_ticks;
 static int watchdog_enabled;
 static void watchdog_fire(void);
 static void watchdog_config(void *, u_int, int *);
-#endif /* SW_WATCHDOG */
+
+static void
+watchdog_attach(void)
+{
+	EVENTHANDLER_REGISTER(watchdog_list, watchdog_config, NULL, 0);
+}
 
 /*
  * Clock handling routines.
@@ -380,7 +382,7 @@ int	profprocs;
 volatile int	ticks;
 int	psratio;
 
-static DPCPU_DEFINE(int, pcputicks);	/* Per-CPU version of ticks. */
+DPCPU_DEFINE_STATIC(int, pcputicks);	/* Per-CPU version of ticks. */
 #ifdef DEVICE_POLLING
 static int devpoll_run = 0;
 #endif
@@ -408,95 +410,26 @@ initclocks(void *dummy)
 	if (profhz == 0)
 		profhz = i;
 	psratio = profhz / i;
+
 #ifdef SW_WATCHDOG
-	EVENTHANDLER_REGISTER(watchdog_list, watchdog_config, NULL, 0);
+	/* Enable hardclock watchdog now, even if a hardware watchdog exists. */
+	watchdog_attach();
+#else
+	/* Volunteer to run a software watchdog. */
+	if (wdog_software_attach == NULL)
+		wdog_software_attach = watchdog_attach;
 #endif
 }
 
-/*
- * Each time the real-time timer fires, this function is called on all CPUs.
- * Note that hardclock() calls hardclock_cpu() for the boot CPU, so only
- * the other CPUs in the system need to call this function.
- */
 void
-hardclock_cpu(int usermode)
-{
-	struct pstats *pstats;
-	struct thread *td = curthread;
-	struct proc *p = td->td_proc;
-	int flags;
-
-	/*
-	 * Run current process's virtual and profile time, as needed.
-	 */
-	pstats = p->p_stats;
-	flags = 0;
-	if (usermode &&
-	    timevalisset(&pstats->p_timer[ITIMER_VIRTUAL].it_value)) {
-		PROC_ITIMLOCK(p);
-		if (itimerdecr(&pstats->p_timer[ITIMER_VIRTUAL], tick) == 0)
-			flags |= TDF_ALRMPEND | TDF_ASTPENDING;
-		PROC_ITIMUNLOCK(p);
-	}
-	if (timevalisset(&pstats->p_timer[ITIMER_PROF].it_value)) {
-		PROC_ITIMLOCK(p);
-		if (itimerdecr(&pstats->p_timer[ITIMER_PROF], tick) == 0)
-			flags |= TDF_PROFPEND | TDF_ASTPENDING;
-		PROC_ITIMUNLOCK(p);
-	}
-	thread_lock(td);
-	td->td_flags |= flags;
-	thread_unlock(td);
-
-#ifdef HWPMC_HOOKS
-	if (PMC_CPU_HAS_SAMPLES(PCPU_GET(cpuid)))
-		PMC_CALL_HOOK_UNLOCKED(curthread, PMC_FN_DO_SAMPLES, NULL);
-	if (td->td_intr_frame != NULL)
-		PMC_SOFT_CALL_TF( , , clock, hard, td->td_intr_frame);
-#endif
-	callout_process(sbinuptime());
-}
-
-/*
- * The real-time timer, interrupting hz times per second.
- */
-void
-hardclock(int usermode, uintfptr_t pc)
-{
-
-	atomic_add_int(&ticks, 1);
-	hardclock_cpu(usermode);
-	tc_ticktock(1);
-	cpu_tick_calibration();
-	/*
-	 * If no separate statistics clock is available, run it from here.
-	 *
-	 * XXX: this only works for UP
-	 */
-	if (stathz == 0) {
-		profclock(usermode, pc);
-		statclock(usermode);
-	}
-#ifdef DEVICE_POLLING
-	hardclock_device_poll();	/* this is very short and quick */
-#endif /* DEVICE_POLLING */
-#ifdef SW_WATCHDOG
-	if (watchdog_enabled > 0 && --watchdog_ticks <= 0)
-		watchdog_fire();
-#endif /* SW_WATCHDOG */
-}
-
-void
-hardclock_cnt(int cnt, int usermode)
+hardclock(int cnt, int usermode)
 {
 	struct pstats *pstats;
 	struct thread *td = curthread;
 	struct proc *p = td->td_proc;
 	int *t = DPCPU_PTR(pcputicks);
 	int flags, global, newticks;
-#ifdef SW_WATCHDOG
 	int i;
-#endif /* SW_WATCHDOG */
 
 	/*
 	 * Update per-CPU and possibly global ticks values.
@@ -556,22 +489,24 @@ hardclock_cnt(int cnt, int usermode)
 			atomic_store_rel_int(&devpoll_run, 0);
 		}
 #endif /* DEVICE_POLLING */
-#ifdef SW_WATCHDOG
 		if (watchdog_enabled > 0) {
 			i = atomic_fetchadd_int(&watchdog_ticks, -newticks);
 			if (i > 0 && i <= newticks)
 				watchdog_fire();
 		}
-#endif /* SW_WATCHDOG */
 	}
 	if (curcpu == CPU_FIRST())
 		cpu_tick_calibration();
+	if (__predict_false(DPCPU_GET(epoch_cb_count)))
+		GROUPTASK_ENQUEUE(DPCPU_PTR(epoch_cb_task));
 }
 
 void
 hardclock_sync(int cpu)
 {
-	int	*t = DPCPU_ID_PTR(cpu, pcputicks);
+	int *t;
+	KASSERT(!CPU_ABSENT(cpu), ("Absent CPU %d", cpu));
+	t = DPCPU_ID_PTR(cpu, pcputicks);
 
 	*t = ticks;
 }
@@ -688,14 +623,7 @@ stopprofclock(struct proc *p)
  * This should be called by all active processors.
  */
 void
-statclock(int usermode)
-{
-
-	statclock_cnt(1, usermode);
-}
-
-void
-statclock_cnt(int cnt, int usermode)
+statclock(int cnt, int usermode)
 {
 	struct rusage *ru;
 	struct vmspace *vm;
@@ -768,14 +696,7 @@ statclock_cnt(int cnt, int usermode)
 }
 
 void
-profclock(int usermode, uintfptr_t pc)
-{
-
-	profclock_cnt(1, usermode, pc);
-}
-
-void
-profclock_cnt(int cnt, int usermode, uintfptr_t pc)
+profclock(int cnt, int usermode, uintfptr_t pc)
 {
 	struct thread *td;
 #ifdef GPROF
@@ -837,8 +758,6 @@ SYSCTL_PROC(_kern, KERN_CLOCKRATE, clockrate,
 	0, 0, sysctl_kern_clockrate, "S,clockinfo",
 	"Rate and period of various kernel clocks");
 
-#ifdef SW_WATCHDOG
-
 static void
 watchdog_config(void *unused __unused, u_int cmd, int *error)
 {
@@ -887,5 +806,3 @@ watchdog_fire(void)
 	panic("watchdog timeout");
 #endif
 }
-
-#endif /* SW_WATCHDOG */

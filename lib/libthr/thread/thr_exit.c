@@ -1,4 +1,6 @@
-/*
+/*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1995-1998 John Birrell <jb@cimlogic.com.au>
  * All rights reserved.
  *
@@ -277,6 +279,9 @@ static void
 exit_thread(void)
 {
 	struct pthread *curthread = _get_curthread();
+
+	free(curthread->name);
+	curthread->name = NULL;
 
 	/* Check if there is thread specific data: */
 	if (curthread->specific != NULL) {

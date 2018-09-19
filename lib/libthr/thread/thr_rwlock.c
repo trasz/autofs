@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 1998 Alex Nash
  * All rights reserved.
  *
@@ -223,8 +225,8 @@ _pthread_rwlock_rdlock (pthread_rwlock_t *rwlock)
 }
 
 int
-_pthread_rwlock_timedrdlock (pthread_rwlock_t *rwlock,
-	 const struct timespec *abstime)
+_pthread_rwlock_timedrdlock(pthread_rwlock_t * __restrict rwlock,
+    const struct timespec * __restrict abstime)
 {
 	return (rwlock_rdlock_common(rwlock, abstime));
 }
@@ -335,8 +337,8 @@ _pthread_rwlock_wrlock (pthread_rwlock_t *rwlock)
 }
 
 int
-_pthread_rwlock_timedwrlock (pthread_rwlock_t *rwlock,
-    const struct timespec *abstime)
+_pthread_rwlock_timedwrlock(pthread_rwlock_t * __restrict rwlock,
+    const struct timespec * __restrict abstime)
 {
 	return (rwlock_wrlock_common (rwlock, abstime));
 }

@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2013-2015 The FreeBSD Foundation
  * All rights reserved.
  *
@@ -522,8 +524,7 @@ extern struct timespec dmar_hw_timeout;
 	} else {						\
 		forever = false;				\
 		nanouptime(&curr);				\
-		last = curr;					\
-		timespecadd(&last, &dmar_hw_timeout);		\
+		timespecadd(&curr, &dmar_hw_timeout, &last);	\
 	}							\
 	for (;;) {						\
 		if (cond) {					\

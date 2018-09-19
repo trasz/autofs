@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -39,7 +41,7 @@ __FBSDID("$FreeBSD$");
  * Compare memory regions.
  */
 int
-memcmp(const void *s1, const void *s2, size_t n)
+(memcmp)(const void *s1, const void *s2, size_t n)
 {
 	if (n != 0) {
 		const unsigned char *p1 = s1, *p2 = s2;

@@ -163,17 +163,19 @@ ports.txz:
 
 reldoc:
 	cd ${DOCDIR}/en_US.ISO8859-1/htdocs/releases/${REVISION}R && \
-	    ${MAKE} all install clean 'FORMATS=html txt' \
-	    INSTALL_COMPRESSED='' URLS_ABSOLUTE=YES DOCDIR=${.OBJDIR}/rdoc
+	    env MAN4DIR=${WORLDDIR}/share/man/man4 \
+	    ${MAKE} all install clean "FORMATS=html txt" \
+	    INSTALL_COMPRESSED='' URLS_ABSOLUTE=YES DOCDIR=${.OBJDIR}/rdoc \
+	    WEBDIR=${DOCDIR} DESTDIR=${.OBJDIR}/rdoc
 	mkdir -p reldoc
 .for i in hardware readme relnotes errata
-	ln -f ${DOCDIR}/${RELNOTES_LANG}/htdocs/releases/${REVISION}R/${i}/${i:tl}.txt \
-	    reldoc/${i:tu}.TXT
-	ln -f ${DOCDIR}/${RELNOTES_LANG}/htdocs/releases/${REVISION}R/${i}/${i:tl}.html \
-	    reldoc/${i:tu}.HTM
+	ln -f ${.OBJDIR}/rdoc/${i:tl}.txt \
+		reldoc/${i:tu}.TXT
+	ln -f ${.OBJDIR}/rdoc/${i:tl}.html \
+		reldoc/${i:tu}.HTML
 .endfor
-	cp ${DOCDIR}/${RELNOTES_LANG}/htdocs/releases/${REVISION}R/readme/docbook.css \
-	    reldoc
+	cp ${.OBJDIR}/rdoc/docbook.css \
+		reldoc/
 
 disc1: packagesystem
 # Install system
@@ -183,7 +185,8 @@ disc1: packagesystem
 	    MK_INSTALLLIB=no MK_LIB32=no MK_MAIL=no \
 	    MK_NCP=no MK_TOOLCHAIN=no MK_PROFILE=no \
 	    MK_RESCUE=no MK_DICT=no \
-	    MK_KERNEL_SYMBOLS=no MK_TESTS=no MK_DEBUG_FILES=no
+	    MK_KERNEL_SYMBOLS=no MK_TESTS=no MK_DEBUG_FILES=no \
+	    -DDB_FROM_SRC
 # Copy distfiles
 	mkdir -p ${.TARGET}/usr/freebsd-dist
 	for dist in MANIFEST $$(ls *.txz | grep -vE -- '(base|lib32)-dbg'); \
@@ -211,7 +214,8 @@ bootonly: packagesystem
 	    MK_INSTALLLIB=no MK_LIB32=no MK_MAIL=no \
 	    MK_NCP=no MK_TOOLCHAIN=no MK_PROFILE=no \
 	    MK_RESCUE=no MK_DICT=no \
-	    MK_KERNEL_SYMBOLS=no MK_TESTS=no MK_DEBUG_FILES=no
+	    MK_KERNEL_SYMBOLS=no MK_TESTS=no MK_DEBUG_FILES=no \
+	    -DDB_FROM_SRC
 # Copy manifest only (no distfiles) to get checksums
 	mkdir -p ${.TARGET}/usr/freebsd-dist
 	cp MANIFEST ${.TARGET}/usr/freebsd-dist
@@ -232,7 +236,8 @@ dvd: packagesystem
 	mkdir -p ${.TARGET}
 	cd ${WORLDDIR} && ${IMAKE} installkernel installworld distribution \
 		DESTDIR=${.OBJDIR}/${.TARGET} MK_RESCUE=no MK_KERNEL_SYMBOLS=no \
-		MK_TESTS=no MK_DEBUG_FILES=no
+		MK_TESTS=no MK_DEBUG_FILES=no \
+		-DDB_FROM_SRC
 # Copy distfiles
 	mkdir -p ${.TARGET}/usr/freebsd-dist
 	for dist in MANIFEST $$(ls *.txz | grep -v -- '(base|lib32)-dbg'); \

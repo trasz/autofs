@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1982, 1986, 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
  * (c) UNIX System Laboratories, Inc.
@@ -136,6 +138,8 @@ struct bio_queue_head {
 	TAILQ_HEAD(bio_queue, bio) queue;
 	off_t last_offset;
 	struct	bio *insert_point;
+	int total;
+	int batched;
 };
 
 extern struct vm_map *bio_transient_map;

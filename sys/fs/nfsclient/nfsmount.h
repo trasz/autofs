@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -113,25 +115,6 @@ struct	nfsmount {
  * Convert mount ptr to nfsmount ptr.
  */
 #define	VFSTONFS(mp)	((struct nfsmount *)((mp)->mnt_data))
-
-/*
- * Get a pointer to the MDS session, which is always the first element
- * in the list.
- * This macro can only be safely used when the NFSLOCKMNT() lock is held.
- * The inline function can be used when the lock isn't held.
- */
-#define	NFSMNT_MDSSESSION(m)	(&(TAILQ_FIRST(&((m)->nm_sess))->nfsclds_sess))
-
-static __inline struct nfsclsession *
-nfsmnt_mdssession(struct nfsmount *nmp)
-{
-	struct nfsclsession *tsep;
-
-	mtx_lock(&nmp->nm_mtx);
-	tsep = NFSMNT_MDSSESSION(nmp);
-	mtx_unlock(&nmp->nm_mtx);
-	return (tsep);
-}
 
 #ifndef NFS_DEFAULT_NAMETIMEO
 #define NFS_DEFAULT_NAMETIMEO		60

@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: (BSD-3-Clause AND MIT-CMU)
+ *
  * Copyright (c) 1991, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -90,6 +92,7 @@ __FBSDID("$FreeBSD$");
 #include <vm/vm.h>
 #include <vm/vm_param.h>
 #include <vm/pmap.h>
+#include <vm/vm_domainset.h>
 #include <vm/vm_map.h>
 #include <vm/vm_page.h>
 #include <vm/vm_pageout.h>
@@ -111,9 +114,7 @@ __FBSDID("$FreeBSD$");
  * space.
  */
 int
-kernacc(addr, len, rw)
-	void *addr;
-	int len, rw;
+kernacc(void *addr, int len, int rw)
 {
 	boolean_t rv;
 	vm_offset_t saddr, eaddr;
@@ -122,7 +123,7 @@ kernacc(addr, len, rw)
 	KASSERT((rw & ~VM_PROT_ALL) == 0,
 	    ("illegal ``rw'' argument to kernacc (%x)\n", rw));
 
-	if ((vm_offset_t)addr + len > kernel_map->max_offset ||
+	if ((vm_offset_t)addr + len > vm_map_max(kernel_map) ||
 	    (vm_offset_t)addr + len < (vm_offset_t)addr)
 		return (FALSE);
 
@@ -145,9 +146,7 @@ kernacc(addr, len, rw)
  * used in conjunction with this call.
  */
 int
-useracc(addr, len, rw)
-	void *addr;
-	int len, rw;
+useracc(void *addr, int len, int rw)
 {
 	boolean_t rv;
 	vm_prot_t prot;
@@ -193,16 +192,21 @@ vslock(void *addr, size_t len)
 	 * Also, the sysctl code, which is the only present user
 	 * of vslock(), does a hard loop on EAGAIN.
 	 */
-	if (npages + vm_cnt.v_wire_count > vm_page_max_wired)
+	if (npages + vm_wire_count() > vm_page_max_wired)
 		return (EAGAIN);
 #endif
 	error = vm_map_wire(&curproc->p_vmspace->vm_map, start, end,
 	    VM_MAP_WIRE_SYSTEM | VM_MAP_WIRE_NOHOLES);
+	if (error == KERN_SUCCESS) {
+		curthread->td_vslock_sz += len;
+		return (0);
+	}
+
 	/*
 	 * Return EFAULT on error to match copy{in,out}() behaviour
 	 * rather than returning ENOMEM like mlock() would.
 	 */
-	return (error == KERN_SUCCESS ? 0 : EFAULT);
+	return (EFAULT);
 }
 
 void
@@ -210,6 +214,8 @@ vsunlock(void *addr, size_t len)
 {
 
 	/* Rely on the parameter sanity checks performed by vslock(). */
+	MPASS(curthread->td_vslock_sz >= len);
+	curthread->td_vslock_sz -= len;
 	(void)vm_map_unwire(&curproc->p_vmspace->vm_map,
 	    trunc_page((vm_offset_t)addr), round_page((vm_offset_t)addr + len),
 	    VM_MAP_WIRE_SYSTEM | VM_MAP_WIRE_NOHOLES);
@@ -321,7 +327,7 @@ vm_thread_new(struct thread *td, int pages)
 	else if (pages > KSTACK_MAX_PAGES)
 		pages = KSTACK_MAX_PAGES;
 
-	if (pages == kstack_pages) {
+	if (pages == kstack_pages && kstack_cache != NULL) {
 		mtx_lock(&kstack_cache_mtx);
 		if (kstack_cache != NULL) {
 			ks_ce = kstack_cache;
@@ -525,14 +531,11 @@ intr_prof_stack_use(struct thread *td, struct trapframe *frame)
  * to user mode to avoid stack copying and relocation problems.
  */
 int
-vm_forkproc(td, p2, td2, vm2, flags)
-	struct thread *td;
-	struct proc *p2;
-	struct thread *td2;
-	struct vmspace *vm2;
-	int flags;
+vm_forkproc(struct thread *td, struct proc *p2, struct thread *td2,
+    struct vmspace *vm2, int flags)
 {
 	struct proc *p1 = td->td_proc;
+	struct domainset *dset;
 	int error;
 
 	if ((flags & RFPROC) == 0) {
@@ -556,9 +559,9 @@ vm_forkproc(td, p2, td2, vm2, flags)
 		p2->p_vmspace = p1->p_vmspace;
 		atomic_add_int(&p1->p_vmspace->vm_refcnt, 1);
 	}
-
-	while (vm_page_count_severe()) {
-		VM_WAIT;
+	dset = td2->td_domain.dr_policy;
+	while (vm_page_count_severe_set(&dset->ds_mask)) {
+		vm_wait_doms(&dset->ds_mask);
 	}
 
 	if ((flags & RFMEM) == 0) {

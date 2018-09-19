@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2013 David Chisnall
  * All rights reserved.
  *
@@ -34,6 +36,7 @@
 #include <functional>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctype.h>
 #include <libgen.h>
 

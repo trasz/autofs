@@ -2,6 +2,8 @@
 /*	$NetBSD: fat.h,v 1.12 1997/11/17 15:36:36 ws Exp $	*/
 
 /*-
+ * SPDX-License-Identifier: BSD-4-Clause
+ *
  * Copyright (C) 1994, 1997 Wolfgang Solfrank.
  * Copyright (C) 1994, 1997 TooLs GmbH.
  * All rights reserved.
@@ -80,7 +82,7 @@
 
 #define	MSDOSFSEOF(pmp, cn)	((((cn) | ~(pmp)->pm_fatmask) & CLUST_EOFS) == CLUST_EOFS)
 
-#if defined(_KERNEL) || defined(MAKEFS)
+#ifdef _KERNEL
 /*
  * These are the values for the function argument to the function
  * fatentry().
@@ -103,5 +105,5 @@ int extendfile(struct denode *dep, u_long count, struct buf **bpp, u_long *ncp, 
 void fc_purge(struct denode *dep, u_int frcn);
 int markvoldirty(struct msdosfsmount *pmp, int dirty);
 
-#endif	/* _KERNEL || MAKEFS */
+#endif	/* _KERNEL */
 #endif	/* !_FS_MSDOSFS_FAT_H_ */

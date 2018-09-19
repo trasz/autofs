@@ -8,6 +8,7 @@
 PACKAGE=	clibs
 MK_SSP=		no
 
+CONFS=		libmap.conf
 PROG?=		ld-elf.so.1
 .if (${PROG:M*ld-elf32*} != "")
 TAGS+=		lib32
@@ -51,7 +52,7 @@ CFLAGS+=	-fvisibility=hidden
 CFLAGS.reloc.c+=-fno-jump-tables
 .endif
 LDFLAGS+=	-shared -Wl,-Bsymbolic -Wl,-z,defs
-LIBADD=		c_pic
+LIBADD=		c_nossp_pic
 .if ${MK_TOOLCHAIN} == "no"
 LDFLAGS+=	-L${LIBCDIR}
 .endif

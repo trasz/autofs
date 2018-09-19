@@ -1,6 +1,8 @@
 /*	$NetBSD: buf.c,v 1.13 2004/06/20 22:20:18 jmc Exp $	*/
 
-/*
+/*-
+ * SPDX-License-Identifier: BSD-4-Clause
+ *
  * Copyright (c) 2001 Wasabi Systems, Inc.
  * All rights reserved.
  *
@@ -91,7 +93,7 @@ bread(struct vnode *vp, daddr_t blkno, int size, struct ucred *u1 __unused,
 }
 
 void
-brelse(struct buf *bp, int u1 __unused)
+brelse(struct buf *bp)
 {
 
 	assert (bp != NULL);

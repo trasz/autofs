@@ -1,4 +1,6 @@
-/*
+/*-
+ * SPDX-License-Identifier: BSD-4-Clause
+ *
  * Copyright (c) 1993,1995 Paul Kranenburg
  * All rights reserved.
  *
@@ -516,13 +518,6 @@ buildhints(void)
 		warn("%s", hints_file);
 		return -1;
 	}
-
-	/* Install it */
-	if (unlink(hints_file) != 0 && errno != ENOENT) {
-		warn("%s", hints_file);
-		return -1;
-	}
-
 	if (rename(tmpfilename, hints_file) != 0) {
 		warn("%s", hints_file);
 		return -1;

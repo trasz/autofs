@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2006 Marcel Moolenaar
  * Copyright (c) 2001 M. Warner Losh
  * All rights reserved.
@@ -204,7 +206,7 @@ uart_pci_probe(device_t dev)
 	return (ENXIO);
 
  match:
-	result = uart_bus_probe(dev, id->regshft, 0, id->rclk, id->rid, 0);
+	result = uart_bus_probe(dev, id->regshft, 0, id->rclk, id->rid, 0, 0);
 	/* Bail out on error. */
 	if (result > 0)
 		return (result);

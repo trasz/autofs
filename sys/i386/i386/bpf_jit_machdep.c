@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (C) 2002-2003 NetGroup, Politecnico di Torino (Italy)
  * Copyright (C) 2005-2017 Jung-uk Kim <jkim@FreeBSD.org>
  * All rights reserved.
@@ -630,7 +632,7 @@ bpf_jit_compile(struct bpf_insn *prog, u_int nins, size_t *size)
 
 		*size = stream.cur_ip;
 #ifdef _KERNEL
-		stream.ibuf = malloc(*size, M_BPFJIT, M_NOWAIT);
+		stream.ibuf = malloc(*size, M_BPFJIT, M_EXEC | M_NOWAIT);
 		if (stream.ibuf == NULL)
 			break;
 #else
@@ -678,15 +680,4 @@ bpf_jit_compile(struct bpf_insn *prog, u_int nins, size_t *size)
 #endif
 
 	return ((bpf_filter_func)(void *)stream.ibuf);
-}
-
-void
-bpf_jit_free(void *func, size_t size)
-{
-
-#ifdef _KERNEL
-	free(func, M_BPFJIT);
-#else
-	munmap(func, size);
-#endif
 }

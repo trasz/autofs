@@ -50,10 +50,13 @@
 #ifndef MACHINE_ARCH
 #define	MACHINE_ARCH	"aarch64"
 #endif
+#ifndef MACHINE_ARCH32
+#define	MACHINE_ARCH32	"armv7"
+#endif
 
 #if defined(SMP) || defined(KLD_MODULE)
 #ifndef MAXCPU
-#define	MAXCPU		96
+#define	MAXCPU		256
 #endif
 #else
 #define	MAXCPU		1
@@ -92,7 +95,7 @@
 #define	PAGE_SIZE_64K	(1 << PAGE_SHIFT_64K)
 #define	PAGE_MASK_64K	(PAGE_SIZE_64K - 1)
 
-#define	MAXPAGESIZES	1		/* maximum number of supported page sizes */
+#define	MAXPAGESIZES	2		/* maximum number of supported page sizes */
 
 #ifndef KSTACK_PAGES
 #define	KSTACK_PAGES	4	/* pages of kernel stack (with pcb) */

@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1991 Regents of the University of California.
  * All rights reserved.
  *
@@ -60,6 +62,8 @@ struct mdthread {
 	register_t md_saved_flags;	/* (k) */
 	register_t md_spurflt_addr;	/* (k) Spurious page fault address. */
 	struct pmap_invl_gen md_invl_gen;
+	register_t md_efirt_tmp;	/* (k) */
+	int	md_efirt_dis_pf;	/* (k) */
 };
 
 struct mdproc {
@@ -90,7 +94,6 @@ struct syscall_args {
 
 struct proc_ldt *user_ldt_alloc(struct proc *, int);
 void user_ldt_free(struct thread *);
-void user_ldt_deref(struct proc_ldt *);
 struct sysarch_args;
 int sysarch_ldt(struct thread *td, struct sysarch_args *uap, int uap_space);
 int amd64_set_ldt_data(struct thread *td, int start, int num,

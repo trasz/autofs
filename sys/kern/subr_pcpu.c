@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 2001 Wind River Systems, Inc.
  * All rights reserved.
  * Written by: John Baldwin <jhb@FreeBSD.org>
@@ -70,7 +72,7 @@ struct dpcpu_free {
 	TAILQ_ENTRY(dpcpu_free) df_link;
 };
 
-static DPCPU_DEFINE(char, modspace[DPCPU_MODMIN]);
+DPCPU_DEFINE_STATIC(char, modspace[DPCPU_MODMIN] __aligned(__alignof(void *)));
 static TAILQ_HEAD(, dpcpu_free) dpcpu_head = TAILQ_HEAD_INITIALIZER(dpcpu_head);
 static struct sx dpcpu_lock;
 uintptr_t dpcpu_off[MAXCPU];
@@ -125,7 +127,7 @@ dpcpu_startup(void *dummy __unused)
 	TAILQ_INSERT_HEAD(&dpcpu_head, df, df_link);
 	sx_init(&dpcpu_lock, "dpcpu alloc lock");
 }
-SYSINIT(dpcpu, SI_SUB_KLD, SI_ORDER_FIRST, dpcpu_startup, 0);
+SYSINIT(dpcpu, SI_SUB_KLD, SI_ORDER_FIRST, dpcpu_startup, NULL);
 
 /*
  * UMA_PCPU_ZONE zones, that are available for all kernel
@@ -149,7 +151,7 @@ pcpu_zones_startup(void)
 		pcpu_zone_ptr = uma_zcreate("ptr pcpu", sizeof(void *),
 		    NULL, NULL, NULL, NULL, UMA_ALIGN_PTR, UMA_ZONE_PCPU);
 }
-SYSINIT(pcpu_zones, SI_SUB_KMEM, SI_ORDER_ANY, pcpu_zones_startup, NULL);
+SYSINIT(pcpu_zones, SI_SUB_VM, SI_ORDER_ANY, pcpu_zones_startup, NULL);
 
 /*
  * First-fit extent based allocator for allocating space in the per-cpu
@@ -407,7 +409,7 @@ DB_SHOW_ALL_COMMAND(pcpu, db_show_cpu_all)
 	int id;
 
 	db_printf("Current CPU: %d\n\n", PCPU_GET(cpuid));
-	for (id = 0; id <= mp_maxid; id++) {
+	CPU_FOREACH(id) {
 		pc = pcpu_find(id);
 		if (pc != NULL) {
 			show_pcpu(pc);

@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1980, 1986, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -408,11 +410,17 @@ struct rt_addrinfo {
 } while (0)
 
 #define	RO_RTFREE(_ro) do {					\
-	if ((_ro)->ro_rt) {					\
-		RT_LOCK((_ro)->ro_rt);				\
-		RTFREE_LOCKED((_ro)->ro_rt);			\
-	}							\
+	if ((_ro)->ro_rt)					\
+		RTFREE((_ro)->ro_rt);				\
 } while (0)
+
+#define	RO_INVALIDATE_CACHE(ro) do {					\
+		RO_RTFREE(ro);						\
+		if ((ro)->ro_lle != NULL) {				\
+			LLE_FREE((ro)->ro_lle);				\
+			(ro)->ro_lle = NULL;				\
+		}							\
+	} while (0)
 
 /*
  * Validate a cached route based on a supplied cookie.  If there is an
@@ -422,10 +430,7 @@ struct rt_addrinfo {
 #define RT_VALIDATE(ro, cookiep, fibnum) do {				\
 	rt_gen_t cookie = RT_GEN(fibnum, (ro)->ro_dst.sa_family);	\
 	if (*(cookiep) != cookie) {					\
-		if ((ro)->ro_rt != NULL) {				\
-			RTFREE((ro)->ro_rt);				\
-			(ro)->ro_rt = NULL;				\
-		}							\
+		RO_INVALIDATE_CACHE(ro);				\
 		*(cookiep) = cookie;					\
 	}								\
 } while (0)

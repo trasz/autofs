@@ -1,6 +1,8 @@
 /*	$NetBSD: gt_pci.c,v 1.4 2003/07/15 00:24:54 lukem Exp $	*/
 
 /*-
+ * SPDX-License-Identifier: BSD-4-Clause
+ *
  * Copyright (c) 2001, 2002 Wasabi Systems, Inc.
  * All rights reserved.
  *
@@ -229,7 +231,7 @@ gt_pci_intr(void *v)
 
 		event = sc->sc_eventstab[irq];
 
-		if (!event || TAILQ_EMPTY(&event->ie_handlers))
+		if (!event || CK_SLIST_EMPTY(&event->ie_handlers))
 			continue;
 
 		/* TODO: frame instead of NULL? */

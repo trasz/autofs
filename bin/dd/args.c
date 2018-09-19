@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1991, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -304,6 +306,8 @@ f_status(char *arg)
 		ddflags |= C_NOINFO;
 	else if (strcmp(arg, "noxfer") == 0)
 		ddflags |= C_NOXFER;
+	else if (strcmp(arg, "progress") == 0)
+		ddflags |= C_PROGRESS;
 	else
 		errx(1, "unknown status %s", arg);
 }

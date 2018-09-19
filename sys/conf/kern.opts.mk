@@ -30,6 +30,7 @@ __DEFAULT_YES_OPTIONS = \
     CDDL \
     CRYPT \
     CUSE \
+    EFI \
     FORMAT_EXTENSIONS \
     INET \
     INET6 \
@@ -37,8 +38,11 @@ __DEFAULT_YES_OPTIONS = \
     IPSEC_SUPPORT \
     ISCSI \
     KERNEL_SYMBOLS \
+    MODULE_DRM \
+    MODULE_DRM2 \
     NETGRAPH \
     PF \
+    REPRODUCIBLE_BUILD \
     SOURCELESS_HOST \
     SOURCELESS_UCODE \
     TESTS \
@@ -47,10 +51,10 @@ __DEFAULT_YES_OPTIONS = \
 
 __DEFAULT_NO_OPTIONS = \
     EXTRA_TCP_STACKS \
+    KERNEL_RETPOLINE \
     NAND \
     OFED \
-    RATELIMIT \
-    REPRODUCIBLE_BUILD
+    RATELIMIT
 
 # Some options are totally broken on some architectures. We disable
 # them. If you need to enable them on an experimental basis, you
@@ -83,6 +87,16 @@ BROKEN_OPTIONS+= FORMAT_EXTENSIONS
 # for them.
 .if ${MACHINE} != "i386" && ${MACHINE} != "amd64"
 BROKEN_OPTIONS+= OFED
+.endif
+
+# Things that don't work based on toolchain support.
+.if ${MACHINE} != "i386" && ${MACHINE} != "amd64"
+BROKEN_OPTIONS+= KERNEL_RETPOLINE
+.endif
+
+# EFI doesn't exist on mips, powerpc, sparc or riscv.
+.if ${MACHINE:Mmips} || ${MACHINE:Mpowerpc} || ${MACHINE:Msparc64} || ${MACHINE:Mriscv}
+BROKEN_OPTIONS+=EFI
 .endif
 
 # expanded inline from bsd.mkopt.mk to avoid share/mk dependency

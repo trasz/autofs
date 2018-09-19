@@ -1,4 +1,6 @@
-/*
+/*-
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2002-2009 Sam Leffler, Errno Consulting
  * Copyright (c) 2002-2008 Atheros Communications, Inc.
  *
@@ -760,6 +762,12 @@ typedef enum {
 	HAL_RESET_BBPANIC	= 1,		/* Reset because of BB panic */
 	HAL_RESET_FORCE_COLD	= 2,		/* Force full reset */
 } HAL_RESET_TYPE;
+
+enum {
+	HAL_RESET_POWER_ON,
+	HAL_RESET_WARM,
+	HAL_RESET_COLD
+};
 
 typedef struct {
 	uint8_t		kv_type;		/* one of HAL_CIPHER */

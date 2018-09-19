@@ -1136,7 +1136,7 @@ json_token_skip(
 	const json_ctx * ctx,
 	tok_ref          tid)
 {
-	if (tid >= 0 && (u_int)tid < ctx->ntok) {
+	if (tid >= 0 && tid < ctx->ntok) {
 		int len = ctx->tok[tid].size;
 		/* For arrays and objects, the size is the number of
 		 * ITEMS in the compound. Thats the number of objects in
@@ -1164,7 +1164,7 @@ json_token_skip(
 		/* The next condition should never be true, but paranoia
 		 * prevails...
 		 */
-		if (tid < 0 || (u_int)tid > ctx->ntok)
+		if (tid < 0 || tid > ctx->ntok)
 			tid = ctx->ntok;
 	}
 	return tid;
@@ -1891,7 +1891,7 @@ gpsd_init_socket(
 	 */
 	ov = 1;
 	rc = setsockopt(up->fdt, IPPROTO_TCP, TCP_NODELAY,
-			(char*)&ov, sizeof(ov));
+			(void *)&ov, sizeof(ov));
 	if (-1 == rc) {
 		if (syslogok(pp, up))
 			msyslog(LOG_INFO,
@@ -1999,7 +1999,7 @@ gpsd_test_socket(
 	/* check for socket error */
 	ec = 0;
 	lc = sizeof(ec);
-	rc = getsockopt(up->fdt, SOL_SOCKET, SO_ERROR, &ec, &lc);
+	rc = getsockopt(up->fdt, SOL_SOCKET, SO_ERROR, (void *)&ec, &lc);
 	if (-1 == rc || 0 != ec) {
 		const char *errtxt;
 		if (0 == ec)

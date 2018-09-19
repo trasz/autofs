@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1980, 1992, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -59,7 +61,7 @@ command(const char *cmd)
 	if (*cp)
 		*cp++ = '\0';
 	if (*tmpstr1 == '\0')
-		return;
+		goto done;
 	for (; *cp && isspace(*cp); cp++)
 		;
 	if (strcmp(tmpstr1, "quit") == 0 || strcmp(tmpstr1, "q") == 0)

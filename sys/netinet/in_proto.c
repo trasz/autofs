@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1982, 1986, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -225,7 +227,6 @@ struct protosw inetsw[] = {
 	.pr_flags =		PR_ATOMIC|PR_ADDR|PR_LASTHDR,
 	.pr_input =		encap4_input,
 	.pr_ctloutput =		rip_ctloutput,
-	.pr_init =		encap_init,
 	.pr_usrreqs =		&rip_usrreqs
 },
 {
@@ -235,7 +236,6 @@ struct protosw inetsw[] = {
 	.pr_flags =		PR_ATOMIC|PR_ADDR|PR_LASTHDR,
 	.pr_input =		encap4_input,
 	.pr_ctloutput =		rip_ctloutput,
-	.pr_init =		encap_init,
 	.pr_usrreqs =		&rip_usrreqs
 },
 {
@@ -245,7 +245,6 @@ struct protosw inetsw[] = {
 	.pr_flags =		PR_ATOMIC|PR_ADDR|PR_LASTHDR,
 	.pr_input =		encap4_input,
 	.pr_ctloutput =		rip_ctloutput,
-	.pr_init =		encap_init,
 	.pr_usrreqs =		&rip_usrreqs
 },
 {
@@ -255,7 +254,6 @@ struct protosw inetsw[] = {
 	.pr_flags =		PR_ATOMIC|PR_ADDR|PR_LASTHDR,
 	.pr_input =		encap4_input,
 	.pr_ctloutput =		rip_ctloutput,
-	.pr_init =		encap_init,
 	.pr_usrreqs =		&rip_usrreqs
 },
 # ifdef INET6
@@ -266,7 +264,6 @@ struct protosw inetsw[] = {
 	.pr_flags =		PR_ATOMIC|PR_ADDR|PR_LASTHDR,
 	.pr_input =		encap4_input,
 	.pr_ctloutput =		rip_ctloutput,
-	.pr_init =		encap_init,
 	.pr_usrreqs =		&rip_usrreqs
 },
 #endif

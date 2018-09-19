@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: (BSD-3-Clause AND MIT-CMU)
+ *
  * Copyright (c) 1991, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -79,16 +81,29 @@ __FBSDID("$FreeBSD$");
 #include <sys/bio.h>
 #include <sys/buf.h>
 #include <sys/vmem.h>
+#include <sys/vmmeter.h>
 
 #include <vm/vm.h>
 #include <vm/vm_param.h>
 #include <vm/vm_kern.h>
 #include <vm/vm_object.h>
 #include <vm/vm_page.h>
+#include <vm/vm_phys.h>
+#include <vm/vm_pagequeue.h>
 #include <vm/vm_map.h>
 #include <vm/vm_pager.h>
 #include <vm/vm_extern.h>
 
+extern void	uma_startup1(void);
+extern void	uma_startup2(void);
+extern void	vm_radix_reserve_kva(void);
+
+#if VM_NRESERVLEVEL > 0
+#define	KVA_QUANTUM	(1 << (VM_LEVEL_0_ORDER + PAGE_SHIFT))
+#else
+	/* On non-superpage architectures want large import sizes. */
+#define	KVA_QUANTUM	(PAGE_SIZE * 1024)
+#endif
 long physmem;
 
 /*
@@ -105,7 +120,10 @@ kva_import(void *unused, vmem_size_t size, int flags, vmem_addr_t *addrp)
 {
 	vm_offset_t addr;
 	int result;
- 
+
+	KASSERT((size % KVA_QUANTUM) == 0,
+	    ("kva_import: Size %jd is not a multiple of %d",
+	    (intmax_t)size, (int)KVA_QUANTUM));
 	addr = vm_map_min(kernel_map);
 	result = vm_map_find(kernel_map, NULL, 0, &addr, size, 0,
 	    VMFS_SUPER_SPACE, VM_PROT_ALL, VM_PROT_ALL, MAP_NOFAULT);
@@ -116,6 +134,23 @@ kva_import(void *unused, vmem_size_t size, int flags, vmem_addr_t *addrp)
 
 	return (0);
 }
+
+#if VM_NRESERVLEVEL > 0
+/*
+ * Import a superpage from the normal kernel arena into the special
+ * arena for allocations with different permissions.
+ */
+static int
+kernel_rwx_alloc(void *arena, vmem_size_t size, int flags, vmem_addr_t *addrp)
+{
+
+	KASSERT((size % KVA_QUANTUM) == 0,
+	    ("kernel_rwx_alloc: Size %jd is not a multiple of %d",
+	    (intmax_t)size, (int)KVA_QUANTUM));
+	return (vmem_xalloc(arena, size, KVA_QUANTUM, 0, 0, VMEM_ADDR_MIN,
+	    VMEM_ADDR_MAX, flags, addrp));
+}
+#endif
 
 /*
  *	vm_init initializes the virtual memory system.
@@ -128,6 +163,7 @@ static void
 vm_mem_init(dummy)
 	void *dummy;
 {
+	int domain;
 
 	/*
 	 * Initializes resident memory structures. From here on, all physical
@@ -135,7 +171,11 @@ vm_mem_init(dummy)
 	 */
 	vm_set_page_size();
 	virtual_avail = vm_page_startup(virtual_avail);
-	
+
+#ifdef	UMA_MD_SMALL_ALLOC
+	/* Announce page availability to UMA. */
+	uma_startup1();
+#endif
 	/*
 	 * Initialize other VM packages
 	 */
@@ -148,14 +188,41 @@ vm_mem_init(dummy)
 	 * Initialize the kernel_arena.  This can grow on demand.
 	 */
 	vmem_init(kernel_arena, "kernel arena", 0, 0, PAGE_SIZE, 0, 0);
-	vmem_set_import(kernel_arena, kva_import, NULL, NULL,
+	vmem_set_import(kernel_arena, kva_import, NULL, NULL, KVA_QUANTUM);
+
 #if VM_NRESERVLEVEL > 0
-	    1 << (VM_LEVEL_0_ORDER + PAGE_SHIFT));
-#else
-	    /* On non-superpage architectures want large import sizes. */
-	    PAGE_SIZE * 1024);
+	/*
+	 * In an architecture with superpages, maintain a separate arena
+	 * for allocations with permissions that differ from the "standard"
+	 * read/write permissions used for memory in the kernel_arena.
+	 */
+	kernel_rwx_arena = vmem_create("kernel rwx arena", 0, 0, PAGE_SIZE,
+	    0, M_WAITOK);
+	vmem_set_import(kernel_rwx_arena, kernel_rwx_alloc,
+	    (vmem_release_t *)vmem_xfree, kernel_arena, KVA_QUANTUM);
 #endif
 
+	for (domain = 0; domain < vm_ndomains; domain++) {
+		vm_dom[domain].vmd_kernel_arena = vmem_create(
+		    "kernel arena domain", 0, 0, PAGE_SIZE, 0, M_WAITOK);
+		vmem_set_import(vm_dom[domain].vmd_kernel_arena,
+		    (vmem_import_t *)vmem_alloc, NULL, kernel_arena,
+		    KVA_QUANTUM);
+#if VM_NRESERVLEVEL > 0
+		vm_dom[domain].vmd_kernel_rwx_arena = vmem_create(
+		    "kernel rwx arena domain", 0, 0, PAGE_SIZE, 0, M_WAITOK);
+		vmem_set_import(vm_dom[domain].vmd_kernel_rwx_arena,
+		    kernel_rwx_alloc, (vmem_release_t *)vmem_xfree,
+		    vm_dom[domain].vmd_kernel_arena, KVA_QUANTUM);
+#endif
+	}
+
+#ifndef	UMA_MD_SMALL_ALLOC
+	/* Set up radix zone to use noobj_alloc. */
+	vm_radix_reserve_kva();
+#endif
+	/* Announce full page availability to UMA. */
+	uma_startup2();
 	kmem_init_zero_region();
 	pmap_init();
 	vm_pager_init();
@@ -192,8 +259,8 @@ again:
 	 * Discount the physical memory larger than the size of kernel_map
 	 * to avoid eating up all of KVA space.
 	 */
-	physmem_est = lmin(physmem, btoc(kernel_map->max_offset -
-	    kernel_map->min_offset));
+	physmem_est = lmin(physmem, btoc(vm_map_max(kernel_map) -
+	    vm_map_min(kernel_map)));
 
 	v = kern_vfs_bio_buffer_alloc(v, physmem_est);
 
@@ -207,13 +274,11 @@ again:
 		 * Try to protect 32-bit DMAable memory from the largest
 		 * early alloc of wired mem.
 		 */
-		firstaddr = kmem_alloc_attr(kernel_arena, size,
-		    M_ZERO | M_NOWAIT, (vm_paddr_t)1 << 32,
-		    ~(vm_paddr_t)0, VM_MEMATTR_DEFAULT);
+		firstaddr = kmem_alloc_attr(size, M_ZERO | M_NOWAIT,
+		    (vm_paddr_t)1 << 32, ~(vm_paddr_t)0, VM_MEMATTR_DEFAULT);
 		if (firstaddr == 0)
 #endif
-			firstaddr = kmem_malloc(kernel_arena, size,
-			    M_ZERO | M_WAITOK);
+			firstaddr = kmem_malloc(size, M_ZERO | M_WAITOK);
 		if (firstaddr == 0)
 			panic("startup: no room for tables");
 		goto again;

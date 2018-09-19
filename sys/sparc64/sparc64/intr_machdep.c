@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1991 The Regents of the University of California.
  * All rights reserved.
  *
@@ -373,7 +375,7 @@ inthand_add(const char *name, int vec, driver_filter_t *filt,
 		 * pretty rare in practice.
 		 */
 		filter = 0;
-		TAILQ_FOREACH(ih, &ie->ie_handlers, ih_next) {
+		CK_SLIST_FOREACH(ih, &ie->ie_handlers, ih_next) {
 			if (ih->ih_filter != NULL && ih->ih_filter != filt) {
 				filter = 1;
 				break;

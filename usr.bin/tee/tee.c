@@ -1,4 +1,6 @@
-/*
+/*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1988, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -107,7 +109,7 @@ main(int argc, char *argv[])
 		} else
 			add(fd, *argv);
 
-	if (cap_enter() < 0 && errno != ENOSYS)
+	if (caph_enter() < 0)
 		err(EXIT_FAILURE, "unable to enter capability mode");
 	while ((rval = read(STDIN_FILENO, buf, BSIZE)) > 0)
 		for (p = head; p; p = p->next) {

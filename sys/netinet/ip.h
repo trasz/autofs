@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1982, 1986, 1993
  *	The Regents of the University of California.
  * All rights reserved.
@@ -90,6 +92,11 @@ struct ip {
 #define	IPTOS_PREC_IMMEDIATE		IPTOS_DSCP_CS2
 #define	IPTOS_PREC_PRIORITY		IPTOS_DSCP_CS1
 #define	IPTOS_PREC_ROUTINE		IPTOS_DSCP_CS0
+
+/*
+ * Offset of Diffserv decimal value to convert it to tos value .
+ */
+#define	IPTOS_DSCP_OFFSET		2
 
 /*
  * Definitions for DiffServ Codepoints as per RFC2474 and RFC5865.

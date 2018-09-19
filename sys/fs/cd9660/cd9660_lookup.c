@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1989, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -375,7 +377,7 @@ found:
 	 */
 	if (dp->i_number != i_ino) {
 		ep2 = malloc(reclen, M_TEMP, M_WAITOK);
-		bcopy(ep, ep2, reclen);
+		memcpy(ep2, ep, reclen);
 		ep = ep2;
 	}
 	brelse(bp);

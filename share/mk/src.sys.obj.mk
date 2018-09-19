@@ -19,6 +19,12 @@
 #  TARGET.TARGET_ARCH added in as it assumes that MAKEOBJDIRPREFIX is
 #  nested in the existing OBJTOP with TARGET.TARGET_ARCH in it.
 #
+#  The expected OBJDIR is stored in __objdir for auto.obj.mk to use.
+#
+#  AUTO_OBJ is opportunistically enabled if the computed .OBJDIR is writable
+#  by the current user.  Some top-level targets disable this behavior in
+#  Makefile.sys.inc.
+#
 
 _default_makeobjdirprefix?=	/usr/obj
 _default_makeobjdir=	$${.CURDIR:S,^$${SRCTOP},$${OBJTOP},}
@@ -26,7 +32,7 @@ _default_makeobjdir=	$${.CURDIR:S,^$${SRCTOP},$${OBJTOP},}
 .include <bsd.mkopt.mk>
 
 .if ${.MAKE.LEVEL} == 0 || empty(OBJROOT)
-.if ${MK_UNIFIED_OBJDIR} == "no"
+.if ${MK_UNIFIED_OBJDIR} == "no" && ${MK_DIRDEPS_BUILD} == "no"
 # Fall back to historical behavior.
 # We always want to set a default MAKEOBJDIRPREFIX...
 MAKEOBJDIRPREFIX?=	${_default_makeobjdirprefix}
@@ -70,12 +76,35 @@ OBJROOT:=	${OBJROOT:H:tA}/${OBJROOT:T}
 .export OBJROOT SRCTOP
 .endif
 
-.if ${MK_UNIFIED_OBJDIR} == "yes"
-OBJTOP:=	${OBJROOT}${TARGET:D${TARGET}.${TARGET_ARCH}:U${MACHINE}.${MACHINE_ARCH}}
+.if ${MK_DIRDEPS_BUILD} == "no"
+.if empty(OBJTOP)
+# SRCTOP == OBJROOT only happens with clever MAKEOBJDIRPREFIX=/.  Don't
+# append TARGET.TARGET_ARCH for that case since the user wants to build
+# in the source tree.
+.if ${MK_UNIFIED_OBJDIR} == "yes" && ${SRCTOP} != ${OBJROOT:tA}
+.if defined(TARGET) && defined(TARGET_ARCH)
+OBJTOP:=	${OBJROOT}${TARGET}.${TARGET_ARCH}
+.elif defined(TARGET) && ${.CURDIR} == ${SRCTOP}
+# Not enough information, just use basic OBJDIR.  This can happen with some
+# 'make universe' targets or if TARGET is not being used as expected.
+OBJTOP:=	${OBJROOT:H}
+.else
+OBJTOP:=	${OBJROOT}${MACHINE}.${MACHINE_ARCH}
+.endif
 .else
 # TARGET.TARGET_ARCH handled in OBJROOT already.
 OBJTOP:=	${OBJROOT:H}
 .endif	# ${MK_UNIFIED_OBJDIR} == "yes"
+.endif	# empty(OBJTOP)
+
+# Fixup OBJROOT/OBJTOP if using MAKEOBJDIRPREFIX.
+# This intenionally comes after adding TARGET.TARGET_ARCH so that is truncated
+# away for nested objdirs.  This logic also will not trigger if the OBJROOT
+# block above unsets MAKEOBJDIRPREFIX.
+.if !empty(MAKEOBJDIRPREFIX)
+OBJTOP:=	${MAKEOBJDIRPREFIX}${SRCTOP}
+OBJROOT:=	${OBJTOP}/
+.endif
 
 # Wait to validate MAKEOBJDIR until OBJTOP is set.
 .if defined(MAKEOBJDIR)
@@ -84,29 +113,36 @@ OBJTOP:=	${OBJROOT:H}
 .endif
 .endif
 
-# Fixup OBJROOT/OBJTOP if using MAKEOBJDIRPREFIX but leave it alone
-# for DIRDEPS_BUILD which really wants to know the absolute top at
-# all times.  This intenionally comes after adding TARGET.TARGET_ARCH
-# so that is truncated away for nested objdirs.  This logic also
-# will not trigger if the OBJROOT block above unsets MAKEOBJDIRPREFIX.
-.if !empty(MAKEOBJDIRPREFIX) && ${MK_DIRDEPS_BUILD} == "no"
-OBJTOP:=	${MAKEOBJDIRPREFIX}${SRCTOP}
-OBJROOT:=	${OBJTOP}/
+# __objdir is the expected .OBJDIR we want to use and that auto.obj.mk will
+# try to create.
+.if !empty(MAKEOBJDIRPREFIX)
+.if ${.CURDIR:M${MAKEOBJDIRPREFIX}/*} != ""
+# we are already in obj tree!
+__objdir=	${.CURDIR}
+.else
+__objdir:=	${MAKEOBJDIRPREFIX}${.CURDIR}
+.endif
+.elif !empty(MAKEOBJDIR)
+__objdir:=	${MAKEOBJDIR}
 .endif
 
-# Try to enable MK_AUTO_OBJ by default if we can write to the OBJROOT.  Only
-# do this if AUTO_OBJ is not disabled by the user, not cleaning, and this
-# is the first make ran.
-.if 0 && ${.MAKE.LEVEL} == 0 && \
+# Try to enable MK_AUTO_OBJ by default if we can write to the __objdir.  Only
+# do this if AUTO_OBJ is not disabled by the user, and this is the first make
+# ran.
+.if ${.MAKE.LEVEL} == 0 && \
     ${MK_AUTO_OBJ} == "no" && empty(.MAKEOVERRIDES:MMK_AUTO_OBJ) && \
     !defined(WITHOUT_AUTO_OBJ) && !make(showconfig) && !make(print-dir) && \
+    !make(test-system-*) && \
     !defined(NO_OBJ) && \
-    (${.TARGETS} == "" || ${.TARGETS:Nclean*:N*clean:Ndestroy*} != "")
+    empty(RELDIR:Msys/*/compile/*)
 # Find the last existing directory component and check if we can write to it.
 # If the last component is a symlink then recurse on the new path.
 CheckAutoObj= \
 DirIsCreatable() { \
-	[ -w "$${1}" ] && return 0; \
+	if [ -w "$${1}" ]; then \
+		[ -d "$${1}" ] || return 1; \
+		return 0; \
+	fi; \
 	d="$${1}"; \
 	IFS=/; \
 	set -- $${d}; \
@@ -123,13 +159,16 @@ DirIsCreatable() { \
 				ret=0; \
 				DirIsCreatable "$${dir%/}" || ret=$$?; \
 				return $${ret}; \
+			elif [ -e "/$${dir}$${d}" ]; then \
+				return 1; \
 			else \
 				break; \
 			fi; \
 		fi; \
 		dir="$${dir}$${d}/"; \
 	done; \
-	[ -w "$${dir}" ]; \
+	[ -w "$${dir}" ] && [ -d "$${dir}" ] && return 0; \
+	return 1; \
 }; \
 CheckAutoObj() { \
 	if DirIsCreatable "$${1}"; then \
@@ -138,15 +177,18 @@ CheckAutoObj() { \
 		echo no; \
 	fi; \
 }
-.if !empty(MAKEOBJDIRPREFIX)
-WANTED_OBJDIR=	${MAKEOBJDIRPREFIX}${.CURDIR}
-.else
-WANTED_OBJDIR=	${MAKEOBJDIR}
+.if !empty(__objdir)
+.if ${.CURDIR} == ${__objdir} || \
+    (exists(${__objdir}) && ${.TARGETS:M*install*} == ${.TARGETS})
+__objdir_writable?= yes
+.elif empty(__objdir_writable)
+__objdir_writable!= \
+	${CheckAutoObj}; CheckAutoObj "${__objdir}" || echo no
 .endif
-OBJDIR_WRITABLE!= \
-	${CheckAutoObj}; CheckAutoObj "${WANTED_OBJDIR}" || echo no
+.endif
+__objdir_writable?= no
 # Export the decision to sub-makes.
-MK_AUTO_OBJ:=	${OBJDIR_WRITABLE}
+MK_AUTO_OBJ:=	${__objdir_writable}
 .export MK_AUTO_OBJ
 .elif make(showconfig)
 # Need to export for showconfig internally running make -dg1.  It is enabled
@@ -154,20 +196,35 @@ MK_AUTO_OBJ:=	${OBJDIR_WRITABLE}
 .export MK_AUTO_OBJ
 .endif	# ${MK_AUTO_OBJ} == "no" && ...
 
-# Assign this directory as .OBJDIR if possible after determining if AUTO_OBJ
-# can be enabled by default.
-.if ${MK_AUTO_OBJ} == "no"
+# Assign this directory as .OBJDIR if possible.
+#
 # The expected OBJDIR already exists, set it as .OBJDIR.
-.if !empty(MAKEOBJDIRPREFIX) && exists(${MAKEOBJDIRPREFIX}${.CURDIR})
-.OBJDIR: ${MAKEOBJDIRPREFIX}${.CURDIR}
-.elif exists(${MAKEOBJDIR})
-.OBJDIR: ${MAKEOBJDIR}
-# Special case to work around bmake bug.  If the top-level .OBJDIR does not yet
-# exist and MAKEOBJDIR is passed into environment and yield a blank value,
-# bmake will incorrectly set .OBJDIR=${SRCTOP}/ rather than the expected
-# ${SRCTOP} to match ${.CURDIR}.
-.elif ${MAKE_VERSION} <= 20170720 && \
-    ${.CURDIR} == ${SRCTOP} && ${.OBJDIR} == ${SRCTOP}/
+.if !empty(__objdir) && exists(${__objdir})
+.OBJDIR: ${__objdir}
+.else
+# The OBJDIR we wanted does not yet exist, ensure we default to safe .CURDIR
+# in case make started with a bogus MAKEOBJDIR, that expanded before OBJTOP
+# was set, that happened to match some unexpected directory.  Either
+# auto.obj.mk or bsd.obj.mk will create the directory and fix .OBJDIR later.
 .OBJDIR: ${.CURDIR}
 .endif
-.endif	# ${MK_AUTO_OBJ} == "no"
+
+# Ensure .OBJDIR=.CURDIR cases have a proper OBJTOP and .OBJDIR
+.if defined(NO_OBJ) || ${__objdir_writable:Uunknown} == "no" || \
+    ${__objdir} == ${.CURDIR}
+OBJTOP=		${SRCTOP}
+OBJROOT=	${SRCTOP}/
+# Compare only to avoid an unneeded chdir(2), :tA purposely left out.
+.if ${.OBJDIR} != ${.CURDIR}
+.OBJDIR:	${.CURDIR}
+.endif
+.endif	# defined(NO_OBJ)
+
+.if !defined(HOST_TARGET)
+# we need HOST_TARGET etc below.
+.include <host-target.mk>
+.export HOST_TARGET
+.endif
+HOST_OBJTOP?=	${OBJROOT}${HOST_TARGET}
+
+.endif	# ${MK_DIRDEPS_BUILD} == "no"

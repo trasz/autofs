@@ -3,11 +3,6 @@
 
 .include <src.opts.mk>
 
-# XXX MISSING:		deroff diction graph learn plot
-#			spell spline struct xsend
-# XXX Use GNU versions: diff ld patch
-#
-
 SUBDIR=	alias \
 	apply \
 	asa \
@@ -41,6 +36,7 @@ SUBDIR=	alias \
 	elfdump \
 	enigma \
 	env \
+	etdump \
 	expand \
 	false \
 	fetch \
@@ -108,7 +104,6 @@ SUBDIR=	alias \
 	nfsstat \
 	nice \
 	nl \
-	numactl \
 	nohup \
 	opieinfo \
 	opiekey \
@@ -140,7 +135,6 @@ SUBDIR=	alias \
 	script \
 	sdiff \
 	sed \
-	send-pr \
 	seq \
 	shar \
 	showmount \
@@ -150,6 +144,7 @@ SUBDIR=	alias \
 	split \
 	stat \
 	stdbuf \
+	strings \
 	su \
 	systat \
 	tabs \
@@ -262,7 +257,7 @@ SUBDIR.${MK_TOOLCHAIN}+=	c89
 SUBDIR.${MK_TOOLCHAIN}+=	c99
 SUBDIR.${MK_TOOLCHAIN}+=	ctags
 SUBDIR.${MK_TOOLCHAIN}+=	cxxfilt
-SUBDIR.${MK_TOOLCHAIN}+=	elfcopy
+SUBDIR.${MK_TOOLCHAIN}+=	objcopy
 SUBDIR.${MK_TOOLCHAIN}+=	file2c
 # ARM64TODO gprof does not build
 # RISCVTODO gprof does not build
@@ -277,10 +272,6 @@ SUBDIR.${MK_TOOLCHAIN}+=	readelf
 SUBDIR.${MK_TOOLCHAIN}+=	rpcgen
 SUBDIR.${MK_TOOLCHAIN}+=	unifdef
 SUBDIR.${MK_TOOLCHAIN}+=	size
-SUBDIR.${MK_TOOLCHAIN}+=	strings
-.if ${MACHINE_ARCH} != "aarch64" # ARM64TODO xlint does not build
-SUBDIR.${MK_TOOLCHAIN}+=	xlint
-.endif
 SUBDIR.${MK_TOOLCHAIN}+=	xstr
 SUBDIR.${MK_TOOLCHAIN}+=	yacc
 SUBDIR.${MK_VI}+=	vi
@@ -294,6 +285,7 @@ SUBDIR.${MK_UTMPX}+=	users
 SUBDIR.${MK_UTMPX}+=	who
 SUBDIR.${MK_SVN}+=	svn
 SUBDIR.${MK_SVNLITE}+=	svn
+SUBDIR.${MK_OFED}+=	ofed
 
 # These are normally only handled for build-tools.
 .if make(clean*)

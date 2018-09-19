@@ -8,7 +8,7 @@
  *
  * 1. Copyright Notice
  *
- * Some or all of this work - Copyright (c) 1999 - 2017, Intel Corp.
+ * Some or all of this work - Copyright (c) 1999 - 2018, Intel Corp.
  * All rights reserved.
  *
  * 2. License
@@ -449,6 +449,7 @@ extern ACPI_DMTABLE_INFO        AcpiDmTableInfoIort3a[];
 extern ACPI_DMTABLE_INFO        AcpiDmTableInfoIort3b[];
 extern ACPI_DMTABLE_INFO        AcpiDmTableInfoIort3c[];
 extern ACPI_DMTABLE_INFO        AcpiDmTableInfoIort4[];
+extern ACPI_DMTABLE_INFO        AcpiDmTableInfoIort5[];
 extern ACPI_DMTABLE_INFO        AcpiDmTableInfoIortAcc[];
 extern ACPI_DMTABLE_INFO        AcpiDmTableInfoIortHdr[];
 extern ACPI_DMTABLE_INFO        AcpiDmTableInfoIortMap[];
@@ -504,6 +505,7 @@ extern ACPI_DMTABLE_INFO        AcpiDmTableInfoNfit4[];
 extern ACPI_DMTABLE_INFO        AcpiDmTableInfoNfit5[];
 extern ACPI_DMTABLE_INFO        AcpiDmTableInfoNfit6[];
 extern ACPI_DMTABLE_INFO        AcpiDmTableInfoNfit6a[];
+extern ACPI_DMTABLE_INFO        AcpiDmTableInfoNfit7[];
 extern ACPI_DMTABLE_INFO        AcpiDmTableInfoPdtt[];
 extern ACPI_DMTABLE_INFO        AcpiDmTableInfoPmtt[];
 extern ACPI_DMTABLE_INFO        AcpiDmTableInfoPmtt0[];

@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1989, 1993, 1995
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -71,6 +73,7 @@
 #define	NFSSVC_DUMPMNTOPTS	0x10000000
 #define	NFSSVC_NEWSTRUCT	0x20000000
 #define	NFSSVC_FORCEDISM	0x40000000
+#define	NFSSVC_PNFSDS		0x80000000
 
 /* Argument structure for NFSSVC_DUMPMNTOPTS. */
 struct nfscl_dumpmntopts {

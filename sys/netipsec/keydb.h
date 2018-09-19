@@ -2,6 +2,8 @@
 /*	$KAME: keydb.h,v 1.14 2000/08/02 17:58:26 sakane Exp $	*/
 
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
  * All rights reserved.
  *
@@ -39,6 +41,7 @@
 #include <sys/mutex.h>
 
 #include <netipsec/key_var.h>
+#include <opencrypto/_cryptodev.h>
 
 #ifndef _SOCKADDR_UNION_DEFINED
 #define	_SOCKADDR_UNION_DEFINED
@@ -160,7 +163,7 @@ struct secasvar {
 	const struct enc_xform *tdb_encalgxform;/* encoding algorithm */
 	const struct auth_hash *tdb_authalgxform;/* authentication algorithm */
 	const struct comp_algo *tdb_compalgxform;/* compression algorithm */
-	uint64_t tdb_cryptoid;		/* crypto session id */
+	crypto_session_t tdb_cryptoid;		/* crypto session */
 
 	uint8_t alg_auth;		/* Authentication Algorithm Identifier*/
 	uint8_t alg_enc;		/* Cipher Algorithm Identifier */

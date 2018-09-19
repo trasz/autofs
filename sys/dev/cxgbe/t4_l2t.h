@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2011 Chelsio Communications, Inc.
  * All rights reserved.
  *
@@ -104,9 +106,6 @@ t4_l2t_release(struct l2t_entry *e)
 		atomic_add_int(&d->nfree, 1);
 }
 
-
-#ifdef SBUF_DRAIN
 int sysctl_l2t(SYSCTL_HANDLER_ARGS);
-#endif
 
 #endif  /* __T4_L2T_H */

@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2003 Marcel Moolenaar
  * All rights reserved.
  *
@@ -42,6 +44,7 @@ struct uart_bas {
 	u_int	rclk;
 	u_int	regshft;
 	u_int	regiowidth;
+	u_int	busy_detect;
 };
 
 #define	uart_regofs(bas, reg)		((reg) << (bas)->regshft)

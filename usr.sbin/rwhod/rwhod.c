@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1983, 1993 The Regents of the University of California.
  * Copyright (c) 2013 Mariusz Zaborski <oshogbo@FreeBSD.org>
  * All rights reserved.
@@ -61,6 +63,7 @@ __FBSDID("$FreeBSD$");
 #include <protocols/rwhod.h>
 
 #include <ctype.h>
+#include <capsicum_helpers.h>
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -370,7 +373,7 @@ receiver_process(void)
 		syslog(LOG_WARNING, "cap_rights_limit: %m");
 		exit(1);
 	}
-	if (cap_enter() < 0 && errno != ENOSYS) {
+	if (caph_enter() < 0) {
 		syslog(LOG_ERR, "cap_enter: %m");
 		exit(1);
 	}

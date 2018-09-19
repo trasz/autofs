@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
  *
@@ -68,7 +70,6 @@
 #endif
 
 #define	IRQ_MASK(irq)		(1 << (irq))
-#define	IMEN_MASK(ai)		(IRQ_MASK((ai)->at_irq))
 
 void	atpic_handle_intr(u_int vector, struct trapframe *frame);
 void	atpic_startup(void);

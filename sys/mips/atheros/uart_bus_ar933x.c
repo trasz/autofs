@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2012, Adrian Chadd <adrian@FreeBSD.org>
  * All rights reserved.
  *
@@ -88,7 +90,7 @@ uart_ar933x_probe(device_t dev)
 	sc->sc_bas.bst = mips_bus_space_generic;
 	sc->sc_bas.bsh = MIPS_PHYS_TO_KSEG1(AR71XX_UART_ADDR);
 
-	return (uart_bus_probe(dev, 2, 0, freq, 0, 0));
+	return (uart_bus_probe(dev, 2, 0, freq, 0, 0, 0));
 }
 
 /*

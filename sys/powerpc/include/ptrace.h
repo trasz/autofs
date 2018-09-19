@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 2014 Justin Hibbits
  * All rights reserved.
  *
@@ -37,5 +39,7 @@
 
 #define PT_GETVRREGS	(PT_FIRSTMACH + 0)
 #define PT_SETVRREGS	(PT_FIRSTMACH + 1)
+#define PT_GETVSRREGS	(PT_FIRSTMACH + 2)
+#define PT_SETVSRREGS	(PT_FIRSTMACH + 3)
 
 #endif

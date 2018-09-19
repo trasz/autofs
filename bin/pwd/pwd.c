@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1991, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -93,7 +95,7 @@ main(int argc, char *argv[])
 	exit(0);
 }
 
-void
+void __dead2
 usage(void)
 {
 

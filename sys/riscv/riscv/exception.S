@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2015-2017 Ruslan Bukin <br@bsdpad.com>
+ * Copyright (c) 2015-2018 Ruslan Bukin <br@bsdpad.com>
  * All rights reserved.
  *
  * Portions of this software were developed by SRI International and the
@@ -35,7 +35,7 @@
 #include <machine/asm.h>
 __FBSDID("$FreeBSD$");
 
-#include "assym.s"
+#include "assym.inc"
 
 #include <machine/trap.h>
 #include <machine/riscvreg.h>
@@ -116,11 +116,8 @@ __FBSDID("$FreeBSD$");
 .macro load_registers el
 	ld	t0, (TF_SSTATUS)(sp)
 .if \el == 0
-	/*
-	 * Ensure user interrupts will be enabled on eret
-	 * and supervisor mode can access userspace on trap.
-	 */
-	li	t1, (SSTATUS_SPIE | SSTATUS_SUM)
+	/* Ensure user interrupts will be enabled on eret */
+	li	t1, SSTATUS_SPIE
 	or	t0, t0, t1
 .else
 	/*

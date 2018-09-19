@@ -1,4 +1,6 @@
-/*
+/*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (C) 2005 Daniel M. Eischen <deischen@freebsd.org>
  * Copyright (c) 2005 David Xu <davidxu@freebsd.org>
  * Copyright (c) 1995-1998 John Birrell <jb@cimlogic.com.au>.
@@ -570,6 +572,8 @@ struct pthread {
 	/* Sleep queue */
 	struct	sleepqueue	*sleepqueue;
 
+	/* pthread_set/get_name_np */
+	char			*name;
 };
 
 #define THR_SHOULD_GC(thrd) 						\

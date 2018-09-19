@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -30,11 +32,9 @@
  * SUCH DAMAGE.
  */
 
-#ifndef lint
 #if 0
 static char sccsid[] = "@(#)operator.c	8.1 (Berkeley) 6/6/93";
 #endif
-#endif /* not lint */
 
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
@@ -44,6 +44,7 @@ __FBSDID("$FreeBSD$");
 #include <err.h>
 #include <fts.h>
 #include <stdio.h>
+#include <time.h>
 
 #include "find.h"
 

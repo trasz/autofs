@@ -1,7 +1,9 @@
 /*	$NetBSD: ffs_alloc.c,v 1.14 2004/06/20 22:20:18 jmc Exp $	*/
 /* From: NetBSD: ffs_alloc.c,v 1.50 2001/09/06 02:16:01 lukem Exp */
 
-/*
+/*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 2002 Networks Associates Technology, Inc.
  * All rights reserved.
  *
@@ -303,13 +305,13 @@ ffs_alloccg(struct inode *ip, int cg, daddr_t bpref, int size)
 	error = bread(ip->i_devvp, fsbtodb(fs, cgtod(fs, cg)), (int)fs->fs_cgsize,
 	    NULL, &bp);
 	if (error) {
-		brelse(bp, 0);
+		brelse(bp);
 		return (0);
 	}
 	cgp = (struct cg *)bp->b_data;
 	if (!cg_chkmagic_swap(cgp, needswap) ||
 	    (cgp->cg_cs.cs_nbfree == 0 && size == fs->fs_bsize)) {
-		brelse(bp, 0);
+		brelse(bp);
 		return (0);
 	}
 	if (size == fs->fs_bsize) {
@@ -332,7 +334,7 @@ ffs_alloccg(struct inode *ip, int cg, daddr_t bpref, int size)
 		 * allocated, and hacked up
 		 */
 		if (cgp->cg_cs.cs_nbfree == 0) {
-			brelse(bp, 0);
+			brelse(bp);
 			return (0);
 		}
 		bno = ffs_alloccgblk(ip, bp, bpref);
@@ -447,12 +449,12 @@ ffs_blkfree(struct inode *ip, daddr_t bno, long size)
 	error = bread(ip->i_devvp, fsbtodb(fs, cgtod(fs, cg)), (int)fs->fs_cgsize,
 	    NULL, &bp);
 	if (error) {
-		brelse(bp, 0);
+		brelse(bp);
 		return;
 	}
 	cgp = (struct cg *)bp->b_data;
 	if (!cg_chkmagic_swap(cgp, needswap)) {
-		brelse(bp, 0);
+		brelse(bp);
 		return;
 	}
 	cgbno = dtogd(fs, bno);

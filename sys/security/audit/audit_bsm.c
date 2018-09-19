@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1999-2009 Apple Inc.
  * Copyright (c) 2016-2017 Robert N. M. Watson
  * All rights reserved.
@@ -425,7 +427,6 @@ audit_sys_auditon(struct audit_record *ar, struct au_record *rec)
 		break;
 
 	case A_SETCLASS:
-		kau_write(rec, tok);
 		tok = au_to_arg32(2, "setclass:ec_event",
 		    ar->ar_arg_auditon.au_evclass.ec_number);
 		kau_write(rec, tok);
@@ -769,6 +770,7 @@ kaudit_to_bsm(struct kaudit_record *kar, struct au_record **pau)
 	case AUE_PROFILE:
 	case AUE_RTPRIO:
 	case AUE_SEMSYS:
+	case AUE_SETFIB:
 	case AUE_SHMSYS:
 	case AUE_SETPGRP:
 	case AUE_SETRLIMIT:
@@ -809,6 +811,7 @@ kaudit_to_bsm(struct kaudit_record *kar, struct au_record **pau)
 	case AUE_JAIL:
 	case AUE_LUTIMES:
 	case AUE_NFS_GETFH:
+	case AUE_LGETFH:
 	case AUE_LSTAT:
 	case AUE_LPATHCONF:
 	case AUE_PATHCONF:
@@ -850,6 +853,7 @@ kaudit_to_bsm(struct kaudit_record *kar, struct au_record **pau)
 
 	case AUE_CHFLAGS:
 	case AUE_LCHFLAGS:
+	case AUE_CHFLAGSAT:
 		if (ARG_IS_VALID(kar, ARG_FFLAGS)) {
 			tok = au_to_arg32(2, "flags", ar->ar_arg_fflags);
 			kau_write(rec, tok);

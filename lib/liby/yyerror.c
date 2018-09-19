@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -30,16 +32,18 @@
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
-#ifndef lint
+#if defined(LIBC_SCCS) && !defined(lint)
 static char sccsid[] = "@(#)yyerror.c	8.1 (Berkeley) 6/4/93";
-#endif /* not lint */
+#endif /* LIBC_SCCS and not lint */
 
 #include <stdio.h>
 
+#include "yyerror.h"
+
 int
-yyerror(msg)
-char *msg;
+yyerror(const char *msg)
 {
-	(void)fprintf(stderr, "%s\n", msg);
+
+	fprintf(stderr, "%s\n", msg);
 	return(0);
 }

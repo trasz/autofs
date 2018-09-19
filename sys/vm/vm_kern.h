@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: (BSD-3-Clause AND MIT-CMU)
+ *
  * Copyright (c) 1991, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -68,6 +70,7 @@ extern vm_map_t kernel_map;
 extern vm_map_t exec_map;
 extern vm_map_t pipe_map;
 extern struct vmem *kernel_arena;
+extern struct vmem *kernel_rwx_arena;
 extern struct vmem *kmem_arena;
 extern struct vmem *buffer_arena;
 extern struct vmem *transient_arena;

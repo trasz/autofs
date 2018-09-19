@@ -1,7 +1,9 @@
 /*	$FreeBSD$	*/
 /*	$KAME: route6d.c,v 1.104 2003/10/31 00:30:20 itojun Exp $	*/
 
-/*
+/*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
  * All rights reserved.
  *
@@ -37,6 +39,7 @@ static const char _rcsid[] = "$KAME: route6d.c,v 1.104 2003/10/31 00:30:20 itoju
 #include <sys/param.h>
 #include <sys/file.h>
 #include <sys/ioctl.h>
+#include <sys/queue.h>
 #include <sys/socket.h>
 #include <sys/sysctl.h>
 #include <sys/uio.h>
@@ -2220,8 +2223,10 @@ ifrt(struct ifc *ifcp, int again)
 					goto next;
 				}
 
-				TAILQ_REMOVE(&riprt_head, rrt, rrt_next);
-				delroute(&rrt->rrt_info, &rrt->rrt_gw);
+				TAILQ_REMOVE(&riprt_head, search_rrt, rrt_next);
+				delroute(&search_rrt->rrt_info,
+				    &search_rrt->rrt_gw);
+				free(search_rrt);
 			}
 			/* Attach the route to the list */
 			trace(1, "route: %s/%d: register route (%s)\n",

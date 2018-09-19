@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1990, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -30,17 +32,13 @@
  * SUCH DAMAGE.
  */
 
-#ifndef lint
 static const char copyright[] =
 "@(#) Copyright (c) 1990, 1993, 1994\n\
 	The Regents of the University of California.  All rights reserved.\n";
-#endif /* not lint */
 
-#ifndef lint
 #if 0
 static char sccsid[] = "@(#)main.c	8.4 (Berkeley) 5/4/95";
 #endif
-#endif /* not lint */
 
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
@@ -65,7 +63,6 @@ time_t now;			/* time find was run */
 int dotfd;			/* starting directory */
 int ftsoptions;			/* options for the ftsopen(3) call */
 int ignore_readdir_race;	/* ignore readdir race */
-int isdeprecated;		/* using deprecated syntax */
 int isdepth;			/* do directories on post-order visit */
 int isoutput;			/* user specified output operator */
 int issort;         		/* do hierarchies in lexicographical order */

@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2007-2009 Robert N. M. Watson
  * Copyright (c) 2010-2011 Juniper Networks, Inc.
  * All rights reserved.
@@ -223,7 +225,7 @@ static struct netisr_proto	netisr_proto[NETISR_MAXPROT];
  * mechanism to stop netisr processing for vnet teardown.
  * Apart from that we expect a VNET to always be enabled.
  */
-static VNET_DEFINE(u_int,	netisr_enable[NETISR_MAXPROT]);
+VNET_DEFINE_STATIC(u_int,	netisr_enable[NETISR_MAXPROT]);
 #define	V_netisr_enable		VNET(netisr_enable)
 #endif
 

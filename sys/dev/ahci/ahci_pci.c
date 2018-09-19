@@ -68,11 +68,19 @@ static const struct {
 	    AHCI_Q_ATI_PMP_BUG | AHCI_Q_1MSI},
 	/* Not sure SB8x0/SB9x0 needs this quirk. Be conservative though */
 	{0x43951002, 0x00, "AMD SB8x0/SB9x0",	AHCI_Q_ATI_PMP_BUG},
+	{0x43b61022, 0x00, "AMD X399",		0},
+	{0x43b51022, 0x00, "AMD 300 Series",	0}, /* X370 */
+	{0x43b71022, 0x00, "AMD 300 Series",	0}, /* B350 */
 	{0x78001022, 0x00, "AMD Hudson-2",	0},
 	{0x78011022, 0x00, "AMD Hudson-2",	0},
 	{0x78021022, 0x00, "AMD Hudson-2",	0},
 	{0x78031022, 0x00, "AMD Hudson-2",	0},
 	{0x78041022, 0x00, "AMD Hudson-2",	0},
+	{0x79001022, 0x00, "AMD KERNCZ",	0},
+	{0x79011022, 0x00, "AMD KERNCZ",	0},
+	{0x79021022, 0x00, "AMD KERNCZ",	0},
+	{0x79031022, 0x00, "AMD KERNCZ",	0},
+	{0x79041022, 0x00, "AMD KERNCZ",	0},
 	{0x06011b21, 0x00, "ASMedia ASM1060",	AHCI_Q_NOCCS|AHCI_Q_NOAUX},
 	{0x06021b21, 0x00, "ASMedia ASM1060",	AHCI_Q_NOCCS|AHCI_Q_NOAUX},
 	{0x06111b21, 0x00, "ASMedia ASM1061",	AHCI_Q_NOCCS|AHCI_Q_NOAUX},
@@ -657,6 +665,9 @@ static driver_t ahci_driver = {
         sizeof(struct ahci_controller)
 };
 DRIVER_MODULE(ahci, pci, ahci_driver, ahci_devclass, NULL, NULL);
+/* Also matches class / subclass / progid XXX need to add when we have masking support */
+MODULE_PNP_INFO("W32:vendor/device", pci, ahci, ahci_ids,
+    sizeof(ahci_ids[0]), nitems(ahci_ids) - 1);
 static device_method_t ahci_ata_methods[] = {
 	DEVMETHOD(device_probe,     ahci_ata_probe),
 	DEVMETHOD(device_attach,    ahci_pci_attach),

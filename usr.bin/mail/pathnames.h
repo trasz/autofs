@@ -1,4 +1,6 @@
-/*
+/*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -35,4 +37,4 @@
 #define	_PATH_HELP	"/usr/share/misc/mail.help"
 #define	_PATH_TILDE	"/usr/share/misc/mail.tildehelp"
 #define	_PATH_MASTER_RC	"/usr/share/misc/mail.rc:/usr/local/etc/mail.rc:/etc/mail.rc"
-#define	_PATH_MORE	"/usr/bin/more"
+#define	_PATH_LESS	"/usr/bin/less"

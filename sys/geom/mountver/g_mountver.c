@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2010 Edward Tomasz Napierala <trasz@FreeBSD.org>
  * Copyright (c) 2004-2006 Pawel Jakub Dawidek <pjd@FreeBSD.org>
  * All rights reserved.
@@ -658,3 +660,4 @@ g_mountver_fini(struct g_class *mp)
 }
 
 DECLARE_GEOM_CLASS(g_mountver_class, g_mountver);
+MODULE_VERSION(geom_mountver, 0);

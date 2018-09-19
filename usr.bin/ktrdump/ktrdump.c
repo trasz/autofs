@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2002 Jake Burkholder
  * Copyright (c) 2004 Robert Watson
  * All rights reserved.
@@ -201,7 +203,7 @@ main(int ac, char **av)
 	 * kvm_nlist() above uses kldsym(2) for native kernels, and that isn't
 	 * allowed in the sandbox.
 	 */
-	if (cap_enter() < 0 && errno != ENOSYS)
+	if (caph_enter() < 0)
 		err(1, "unable to enter capability mode");
 
 	if (iflag) {

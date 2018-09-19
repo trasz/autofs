@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright 1996-1998 John D. Polstra.
  * All rights reserved.
  *
@@ -291,6 +293,13 @@ mips_tmp_reloc_free(struct mips_tmp_reloc *r)
 {
 
 	free(r, M_TEMP);
+}
+
+bool
+elf_is_ifunc_reloc(Elf_Size r_info __unused)
+{
+
+	return (false);
 }
 
 /* Process one elf relocation with addend. */

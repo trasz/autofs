@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1980, 1991, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -45,6 +47,7 @@ static const char rcsid[] =
 
 #include <protocols/dumprestore.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -276,7 +279,9 @@ flushtape(void)
 	}
 
 	blks = 0;
-	if (spcl.c_type != TS_END) {
+	if (spcl.c_type != TS_END && spcl.c_type != TS_CLRI &&
+	    spcl.c_type != TS_BITS) {
+		assert(spcl.c_count <= TP_NINDIR);
 		for (i = 0; i < spcl.c_count; i++)
 			if (spcl.c_addr[i] != 0)
 				blks++;
@@ -784,7 +789,7 @@ doslave(int cmd, int slave_number)
 		for (trecno = 0; trecno < ntrec;
 		     trecno += p->count, p += p->count) {
 			if (p->dblk) {
-				bread(p->dblk, slp->tblock[trecno],
+				blkread(p->dblk, slp->tblock[trecno],
 					p->count * TP_BSIZE);
 			} else {
 				if (p->count != 1 || atomic(read, cmd,

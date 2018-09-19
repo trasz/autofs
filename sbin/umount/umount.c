@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1980, 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -133,10 +135,6 @@ main(int argc, char *argv[])
 
 	if ((fflag & MNT_FORCE) != 0 && (fflag & MNT_NONBUSY) != 0)
 		err(1, "-f and -n are mutually exclusive");
-
-	/* Start disks transferring immediately. */
-	if ((fflag & (MNT_FORCE | MNT_NONBUSY)) == 0 && nfsforce == 0)
-		sync();
 
 	if ((argc == 0 && !all) || (argc != 0 && all))
 		usage();

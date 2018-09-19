@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -90,7 +92,7 @@ long	 atol(const char *);
 void	*bsearch(const void *, const void *, size_t,
 	    size_t, int (*)(const void * _Nonnull, const void *));
 void	*calloc(size_t, size_t) __malloc_like __result_use_check
-	     __alloc_size(1) __alloc_size(2);
+	     __alloc_size2(1, 2);
 div_t	 div(int, int) __pure2;
 _Noreturn void	 exit(int);
 void	 free(void *);
@@ -236,27 +238,22 @@ extern void (*malloc_message)(void *, const char *);
 /*
  * The alloca() function can't be implemented in C, and on some
  * platforms it can't be implemented at all as a callable function.
- * The GNU C compiler provides a built-in alloca() which we can use;
- * in all other cases, provide a prototype, mainly to pacify various
- * incarnations of lint.  On platforms where alloca() is not in libc,
- * programs which use it will fail to link when compiled with non-GNU
- * compilers.
+ * The GNU C compiler provides a built-in alloca() which we can use.
+ * On platforms where alloca() is not in libc, programs which use it
+ * will fail to link when compiled with non-GNU compilers.
  */
 #if __GNUC__ >= 2 || defined(__INTEL_COMPILER)
 #undef  alloca	/* some GNU bits try to get cute and define this on their own */
 #define alloca(sz) __builtin_alloca(sz)
-#elif defined(lint)
-void	*alloca(size_t);
 #endif
 
 void	 abort2(const char *, int, void **) __dead2;
 __uint32_t
 	 arc4random(void);
-void	 arc4random_addrandom(unsigned char *, int);
 void	 arc4random_buf(void *, size_t);
-void	 arc4random_stir(void);
 __uint32_t 
 	 arc4random_uniform(__uint32_t);
+
 #ifdef __BLOCKS__
 int	 atexit_b(void (^ _Nonnull)(void));
 void	*bsearch_b(const void *, const void *, size_t,
@@ -276,6 +273,7 @@ int	 cgetstr(char *, const char *, char **);
 int	 cgetustr(char *, const char *, char **);
 
 int	 daemon(int, int);
+int	 daemonfd(int, int);
 char	*devname(__dev_t, __mode_t);
 char	*devname_r(__dev_t, __mode_t, char *, int);
 char	*fdevname(int);
@@ -303,9 +301,9 @@ void	 qsort_r(void *, size_t, size_t, void *,
 	    int (*)(void *, const void *, const void *));
 int	 radixsort(const unsigned char **, int, const unsigned char *,
 	    unsigned);
-void	*reallocarray(void *, size_t, size_t) __result_use_check __alloc_size(2)
-	    __alloc_size(3);
-void	*reallocf(void *, size_t) __alloc_size(2);
+void	*reallocarray(void *, size_t, size_t) __result_use_check
+	    __alloc_size2(2, 3);
+void	*reallocf(void *, size_t) __result_use_check __alloc_size(2);
 int	 rpmatch(const char *);
 void	 setprogname(const char *);
 int	 sradixsort(const unsigned char **, int, const unsigned char *,

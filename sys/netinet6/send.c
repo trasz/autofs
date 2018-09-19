@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2009-2010 Ana Kukec <anchie@FreeBSD.org>
  * All rights reserved.
  *
@@ -62,7 +64,7 @@ static MALLOC_DEFINE(M_SEND, "send", "Secure Neighbour Discovery");
 /*
  * The socket used to communicate with the SeND daemon.
  */
-static VNET_DEFINE(struct socket *, send_so);
+VNET_DEFINE_STATIC(struct socket *, send_so);
 #define	V_send_so	VNET(send_so)
 
 u_long	send_sendspace	= 8 * (1024 + sizeof(struct sockaddr_send));

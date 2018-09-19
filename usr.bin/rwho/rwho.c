@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1983, 1993 The Regents of the University of California.
  * Copyright (c) 2013 Mariusz Zaborski <oshogbo@FreeBSD.org>
  * All rights reserved.
@@ -49,6 +51,7 @@ __FBSDID("$FreeBSD$");
 
 #include <protocols/rwhod.h>
 
+#include <capsicum_helpers.h>
 #include <dirent.h>
 #include <err.h>
 #include <errno.h>
@@ -134,7 +137,7 @@ main(int argc, char *argv[])
 	 */
 	(void) time(&ct);
 	(void) localtime(&ct);
-	if (cap_enter() < 0 && errno != ENOSYS)
+	if (caph_enter() < 0)
 		err(1, "cap_enter");
 	(void) time(&now);
 	cap_rights_init(&rights, CAP_READ);

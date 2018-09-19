@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1999-2009 Apple Inc.
  * Copyright (c) 2016 Robert N. M. Watson
  * All rights reserved.
@@ -249,7 +251,7 @@ sys_auditon(struct thread *td, struct auditon_args *uap)
 	case A_OLDSETPOLICY:
 	case A_SETPOLICY:
 		if (uap->length == sizeof(udata.au_policy64)) {
-			if (udata.au_policy & (~AUDIT_CNT|AUDIT_AHLT|
+			if (udata.au_policy & ~(AUDIT_CNT|AUDIT_AHLT|
 			    AUDIT_ARGV|AUDIT_ARGE))
 				return (EINVAL);
 			audit_fail_stop = ((udata.au_policy64 & AUDIT_CNT) ==

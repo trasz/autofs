@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 2002 Andre Oppermann, Internet Business Solutions AG
  * All rights reserved.
  *
@@ -110,10 +112,10 @@ __FBSDID("$FreeBSD$");
 #define TCP_HOSTCACHE_EXPIRE		60*60	/* one hour */
 #define TCP_HOSTCACHE_PRUNE		5*60	/* every 5 minutes */
 
-static VNET_DEFINE(struct tcp_hostcache, tcp_hostcache);
+VNET_DEFINE_STATIC(struct tcp_hostcache, tcp_hostcache);
 #define	V_tcp_hostcache		VNET(tcp_hostcache)
 
-static VNET_DEFINE(struct callout, tcp_hc_callout);
+VNET_DEFINE_STATIC(struct callout, tcp_hc_callout);
 #define	V_tcp_hc_callout	VNET(tcp_hc_callout)
 
 static struct hc_metrics *tcp_hc_lookup(struct in_conninfo *);

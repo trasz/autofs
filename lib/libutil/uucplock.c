@@ -1,4 +1,6 @@
-/*
+/*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1988, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -29,10 +31,7 @@
 
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
-
-#ifndef lint
-static const char sccsid[] = "@(#)uucplock.c	8.1 (Berkeley) 6/6/93";
-#endif /* not lint */
+__SCCSID("@(#)uucplock.c	8.1 (Berkeley) 6/6/93");
 
 #include <sys/types.h>
 #include <sys/file.h>

@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2008 Alexander Motin <mav@FreeBSD.org>
  * Copyright (c) 2017 Marius Strobl <marius@FreeBSD.org>
  * All rights reserved.
@@ -88,27 +90,49 @@ SYSCTL_INT(_hw_sdhci, OID_AUTO, quirk_set, CTLFLAG_RWTUN, &sdhci_quirk_set, 0,
 #define	WR_MULTI_4(slot, off, ptr, count)	\
     SDHCI_WRITE_MULTI_4((slot)->bus, (slot), (off), (ptr), (count))
 
+static void sdhci_acmd_irq(struct sdhci_slot *slot, uint16_t acmd_err);
 static void sdhci_card_poll(void *arg);
 static void sdhci_card_task(void *arg, int pending);
+static void sdhci_cmd_irq(struct sdhci_slot *slot, uint32_t intmask);
+static void sdhci_data_irq(struct sdhci_slot *slot, uint32_t intmask);
 static int sdhci_exec_tuning(struct sdhci_slot *slot, bool reset);
+static void sdhci_handle_card_present_locked(struct sdhci_slot *slot,
+    bool is_present);
+static void sdhci_finish_command(struct sdhci_slot *slot);
+static void sdhci_init(struct sdhci_slot *slot);
+static void sdhci_read_block_pio(struct sdhci_slot *slot);
+static void sdhci_req_done(struct sdhci_slot *slot);
 static void sdhci_req_wakeup(struct mmc_request *req);
+static void sdhci_reset(struct sdhci_slot *slot, uint8_t mask);
 static void sdhci_retune(void *arg);
 static void sdhci_set_clock(struct sdhci_slot *slot, uint32_t clock);
+static void sdhci_set_power(struct sdhci_slot *slot, u_char power);
+static void sdhci_set_transfer_mode(struct sdhci_slot *slot,
+   struct mmc_data *data);
 static void sdhci_start(struct sdhci_slot *slot);
+static void sdhci_timeout(void *arg);
+static void sdhci_start_command(struct sdhci_slot *slot,
+   struct mmc_command *cmd);
 static void sdhci_start_data(struct sdhci_slot *slot, struct mmc_data *data);
+static void sdhci_write_block_pio(struct sdhci_slot *slot);
+static void sdhci_transfer_pio(struct sdhci_slot *slot);
 
 #ifdef MMCCAM
 /* CAM-related */
-int sdhci_cam_get_possible_host_clock(struct sdhci_slot *slot, int proposed_clock);
-static int sdhci_cam_update_ios(struct sdhci_slot *slot);
-static int sdhci_cam_request(struct sdhci_slot *slot, union ccb *ccb);
 static void sdhci_cam_action(struct cam_sim *sim, union ccb *ccb);
+static int sdhci_cam_get_possible_host_clock(struct sdhci_slot *slot,
+    int proposed_clock);
+static void sdhci_cam_handle_mmcio(struct cam_sim *sim, union ccb *ccb);
 static void sdhci_cam_poll(struct cam_sim *sim);
+static int sdhci_cam_request(struct sdhci_slot *slot, union ccb *ccb);
 static int sdhci_cam_settran_settings(struct sdhci_slot *slot, union ccb *ccb);
+static int sdhci_cam_update_ios(struct sdhci_slot *slot);
 #endif
 
 /* helper routines */
 static void sdhci_dumpregs(struct sdhci_slot *slot);
+static void sdhci_getaddr(void *arg, bus_dma_segment_t *segs, int nsegs,
+    int error);
 static int slot_printf(struct sdhci_slot *slot, const char * fmt, ...)
     __printflike(2, 3);
 static uint32_t sdhci_tuning_intmask(struct sdhci_slot *slot);
@@ -271,7 +295,7 @@ sdhci_tuning_intmask(struct sdhci_slot *slot)
 	uint32_t intmask;
 
 	intmask = 0;
-	if (slot->opt & SDHCI_TUNING_SUPPORTED) {
+	if (slot->opt & SDHCI_TUNING_ENABLED) {
 		intmask |= SDHCI_INT_TUNEERR;
 		if (slot->retune_mode == SDHCI_RETUNE_MODE_2 ||
 		    slot->retune_mode == SDHCI_RETUNE_MODE_3)
@@ -299,7 +323,7 @@ sdhci_init(struct sdhci_slot *slot)
 		slot->intmask |= SDHCI_INT_CARD_REMOVE | SDHCI_INT_CARD_INSERT;
 	}
 
-	WR4(slot, SDHCI_INT_ENABLE, slot->intmask | sdhci_tuning_intmask(slot));
+	WR4(slot, SDHCI_INT_ENABLE, slot->intmask);
 	WR4(slot, SDHCI_SIGNAL_ENABLE, slot->intmask);
 }
 
@@ -652,6 +676,7 @@ sdhci_card_task(void *arg, int pending __unused)
 			xpt_rescan(ccb);
 #else
 			slot->intmask &= ~sdhci_tuning_intmask(slot);
+			WR4(slot, SDHCI_INT_ENABLE, slot->intmask);
 			WR4(slot, SDHCI_SIGNAL_ENABLE, slot->intmask);
 			slot->opt &= ~SDHCI_TUNING_ENABLED;
 			SDHCI_UNLOCK(slot);
@@ -1336,6 +1361,7 @@ sdhci_generic_tune(device_t brdev __unused, device_t reqdev, bool hs400)
 	if (err == 0) {
 		slot->opt |= SDHCI_TUNING_ENABLED;
 		slot->intmask |= sdhci_tuning_intmask(slot);
+		WR4(slot, SDHCI_INT_ENABLE, slot->intmask);
 		WR4(slot, SDHCI_SIGNAL_ENABLE, slot->intmask);
 		if (slot->retune_ticks) {
 			callout_reset(&slot->retune_callout, slot->retune_ticks,
@@ -1404,6 +1430,7 @@ sdhci_exec_tuning(struct sdhci_slot *slot, bool reset)
 	 */
 	intmask = slot->intmask;
 	slot->intmask = SDHCI_INT_DATA_AVAIL;
+	WR4(slot, SDHCI_INT_ENABLE, SDHCI_INT_DATA_AVAIL);
 	WR4(slot, SDHCI_SIGNAL_ENABLE, SDHCI_INT_DATA_AVAIL);
 
 	hostctrl2 = RD2(slot, SDHCI_HOST_CONTROL2);
@@ -1434,8 +1461,17 @@ sdhci_exec_tuning(struct sdhci_slot *slot, bool reset)
 			DELAY(1000);
 	}
 
+	/*
+	 * Restore DMA usage and interrupts.
+	 * Note that the interrupt aggregation code might have cleared
+	 * SDHCI_INT_DMA_END and/or SDHCI_INT_RESPONSE in slot->intmask
+	 * and SDHCI_SIGNAL_ENABLE respectively so ensure SDHCI_INT_ENABLE
+	 * doesn't lose these.
+	 */
 	slot->opt = opt;
 	slot->intmask = intmask;
+	WR4(slot, SDHCI_INT_ENABLE, intmask | SDHCI_INT_DMA_END |
+	    SDHCI_INT_RESPONSE);
 	WR4(slot, SDHCI_SIGNAL_ENABLE, intmask);
 
 	if ((hostctrl2 & (SDHCI_CTRL2_EXEC_TUNING |
@@ -1533,20 +1569,19 @@ sdhci_set_transfer_mode(struct sdhci_slot *slot, struct mmc_data *data)
 		return;
 
 	mode = SDHCI_TRNS_BLK_CNT_EN;
-	if (data->len > 512)
+	if (data->len > 512) {
 		mode |= SDHCI_TRNS_MULTI;
+		if (__predict_true(
+#ifdef MMCCAM
+		    slot->ccb->mmcio.stop.opcode == MMC_STOP_TRANSMISSION &&
+#else
+		    slot->req->stop != NULL &&
+#endif
+		    !(slot->quirks & SDHCI_QUIRK_BROKEN_AUTO_STOP)))
+			mode |= SDHCI_TRNS_ACMD12;
+	}
 	if (data->flags & MMC_DATA_READ)
 		mode |= SDHCI_TRNS_READ;
-#ifdef MMCCAM
-	struct ccb_mmcio *mmcio;
-	mmcio = &slot->ccb->mmcio;
-	if (mmcio->stop.opcode == MMC_STOP_TRANSMISSION
-	    && !(slot->quirks & SDHCI_QUIRK_BROKEN_AUTO_STOP))
-		mode |= SDHCI_TRNS_ACMD12;
-#else
-	if (slot->req->stop && !(slot->quirks & SDHCI_QUIRK_BROKEN_AUTO_STOP))
-		mode |= SDHCI_TRNS_ACMD12;
-#endif
 	if (slot->flags & SDHCI_USE_DMA)
 		mode |= SDHCI_TRNS_DMA;
 
@@ -2129,18 +2164,16 @@ done:
 }
 
 static void
-sdhci_acmd_irq(struct sdhci_slot *slot)
+sdhci_acmd_irq(struct sdhci_slot *slot, uint16_t acmd_err)
 {
-	uint16_t err;
 
-	err = RD4(slot, SDHCI_ACMD12_ERR);
 	if (!slot->curcmd) {
 		slot_printf(slot, "Got AutoCMD12 error 0x%04x, but "
-		    "there is no active command.\n", err);
+		    "there is no active command.\n", acmd_err);
 		sdhci_dumpregs(slot);
 		return;
 	}
-	slot_printf(slot, "Got AutoCMD12 error 0x%04x\n", err);
+	slot_printf(slot, "Got AutoCMD12 error 0x%04x\n", acmd_err);
 	sdhci_reset(slot, SDHCI_RESET_CMD);
 }
 
@@ -2148,6 +2181,7 @@ void
 sdhci_generic_intr(struct sdhci_slot *slot)
 {
 	uint32_t intmask, present;
+	uint16_t val16;
 
 	SDHCI_LOCK(slot);
 	/* Read slot interrupt status. */
@@ -2161,6 +2195,7 @@ sdhci_generic_intr(struct sdhci_slot *slot)
 
 	/* Handle tuning error interrupt. */
 	if (__predict_false(intmask & SDHCI_INT_TUNEERR)) {
+		WR4(slot, SDHCI_INT_STATUS, SDHCI_INT_TUNEERR);
 		slot_printf(slot, "Tuning error indicated\n");
 		slot->retune_req |= SDHCI_RETUNE_REQ_RESET;
 		if (slot->curcmd) {
@@ -2198,8 +2233,10 @@ sdhci_generic_intr(struct sdhci_slot *slot)
 	}
 	/* Handle AutoCMD12 error interrupt. */
 	if (intmask & SDHCI_INT_ACMD12ERR) {
+		/* Clearing SDHCI_INT_ACMD12ERR may clear SDHCI_ACMD12_ERR. */
+		val16 = RD2(slot, SDHCI_ACMD12_ERR);
 		WR4(slot, SDHCI_INT_STATUS, SDHCI_INT_ACMD12ERR);
-		sdhci_acmd_irq(slot);
+		sdhci_acmd_irq(slot, val16);
 	}
 	/* Handle bus power interrupt. */
 	if (intmask & SDHCI_INT_BUS_POWER) {
@@ -2545,7 +2582,9 @@ sdhci_cam_poll(struct cam_sim *sim)
 	return;
 }
 
-int sdhci_cam_get_possible_host_clock(struct sdhci_slot *slot, int proposed_clock) {
+static int
+sdhci_cam_get_possible_host_clock(struct sdhci_slot *slot, int proposed_clock)
+{
 	int max_clock, clock, i;
 
 	if (proposed_clock == 0)

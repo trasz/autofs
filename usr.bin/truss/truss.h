@@ -1,4 +1,6 @@
-/*
+/*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright 2001 Jamey Wood
  *
  * Redistribution and use in source and binary forms, with or without
@@ -117,23 +119,3 @@ struct trussinfo
 
 	LIST_HEAD(, procinfo) proclist;
 };
-
-#define	timespecsubt(tvp, uvp, vvp)					\
-	do {								\
-		(vvp)->tv_sec = (tvp)->tv_sec - (uvp)->tv_sec;		\
-		(vvp)->tv_nsec = (tvp)->tv_nsec - (uvp)->tv_nsec;	\
-		if ((vvp)->tv_nsec < 0) {				\
-			(vvp)->tv_sec--;				\
-			(vvp)->tv_nsec += 1000000000;			\
-		}							\
-	} while (0)
-
-#define	timespecadd(tvp, uvp, vvp)					\
-	do {								\
-		(vvp)->tv_sec = (tvp)->tv_sec + (uvp)->tv_sec;		\
-		(vvp)->tv_nsec = (tvp)->tv_nsec + (uvp)->tv_nsec;	\
-		if ((vvp)->tv_nsec > 1000000000) {				\
-			(vvp)->tv_sec++;				\
-			(vvp)->tv_nsec -= 1000000000;			\
-		}							\
-	} while (0)

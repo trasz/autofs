@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1993 The Regents of the University of California.
  * All rights reserved.
  *
@@ -363,6 +365,15 @@ rdtsc(void)
 	uint64_t rv;
 
 	__asm __volatile("rdtsc" : "=A" (rv));
+	return (rv);
+}
+
+static __inline uint64_t
+rdtscp(void)
+{
+	uint64_t rv;
+
+	__asm __volatile("rdtscp" : "=A" (rv) : : "ecx");
 	return (rv);
 }
 

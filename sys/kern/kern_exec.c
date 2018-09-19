@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 1993, David Greenman
  * All rights reserved.
  *
@@ -28,7 +30,6 @@
 __FBSDID("$FreeBSD$");
 
 #include "opt_capsicum.h"
-#include "opt_compat.h"
 #include "opt_hwpmc_hooks.h"
 #include "opt_ktrace.h"
 #include "opt_vm.h"
@@ -122,7 +123,7 @@ static int do_execve(struct thread *td, struct image_args *args,
 
 /* XXX This should be vm_size_t. */
 SYSCTL_PROC(_kern, KERN_PS_STRINGS, ps_strings, CTLTYPE_ULONG|CTLFLAG_RD|
-    CTLFLAG_MPSAFE, NULL, 0, sysctl_kern_ps_strings, "LU", "");
+    CTLFLAG_CAPRD|CTLFLAG_MPSAFE, NULL, 0, sysctl_kern_ps_strings, "LU", "");
 
 /* XXX This should be vm_size_t. */
 SYSCTL_PROC(_kern, KERN_USRSTACK, usrstack, CTLTYPE_ULONG|CTLFLAG_RD|
@@ -143,6 +144,8 @@ SYSCTL_INT(_kern, OID_AUTO, disallow_high_osrel, CTLFLAG_RW,
 static int map_at_zero = 0;
 SYSCTL_INT(_security_bsd, OID_AUTO, map_at_zero, CTLFLAG_RWTUN, &map_at_zero, 0,
     "Permit processes to map an object at virtual address 0.");
+
+EVENTHANDLER_LIST_DECLARE(process_exec);
 
 static int
 sysctl_kern_ps_strings(SYSCTL_HANDLER_ARGS)
@@ -316,7 +319,7 @@ post_execve(struct thread *td, int error, struct vmspace *oldvmspace)
 		 * If success, we upgrade to SINGLE_EXIT state to
 		 * force other threads to suicide.
 		 */
-		if (error == 0)
+		if (error == EJUSTRETURN)
 			thread_single(p, SINGLE_EXIT);
 		else
 			thread_single_end(p, SINGLE_BOUNDARY);
@@ -371,7 +374,6 @@ do_execve(struct thread *td, struct image_args *args, struct mac *mac_p)
 	struct ucred *tracecred = NULL;
 #endif
 	struct vnode *oldtextvp = NULL, *newtextvp;
-	cap_rights_t rights;
 	int credential_changing;
 	int textset;
 #ifdef MAC
@@ -452,8 +454,7 @@ interpret:
 		/*
 		 * Descriptors opened only with O_EXEC or O_RDONLY are allowed.
 		 */
-		error = fgetvp_exec(td, args->fd,
-		    cap_rights_init(&rights, CAP_FEXECVE), &newtextvp);
+		error = fgetvp_exec(td, args->fd, &cap_fexecve_rights, &newtextvp);
 		if (error)
 			goto exec_fail;
 		vn_lock(newtextvp, LK_EXCLUSIVE | LK_RETRY);
@@ -518,6 +519,10 @@ interpret:
 	    interpvplabel, imgp);
 	credential_changing |= will_transition;
 #endif
+
+	/* Don't inherit PROC_PDEATHSIG_CTL value if setuid/setgid. */
+	if (credential_changing)
+		imgp->proc->p_pdeathsig = 0;
 
 	if (credential_changing &&
 #ifdef CAPABILITY_MODE
@@ -686,9 +691,12 @@ interpret:
 	 * Else stuff argument count as first item on stack
 	 */
 	if (p->p_sysent->sv_fixup != NULL)
-		(*p->p_sysent->sv_fixup)(&stack_base, imgp);
+		error = (*p->p_sysent->sv_fixup)(&stack_base, imgp);
 	else
-		suword(--stack_base, imgp->args->argc);
+		error = suword(--stack_base, imgp->args->argc) == 0 ?
+		    0 : EFAULT;
+	if (error != 0)
+		goto exec_fail_dealloc;
 
 	if (args->fdp != NULL) {
 		/* Install a brand new file descriptor table. */
@@ -960,12 +968,17 @@ exec_fail:
 		ktrprocctor(p);
 #endif
 
-	return (error);
+	/*
+	 * We don't want cpu_set_syscall_retval() to overwrite any of
+	 * the register values put in place by exec_setregs().
+	 * Implementations of cpu_set_syscall_retval() will leave
+	 * registers unmodified when returning EJUSTRETURN.
+	 */
+	return (error == 0 ? EJUSTRETURN : error);
 }
 
 int
-exec_map_first_page(imgp)
-	struct image_params *imgp;
+exec_map_first_page(struct image_params *imgp)
 {
 	int rv, i, after, initial_pagein;
 	vm_page_t ma[VM_INITIAL_PAGEIN];
@@ -999,7 +1012,7 @@ exec_map_first_page(imgp)
 			if ((ma[i] = vm_page_next(ma[i - 1])) != NULL) {
 				if (ma[i]->valid)
 					break;
-				if (vm_page_tryxbusy(ma[i]))
+				if (!vm_page_tryxbusy(ma[i]))
 					break;
 			} else {
 				ma[i] = vm_page_alloc(object, i,
@@ -1071,7 +1084,7 @@ exec_new_vmspace(struct image_params *imgp, struct sysentvec *sv)
 	imgp->sysent = sv;
 
 	/* May be called with Giant held */
-	EVENTHANDLER_INVOKE(process_exec, p, imgp);
+	EVENTHANDLER_DIRECT_INVOKE(process_exec, p, imgp);
 
 	/*
 	 * Blow away entire process VM, if address space not shared,
@@ -1318,7 +1331,7 @@ struct exec_args_kva {
 	SLIST_ENTRY(exec_args_kva) next;
 };
 
-static DPCPU_DEFINE(struct exec_args_kva *, exec_args_kva);
+DPCPU_DEFINE_STATIC(struct exec_args_kva *, exec_args_kva);
 
 static SLIST_HEAD(, exec_args_kva) exec_args_kva_freelist;
 static struct mtx exec_args_kva_mtx;
@@ -1367,7 +1380,7 @@ exec_release_args_kva(struct exec_args_kva *argkva, u_int gen)
 
 	base = argkva->addr;
 	if (argkva->gen != gen) {
-		vm_map_madvise(exec_map, base, base + exec_map_entry_size,
+		(void)vm_map_madvise(exec_map, base, base + exec_map_entry_size,
 		    MADV_FREE);
 		argkva->gen = gen;
 	}
@@ -1499,6 +1512,7 @@ exec_copyout_strings(struct image_params *imgp)
 	 */
 	if (execpath_len != 0) {
 		destp -= execpath_len;
+		destp = rounddown2(destp, sizeof(void *));
 		imgp->execpathp = destp;
 		copyout(imgp->execpath, (void *)destp, execpath_len);
 	}
@@ -1524,33 +1538,21 @@ exec_copyout_strings(struct image_params *imgp)
 	destp -= ARG_MAX - imgp->args->stringspace;
 	destp = rounddown2(destp, sizeof(void *));
 
-	/*
-	 * If we have a valid auxargs ptr, prepare some room
-	 * on the stack.
-	 */
+	vectp = (char **)destp;
 	if (imgp->auxargs) {
 		/*
-		 * 'AT_COUNT*2' is size for the ELF Auxargs data. This is for
-		 * lower compatibility.
+		 * Allocate room on the stack for the ELF auxargs
+		 * array.  It has up to AT_COUNT entries.
 		 */
-		imgp->auxarg_size = (imgp->auxarg_size) ? imgp->auxarg_size :
-		    (AT_COUNT * 2);
-		/*
-		 * The '+ 2' is for the null pointers at the end of each of
-		 * the arg and env vector sets,and imgp->auxarg_size is room
-		 * for argument of Runtime loader.
-		 */
-		vectp = (char **)(destp - (imgp->args->argc +
-		    imgp->args->envc + 2 + imgp->auxarg_size)
-		    * sizeof(char *));
-	} else {
-		/*
-		 * The '+ 2' is for the null pointers at the end of each of
-		 * the arg and env vector sets
-		 */
-		vectp = (char **)(destp - (imgp->args->argc + imgp->args->envc
-		    + 2) * sizeof(char *));
+		vectp -= howmany(AT_COUNT * sizeof(Elf_Auxinfo),
+		    sizeof(*vectp));
 	}
+
+	/*
+	 * Allocate room for the argv[] and env vectors including the
+	 * terminating NULL pointers.
+	 */
+	vectp -= imgp->args->argc + 1 + imgp->args->envc + 1;
 
 	/*
 	 * vectp also becomes our initial stack base
@@ -1683,7 +1685,7 @@ int
 exec_register(const struct execsw *execsw_arg)
 {
 	const struct execsw **es, **xs, **newexecsw;
-	int count = 2;	/* New slot and trailing NULL */
+	u_int count = 2;	/* New slot and trailing NULL */
 
 	if (execsw)
 		for (es = execsw; *es; es++)

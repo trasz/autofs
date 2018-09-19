@@ -1,6 +1,8 @@
 /*	$NetBSD: intr.c,v 1.12 2003/07/15 00:24:41 lukem Exp $	*/
 
 /*-
+ * SPDX-License-Identifier: BSD-4-Clause
+ *
  * Copyright (c) 2004 Olivier Houchard.
  * Copyright (c) 1994-1998 Mark Brinicombe.
  * All rights reserved.
@@ -168,7 +170,7 @@ arm_remove_irqhandler(int irq, void *cookie)
 
 	error = intr_event_remove_handler(cookie);
 
-	if (!TAILQ_EMPTY(&event->ie_handlers))
+	if (!CK_SLIST_EMPTY(&event->ie_handlers))
 		arm_unmask_irq(irq);
 	return (error);
 }

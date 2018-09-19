@@ -24,6 +24,9 @@ _srcconf_included_:
 .MAKE.MODE+=	curdirOk=yes
 .endif
 
+# The kernel build always expects .OBJDIR=.CURDIR.
+.OBJDIR: ${.CURDIR}
+
 .if defined(NO_OBJWALK) || ${MK_AUTO_OBJ} == "yes"
 NO_OBJWALK=		t
 NO_MODULES_OBJ=	t
@@ -43,7 +46,6 @@ M=		${MACHINE}
 
 AWK?=		awk
 CP?=		cp
-LINT?=		lint
 NM?=		nm
 OBJCOPY?=	objcopy
 SIZE?=		size
@@ -75,7 +77,7 @@ COPTFLAGS+= ${_CPUCFLAGS}
 .endif
 NOSTDINC= -nostdinc
 
-INCLUDES= ${NOSTDINC} ${INCLMAGIC} -I. -I$S
+INCLUDES= ${NOSTDINC} ${INCLMAGIC} -I. -I$S -I$S/contrib/ck/include
 
 CFLAGS=	${COPTFLAGS} ${DEBUG}
 CFLAGS+= ${INCLUDES} -D_KERNEL -DHAVE_KERNEL_OPTION_HEADERS -include opt_global.h
@@ -87,6 +89,7 @@ CFLAGS_ARCH_PARAMS?=--param max-inline-insns-single=1000 -DMACHINE_ARCH='"${MACH
 CFLAGS.gcc+= -fno-common -fms-extensions -finline-limit=${INLINE_LIMIT}
 CFLAGS.gcc+= --param inline-unit-growth=${CFLAGS_PARAM_INLINE_UNIT_GROWTH}
 CFLAGS.gcc+= --param large-function-growth=${CFLAGS_PARAM_LARGE_FUNCTION_GROWTH}
+CFLAGS.gcc+= -fms-extensions
 .if defined(CFLAGS_ARCH_PARAMS)
 CFLAGS.gcc+=${CFLAGS_ARCH_PARAMS}
 .endif
@@ -118,8 +121,13 @@ CFLAGS+=	${CONF_CFLAGS}
 LDFLAGS+=	-Wl,--build-id=sha1
 .endif
 
-# Optional linting. This can be overridden in /etc/make.conf.
-LINTFLAGS=	${LINTOBJKERNFLAGS}
+.if (${MACHINE_CPUARCH} == "amd64" || ${MACHINE_CPUARCH} == "i386") && \
+    defined(LINKER_FEATURES) && ${LINKER_FEATURES:Mifunc} == ""
+.error amd64/i386 kernel requires linker ifunc support
+.endif
+.if ${MACHINE_CPUARCH} == "amd64"
+LDFLAGS+=	-Wl,-z max-page-size=2097152 -Wl,-z common-page-size=4096 -Wl,-z -Wl,ifunc-noplt
+.endif
 
 NORMAL_C= ${CC} -c ${CFLAGS} ${WERROR} ${PROF} ${.IMPSRC}
 NORMAL_S= ${CC:N${CCACHE_BIN}} -c ${ASM_CFLAGS} ${WERROR} ${.IMPSRC}
@@ -132,6 +140,9 @@ NORMAL_M= ${AWK} -f $S/tools/makeobjops.awk ${.IMPSRC} -c ; \
 NORMAL_FW= uudecode -o ${.TARGET} ${.ALLSRC}
 NORMAL_FWO= ${LD} -b binary --no-warn-mismatch -d -warn-common -r \
 	-m ${LD_EMULATION} -o ${.TARGET} ${.ALLSRC:M*.fw}
+
+# for ZSTD in the kernel (include zstd/lib/freebsd before other CFLAGS)
+ZSTD_C= ${CC} -c -DZSTD_HEAPMODE=1 -I$S/contrib/zstd/lib/freebsd ${CFLAGS} -I$S/contrib/zstd/lib -I$S/contrib/zstd/lib/common ${WERROR} -Wno-inline -Wno-missing-prototypes ${PROF} -U__BMI__ ${.IMPSRC}
 
 # Common for dtrace / zfs
 CDDL_CFLAGS=	-DFREEBSD_NAMECACHE -nostdinc -I$S/cddl/compat/opensolaris -I$S/cddl/contrib/opensolaris/uts/common -I$S -I$S/cddl/contrib/opensolaris/common ${CFLAGS} -Wno-unknown-pragmas -Wno-missing-prototypes -Wno-undef -Wno-strict-prototypes -Wno-cast-qual -Wno-parentheses -Wno-redundant-decls -Wno-missing-braces -Wno-uninitialized -Wno-unused -Wno-inline -Wno-switch -Wno-pointer-arith -Wno-unknown-pragmas
@@ -173,17 +184,16 @@ NORMAL_CTFCONVERT=
 NORMAL_CTFCONVERT=	@:
 .endif
 
-NORMAL_LINT=	${LINT} ${LINTFLAGS} ${CFLAGS:M-[DIU]*} ${.IMPSRC}
-
 # Linux Kernel Programming Interface C-flags
 LINUXKPI_INCLUDES=	-I$S/compat/linuxkpi/common/include
 LINUXKPI_C=		${NORMAL_C} ${LINUXKPI_INCLUDES}
 
 # Infiniband C flags.  Correct include paths and omit errors that linux
 # does not honor.
-OFEDINCLUDES=	-I$S/ofed/include ${LINUXKPI_INCLUDES}
+OFEDINCLUDES=	-I$S/ofed/include -I$S/ofed/include/uapi ${LINUXKPI_INCLUDES}
 OFEDNOERR=	-Wno-cast-qual -Wno-pointer-arith
-OFEDCFLAGS=	${CFLAGS:N-I*} ${OFEDINCLUDES} ${CFLAGS:M-I*} ${OFEDNOERR}
+OFEDCFLAGS=	${CFLAGS:N-I*} -DCONFIG_INFINIBAND_USER_MEM \
+		${OFEDINCLUDES} ${CFLAGS:M-I*} ${OFEDNOERR}
 OFED_C_NOIMP=	${CC} -c -o ${.TARGET} ${OFEDCFLAGS} ${WERROR} ${PROF}
 OFED_C=		${OFED_C_NOIMP} ${.IMPSRC}
 
@@ -209,7 +219,8 @@ SYSTEM_LD_TAIL= @${OBJCOPY} --strip-symbol gcc2_compiled. ${.TARGET} ; \
 SYSTEM_DEP+= ${LDSCRIPT}
 
 # Calculate path for .m files early, if needed.
-.if !defined(NO_MODULES) && !defined(__MPATH) && !make(install)
+.if !defined(NO_MODULES) && !defined(__MPATH) && !make(install) && \
+    (empty(.MAKEFLAGS:M-V) || defined(NO_SKIP_MPATH))
 __MPATH!=find ${S:tA}/ -name \*_if.m
 .endif
 
@@ -234,7 +245,7 @@ MKMODULESENV+=	DEBUG_FLAGS="${DEBUG}"
 MKMODULESENV+=	__MPATH="${__MPATH}"
 .endif
 
-# Architecture and output format arguments for objdump to convert image to
+# Architecture and output format arguments for objcopy to convert image to
 # object file
 
 .if ${MFS_IMAGE:Uno} != "no"

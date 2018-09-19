@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (C) 2009 Gabor Kovesdan <gabor@FreeBSD.org>
  * Copyright (C) 2012 Oleg Moskalenko <mom040267@gmail.com>
  * All rights reserved.
@@ -1297,7 +1299,11 @@ main(int argc, char **argv)
 		struct file_list fl;
 
 		file_list_init(&fl, false);
-		file_list_populate(&fl, argc, argv, true);
+		/* No file arguments remaining means "read from stdin." */
+		if (argc == 0)
+			file_list_add(&fl, "-", true);
+		else
+			file_list_populate(&fl, argc, argv, true);
 		merge_files(&fl, outfile);
 		file_list_clean(&fl);
 	}

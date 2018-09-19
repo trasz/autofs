@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2010-2012 Semihalf
  * Copyright (c) 2012 The FreeBSD Foundation
  * Copyright (c) 2013 Ian Lepore <ian@freebsd.org>
@@ -310,13 +312,16 @@ imx_ehci_detach(device_t dev)
 {
 	struct imx_ehci_softc *sc;
 	ehci_softc_t *esc;
+	int err;
 
 	sc = device_get_softc(dev);
 
 	esc = &sc->ehci_softc;
 
-	if (esc->sc_bus.bdev != NULL)
-		device_delete_child(dev, esc->sc_bus.bdev);
+	/* First detach all children; we can't detach if that fails. */
+	if ((err = device_delete_children(dev)) != 0)
+		return (err);
+
 	if (esc->sc_flags & EHCI_SCFLG_DONEINIT)
 		ehci_detach(esc);
 	if (esc->sc_intr_hdl != NULL)
@@ -330,9 +335,6 @@ imx_ehci_detach(device_t dev)
 		    sc->ehci_mem_res);
 
 	usb_bus_mem_free_all(&esc->sc_bus, &ehci_iterate_hw_softc);
-
-	/* During module unload there are lots of children leftover */
-	device_delete_children(dev);
 
 	return (0);
 }

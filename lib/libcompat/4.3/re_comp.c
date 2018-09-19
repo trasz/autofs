@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1992 The Regents of the University of California.
  * All rights reserved.
  *
@@ -32,6 +34,7 @@
 
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
+__SCCSID("@(#)regex.c	5.1 (Berkeley) 3/29/92");
 
 /*
  * Compatibility routines that implement the old re_comp/re_exec interface in
@@ -39,10 +42,6 @@ __FBSDID("$FreeBSD$");
  * rely on dark corners of re_comp/re_exec and won't work with this version,
  * but most programs should be fine.
  */
-
-#if defined(LIBC_SCCS) && !defined(lint)
-static char sccsid[] = "@(#)regex.c	5.1 (Berkeley) 3/29/92";
-#endif /* LIBC_SCCS and not lint */
 
 #include <regex.h>
 #include <stddef.h>

@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1991, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -292,6 +294,7 @@ static char *
 find_dot_file(char *basename)
 {
 	char *fullname;
+	const char *opt;
 	const char *path = pathval();
 	struct stat statb;
 
@@ -299,7 +302,7 @@ find_dot_file(char *basename)
 	if( strchr(basename, '/'))
 		return basename;
 
-	while ((fullname = padvance(&path, basename)) != NULL) {
+	while ((fullname = padvance(&path, &opt, basename)) != NULL) {
 		if ((stat(fullname, &statb) == 0) && S_ISREG(statb.st_mode)) {
 			/*
 			 * Don't bother freeing here, since it will

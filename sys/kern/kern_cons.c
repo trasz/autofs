@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1988 University of Utah.
  * Copyright (c) 1991 The Regents of the University of California.
  * Copyright (c) 1999 Michael Smith
@@ -379,6 +381,19 @@ cnungrab()
 		cn = cnd->cnd_cn;
 		if (!kdb_active || !(cn->cn_flags & CN_FLAG_NODEBUG))
 			cn->cn_ops->cn_ungrab(cn);
+	}
+}
+
+void
+cnresume()
+{
+	struct cn_device *cnd;
+	struct consdev *cn;
+
+	STAILQ_FOREACH(cnd, &cn_devlist, cnd_next) {
+		cn = cnd->cnd_cn;
+		if (cn->cn_ops->cn_resume != NULL)
+			cn->cn_ops->cn_resume(cn);
 	}
 }
 

@@ -46,14 +46,15 @@ SUBDIR_TARGETS+= \
 		all all-man analyze buildconfig buildfiles buildincludes \
 		checkdpadd clean cleandepend cleandir cleanilinks \
 		cleanobj depend distribute files includes installconfig \
-		installfiles installincludes print-dir realinstall lint \
+		installdirs \
+		installfiles installincludes print-dir realinstall \
 		maninstall manlint ${_obj} objlink tags \
 
 # Described above.
 STANDALONE_SUBDIR_TARGETS+= \
 		all-man buildconfig buildfiles buildincludes check checkdpadd \
 		clean cleandepend cleandir cleanilinks cleanobj files includes \
-		installconfig installincludes installfiles print-dir \
+		installconfig installdirs installincludes installfiles print-dir \
 		maninstall manlint obj objlink
 
 # It is safe to install in parallel when staging.

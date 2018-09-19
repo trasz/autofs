@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-4-Clause
+ *
  * 1. Redistributions of source code must retain the 
  * Copyright (c) 1997 Amancio Hasty, 1999 Roger Hardiman
  * All rights reserved.
@@ -285,9 +287,9 @@ bktr_probe( device_t dev )
 	unsigned int type = pci_get_devid(dev);
         unsigned int rev  = pci_get_revid(dev);
 
-	if (PCI_VENDOR(type) == PCI_VENDOR_BROOKTREE)
+	if (BKTR_PCI_VENDOR(type) == PCI_VENDOR_BROOKTREE)
 	{
-		switch (PCI_PRODUCT(type)) {
+		switch (BKTR_PCI_PRODUCT(type)) {
 		case PCI_PRODUCT_BROOKTREE_BT848:
 			if (rev == 0x12)
 				device_set_desc(dev, "BrookTree 848A");
@@ -920,11 +922,11 @@ bktr_probe(parent, match, aux)
 {
         struct pci_attach_args *pa = aux;
 
-        if (PCI_VENDOR(pa->pa_id) == PCI_VENDOR_BROOKTREE &&
-            (PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_BROOKTREE_BT848 ||
-             PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_BROOKTREE_BT849 ||
-             PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_BROOKTREE_BT878 ||
-             PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_BROOKTREE_BT879))
+        if (BKTR_PCI_VENDOR(pa->pa_id) == PCI_VENDOR_BROOKTREE &&
+            (BKTR_PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_BROOKTREE_BT848 ||
+             BKTR_PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_BROOKTREE_BT849 ||
+             BKTR_PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_BROOKTREE_BT878 ||
+             BKTR_PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_BROOKTREE_BT879))
                 return 1;
 
         return 0;

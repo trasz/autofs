@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1982, 1986, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -74,7 +76,7 @@ static void	disc_clone_destroy(struct ifnet *);
 static const char discname[] = "disc";
 static MALLOC_DEFINE(M_DISC, discname, "Discard interface");
 
-static VNET_DEFINE(struct if_clone *, disc_cloner);
+VNET_DEFINE_STATIC(struct if_clone *, disc_cloner);
 #define	V_disc_cloner	VNET(disc_cloner)
 
 static int

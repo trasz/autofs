@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2010 Luigi Rizzo, Riccardo Panicucci, Universita` di Pisa
  * All rights reserved
  *
@@ -807,7 +809,7 @@ dummynet_send(struct mbuf *m)
 			ether_demux(m->m_pkthdr.rcvif, m);
 			break;
 
-		case DIR_OUT | PROTO_LAYER2: /* N_TO_ETH_OUT: */
+		case DIR_OUT | PROTO_LAYER2: /* DN_TO_ETH_OUT: */
 			ether_output_frame(ifp, m);
 			break;
 

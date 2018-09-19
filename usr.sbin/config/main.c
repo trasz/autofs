@@ -1,4 +1,6 @@
-/*
+/*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1980, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -84,12 +86,14 @@ int	incignore;
  * literally).
  */
 int	filebased = 0;
+int	versreq;
 
 static void configfile(void);
 static void get_srcdir(void);
 static void usage(void);
 static void cleanheaders(char *);
 static void kernconfdump(const char *);
+static void badversion(void);
 static void checkversion(void);
 extern int yyparse(void);
 
@@ -116,7 +120,7 @@ main(int argc, char **argv)
 	printmachine = 0;
 	kernfile = NULL;
 	SLIST_INIT(&includepath);
-	while ((ch = getopt(argc, argv, "CI:d:gmpsVx:")) != -1)
+	while ((ch = getopt(argc, argv, "CI:d:gmps:Vx:")) != -1)
 		switch (ch) {
 		case 'C':
 			filebased = 1;
@@ -202,6 +206,7 @@ main(int argc, char **argv)
 	STAILQ_INIT(&fntab);
 	STAILQ_INIT(&ftab);
 	STAILQ_INIT(&hints);
+	STAILQ_INIT(&envvars);
 	if (yyparse())
 		exit(3);
 
@@ -739,8 +744,8 @@ kernconfdump(const char *file)
 	fclose(fp);
 }
 
-static void 
-badversion(int versreq)
+static void
+badversion(void)
 {
 	fprintf(stderr, "ERROR: version of config(8) does not match kernel!\n");
 	fprintf(stderr, "config version = %d, ", CONFIGVERS);
@@ -760,7 +765,6 @@ checkversion(void)
 {
 	FILE *ifp;
 	char line[BUFSIZ];
-	int versreq;
 
 	ifp = open_makefile_template();
 	while (fgets(line, BUFSIZ, ifp) != 0) {
@@ -772,7 +776,7 @@ checkversion(void)
 		if (MAJOR_VERS(versreq) == MAJOR_VERS(CONFIGVERS) &&
 		    versreq <= CONFIGVERS)
 			continue;
-		badversion(versreq);
+		badversion();
 	}
 	fclose(ifp);
 }

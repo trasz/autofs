@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-4-Clause
+ *
  * Copyright (c) 2017 Dell EMC
  * Copyright (c) 2009 Stanislav Sedov <stas@FreeBSD.org>
  * Copyright (c) 1988, 1993
@@ -2190,6 +2192,7 @@ procstat_getrlimit_core(struct procstat_core *core, int which,
 		return (-1);
 	}
 	*rlimit = rlimits[which];
+	free(rlimits);
 	return (0);
 }
 

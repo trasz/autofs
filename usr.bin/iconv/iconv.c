@@ -2,6 +2,8 @@
 /* $NetBSD: iconv.c,v 1.16 2009/02/20 15:28:21 yamt Exp $ */
 
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
  * Copyright (c)2003 Citrus Project,
  * All rights reserved.
  *
@@ -214,7 +216,7 @@ main(int argc, char **argv)
 		err(EXIT_FAILURE, "iconv_open(%s, %s)", opt_t, opt_f);
 
 	if (argc == 0) {
-		if (cap_enter() < 0 && errno != ENOSYS)
+		if (caph_enter() < 0)
 			err(EXIT_FAILURE, "unable to enter capability mode");
 		res = do_conv(stdin, cd, opt_s, opt_c);
 	} else {
@@ -226,7 +228,7 @@ main(int argc, char **argv)
 				err(EXIT_FAILURE, "Cannot open `%s'",
 				    argv[i]);
 			/* Enter Capsicum sandbox for final input file. */
-			if (i + 1 == argc && cap_enter() < 0 && errno != ENOSYS)
+			if (i + 1 == argc && caph_enter() < 0)
 				err(EXIT_FAILURE,
 				    "unable to enter capability mode");
 			res |= do_conv(fp, cd, opt_s, opt_c);

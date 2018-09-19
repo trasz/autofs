@@ -4,16 +4,8 @@
 	cp -f ${.IMPSRC} ${.TARGET}
 	chmod a+x ${.TARGET}
 
-.c.ln:
-	${LINT} ${LINTOBJFLAGS} ${CFLAGS:M-[DIU]*} ${.IMPSRC} || \
-	    touch ${.TARGET}
-
-.cc.ln .C.ln .cpp.ln .cxx.ln:
-	${LINT} ${LINTOBJFLAGS} ${CXXFLAGS:M-[DIU]*} ${.IMPSRC} || \
-	    touch ${.TARGET}
-
 .c:
-	${CC} ${CFLAGS} ${LDFLAGS} ${.IMPSRC} ${LDLIBS} -o ${.TARGET}
+	${CC:N${CCACHE_BIN}} ${CFLAGS} ${LDFLAGS} ${.IMPSRC} ${LDLIBS} -o ${.TARGET}
 	${CTFCONVERT_CMD}
 
 .c.o:

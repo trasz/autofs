@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2011 Chelsio Communications, Inc.
  * All rights reserved.
  *
@@ -42,6 +44,7 @@ enum {
 	EC_LEN         = 16,    /* E/C length */
 	ID_LEN         = 16,    /* ID length */
 	PN_LEN         = 16,    /* Part Number length */
+	MD_LEN         = 16,    /* MFG diags version length */
 	MACADDR_LEN    = 12,    /* MAC Address length */
 };
 
@@ -67,6 +70,8 @@ enum {
 	FEC_BASER_RS  = 1 << 1,
 	FEC_RESERVED  = 1 << 2,
 };
+
+enum t4_bar2_qtype { T4_BAR2_QTYPE_EGRESS, T4_BAR2_QTYPE_INGRESS };
 
 struct port_stats {
 	u64 tx_octets;            /* total # of octets in good frames */
@@ -233,6 +238,7 @@ struct tp_params {
 
 	uint32_t vlan_pri_map;
 	uint32_t ingress_config;
+	uint64_t hash_filter_mask;
 	__be16 err_vec_mask;
 
 	int8_t fcoe_shift;
@@ -254,6 +260,7 @@ struct vpd_params {
 	u8 id[ID_LEN + 1];
 	u8 pn[PN_LEN + 1];
 	u8 na[MACADDR_LEN + 1];
+	u8 md[MD_LEN + 1];
 };
 
 struct pci_params {
@@ -332,6 +339,7 @@ struct adapter_params {
 	struct devlog_params devlog;	/* PF-only */
 	struct rss_params rss;		/* VF-only */
 	struct vf_resources vfres;	/* VF-only */
+	unsigned int core_vdd;
 
 	unsigned int sf_size;             /* serial flash size in bytes */
 	unsigned int sf_nsec;             /* # of flash sectors */
@@ -347,11 +355,6 @@ struct adapter_params {
 	unsigned short a_wnd[NCCTRL_WIN];
 	unsigned short b_wnd[NCCTRL_WIN];
 
-	u_int ftid_min;
-	u_int ftid_max;
-	u_int etid_min;
-	u_int netids;
-
 	unsigned int cim_la_size;
 
 	uint8_t nports;		/* # of ethernet ports */
@@ -363,6 +366,8 @@ struct adapter_params {
 				   resources for TOE operation. */
 	unsigned int bypass:1;	/* this is a bypass card */
 	unsigned int ethoffload:1;
+	unsigned int hash_filter:1;
+	unsigned int filter2_wr_support:1;
 
 	unsigned int ofldq_wr_cred;
 	unsigned int eo_wr_cred;
@@ -371,6 +376,9 @@ struct adapter_params {
 	unsigned int max_ird_adapter;
 
 	uint32_t mps_bg_map;	/* rx buffer group map for all ports (upto 4) */
+
+	bool ulptx_memwrite_dsgl;        /* use of T5 DSGL allowed */
+	bool fr_nsmr_tpte_wr_support;    /* FW support for FR_NSMR_TPTE_WR */
 };
 
 #define CHELSIO_T4		0x4
@@ -405,12 +413,12 @@ struct link_config {
 	unsigned char  requested_aneg;   /* link aneg user has requested */
 	unsigned char  requested_fc;     /* flow control user has requested */
 	unsigned char  requested_fec;    /* FEC user has requested */
-	unsigned int   requested_speed;  /* speed user has requested */
+	unsigned int   requested_speed;  /* speed user has requested (Mbps) */
 
 	unsigned short supported;        /* link capabilities */
 	unsigned short advertising;      /* advertised capabilities */
 	unsigned short lp_advertising;   /* peer advertised capabilities */
-	unsigned int   speed;            /* actual link speed */
+	unsigned int   speed;            /* actual link speed (Mbps) */
 	unsigned char  fc;               /* actual link flow control */
 	unsigned char  fec;              /* actual FEC */
 	unsigned char  link_ok;          /* link up? */
@@ -429,13 +437,22 @@ struct link_config {
 static inline int is_ftid(const struct adapter *sc, u_int tid)
 {
 
-	return (tid >= sc->params.ftid_min && tid <= sc->params.ftid_max);
+	return (sc->tids.nftids > 0 && tid >= sc->tids.ftid_base &&
+	    tid <= sc->tids.ftid_end);
+}
+
+static inline int is_hpftid(const struct adapter *sc, u_int tid)
+{
+
+	return (sc->tids.nhpftids > 0 && tid >= sc->tids.hpftid_base &&
+	    tid <= sc->tids.hpftid_end);
 }
 
 static inline int is_etid(const struct adapter *sc, u_int tid)
 {
 
-	return (tid >= sc->params.etid_min);
+	return (sc->tids.netids > 0 && tid >= sc->tids.etid_base &&
+	    tid <= sc->tids.etid_end);
 }
 
 static inline int is_offload(const struct adapter *adap)
@@ -446,6 +463,11 @@ static inline int is_offload(const struct adapter *adap)
 static inline int is_ethoffload(const struct adapter *adap)
 {
 	return adap->params.ethoffload;
+}
+
+static inline int is_hashfilter(const struct adapter *adap)
+{
+	return adap->params.hash_filter;
 }
 
 static inline int chip_id(struct adapter *adap)
@@ -507,6 +529,12 @@ static inline u_int us_to_tcp_ticks(const struct adapter *adap, u_long us)
 {
 
 	return (us * adap->params.vpd.cclk / 1000 >> adap->params.tp.tre);
+}
+
+static inline u_int tcp_ticks_to_us(const struct adapter *adap, u_int ticks)
+{
+	return ((uint64_t)ticks << adap->params.tp.tre) /
+	    core_ticks_per_usec(adap);
 }
 
 void t4_set_reg_field(struct adapter *adap, unsigned int addr, u32 mask, u32 val);
@@ -582,7 +610,7 @@ int t4_get_vpd_version(struct adapter *adapter, u32 *vers);
 int t4_get_version_info(struct adapter *adapter);
 int t4_init_hw(struct adapter *adapter, u32 fw_params);
 const struct chip_params *t4_get_chip_params(int chipid);
-int t4_prep_adapter(struct adapter *adapter, u8 *buf);
+int t4_prep_adapter(struct adapter *adapter, u32 *buf);
 int t4_shutdown_adapter(struct adapter *adapter);
 int t4_init_devlog_params(struct adapter *adapter, int fw_attach);
 int t4_init_sge_params(struct adapter *adapter);
@@ -793,7 +821,7 @@ int t4_sched_config(struct adapter *adapter, int type, int minmaxen,
 int t4_sched_params(struct adapter *adapter, int type, int level, int mode,
 		    int rateunit, int ratemode, int channel, int cl,
 		    int minrate, int maxrate, int weight, int pktsize,
-		    int sleep_ok);
+		    int burstsize, int sleep_ok);
 int t4_sched_params_ch_rl(struct adapter *adapter, int channel, int ratemode,
 			  unsigned int maxrate, int sleep_ok);
 int t4_sched_params_cl_wrr(struct adapter *adapter, int channel, int cl,
@@ -843,5 +871,8 @@ int t4vf_get_sge_params(struct adapter *adapter);
 int t4vf_get_rss_glb_config(struct adapter *adapter);
 int t4vf_get_vfres(struct adapter *adapter);
 int t4vf_prep_adapter(struct adapter *adapter);
+int t4_bar2_sge_qregs(struct adapter *adapter, unsigned int qid,
+		enum t4_bar2_qtype qtype, int user, u64 *pbar2_qoffset,
+		unsigned int *pbar2_qid);
 
 #endif /* __CHELSIO_COMMON_H */

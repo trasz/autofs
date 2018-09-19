@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1991, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -43,7 +45,9 @@ void jcl(char **);
 void pos_in(void);
 void pos_out(void);
 double secs_elapsed(void);
+void progress(void);
 void summary(void);
+void sigalarm_handler(int);
 void siginfo_handler(int);
 void terminate(int);
 void unblock(void);
@@ -64,3 +68,4 @@ extern const u_char a2ibm_32V[], a2ibm_POSIX[];
 extern u_char casetab[];
 extern char fill_char;
 extern volatile sig_atomic_t need_summary;
+extern volatile sig_atomic_t need_progress;

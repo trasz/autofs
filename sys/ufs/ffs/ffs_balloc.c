@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: (BSD-2-Clause-FreeBSD AND BSD-3-Clause)
+ *
  * Copyright (c) 2002 Networks Associates Technology, Inc.
  * All rights reserved.
  *
@@ -551,7 +553,7 @@ fail:
 		lbns_remfree++;
 #endif
 		ffs_blkfree(ump, fs, ump->um_devvp, *blkp, fs->fs_bsize,
-		    ip->i_number, vp->v_type, NULL);
+		    ip->i_number, vp->v_type, NULL, SINGLETON_KEY);
 	}
 	return (error);
 }
@@ -1145,7 +1147,7 @@ fail:
 		lbns_remfree++;
 #endif
 		ffs_blkfree(ump, fs, ump->um_devvp, *blkp, fs->fs_bsize,
-		    ip->i_number, vp->v_type, NULL);
+		    ip->i_number, vp->v_type, NULL, SINGLETON_KEY);
 	}
 	return (error);
 }

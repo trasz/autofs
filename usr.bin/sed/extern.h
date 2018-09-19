@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1992 Diomidis Spinellis.
  * Copyright (c) 1992, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -39,11 +41,13 @@ extern struct s_appends *appends;
 extern regmatch_t *match;
 extern size_t maxnsub;
 extern u_long linenum;
-extern int appendnum;
+extern unsigned int appendnum;
 extern int aflag, eflag, nflag;
 extern const char *fname, *outfname;
 extern FILE *infile, *outfile;
 extern int rflags;	/* regex flags to use */
+extern const char *inplace;
+extern int quit;
 
 void	 cfclose(struct s_command *, struct s_command *);
 void	 compile(void);

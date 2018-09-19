@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 1980, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -309,7 +311,7 @@ type1(int *msgvec, int doign, int page)
 		if (page || nlines > (*cp ? atoi(cp) : realscreenheight)) {
 			cp = value("PAGER");
 			if (cp == NULL || *cp == '\0')
-				cp = _PATH_MORE;
+				cp = _PATH_LESS;
 			obuf = Popen(cp, "w");
 			if (obuf == NULL) {
 				warnx("%s", cp);
