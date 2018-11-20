@@ -1188,7 +1188,7 @@ kern_munlock(struct thread *td, uintptr_t addr0, size_t size)
  * operations on vnodes.
  */
 int
-vm_mmap_vnode(struct thread *td, vm_size_t objsize,
+vm_mmap_vnode(vm_size_t objsize,
     vm_prot_t prot, vm_prot_t *maxprotp, int *flagsp,
     struct vnode *vp, vm_ooffset_t *foffp, vm_object_t *objp,
     boolean_t *writecounted)
@@ -1197,8 +1197,10 @@ vm_mmap_vnode(struct thread *td, vm_size_t objsize,
 	vm_object_t obj;
 	vm_ooffset_t foff;
 	struct ucred *cred;
+	struct thread *td;
 	int error, flags, locktype;
 
+	td = curthread;
 	cred = td->td_ucred;
 	if ((*maxprotp & VM_PROT_WRITE) && (*flagsp & MAP_SHARED))
 		locktype = LK_EXCLUSIVE;
@@ -1398,7 +1400,7 @@ vm_mmap(vm_map_t map, vm_offset_t *addr, vm_size_t size, vm_prot_t prot,
 		break;
 	}
 	case OBJT_VNODE:
-		error = vm_mmap_vnode(td, size, prot, &maxprot, &flags,
+		error = vm_mmap_vnode(size, prot, &maxprot, &flags,
 		    handle, &foff, &object, &writecounted);
 		break;
 	case OBJT_DEFAULT:
