@@ -131,7 +131,7 @@ ufs_quotactl(mp, cmds, id, arg)
 
 	switch (cmd) {
 	case Q_QUOTAON:
-		error = quotaon(td, mp, type, arg);
+		error = quotaon(mp, type, arg);
 		break;
 
 	case Q_QUOTAOFF:

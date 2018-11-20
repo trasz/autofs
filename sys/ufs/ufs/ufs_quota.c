@@ -490,14 +490,17 @@ chkdquot(struct inode *ip)
  * Q_QUOTAON - set up a quota file for a particular filesystem.
  */
 int
-quotaon(struct thread *td, struct mount *mp, int type, void *fname)
+quotaon(struct mount *mp, int type, void *fname)
 {
+	struct thread *td;
 	struct ufsmount *ump;
 	struct vnode *vp, **vpp;
 	struct vnode *mvp;
 	struct dquot *dq;
 	int error, flags;
 	struct nameidata nd;
+
+	td = curthread;
 
 	error = priv_check(td, PRIV_UFS_QUOTAON);
 	if (error != 0) {
