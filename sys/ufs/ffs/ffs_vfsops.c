@@ -82,7 +82,7 @@ __FBSDID("$FreeBSD$");
 
 static uma_zone_t uma_inode, uma_ufs1, uma_ufs2;
 
-static int	ffs_mountfs(struct vnode *, struct mount *, struct thread *);
+static int	ffs_mountfs(struct vnode *, struct mount *);
 static void	ffs_oldfscompat_read(struct fs *, struct ufsmount *,
 		    ufs2_daddr_t);
 static void	ffs_ifree(struct ufsmount *ump, struct inode *ip);
@@ -528,7 +528,7 @@ ffs_mount(struct mount *mp)
 		 * the mount point is discarded by the upper level code.
 		 * Note that vfs_mount_alloc() populates f_mntonname for us.
 		 */
-		if ((error = ffs_mountfs(devvp, mp, td)) != 0) {
+		if ((error = ffs_mountfs(devvp, mp)) != 0) {
 			vrele(devvp);
 			return (error);
 		}
@@ -761,11 +761,11 @@ loop:
  * Common code for mount and mountroot
  */
 static int
-ffs_mountfs(devvp, mp, td)
+ffs_mountfs(devvp, mp)
 	struct vnode *devvp;
 	struct mount *mp;
-	struct thread *td;
 {
+	struct thread *td;
 	struct ufsmount *ump;
 	struct fs *fs;
 	struct cdev *dev;
@@ -775,9 +775,10 @@ ffs_mountfs(devvp, mp, td)
 	struct mount *nmp;
 	int candelete;
 
+	td = curthread;
 	fs = NULL;
 	ump = NULL;
-	cred = td ? td->td_ucred : NOCRED;
+	cred = td->td_ucred;
 	ronly = (mp->mnt_flag & MNT_RDONLY) != 0;
 
 	KASSERT(devvp->v_type == VCHR, ("reclaimed devvp"));
