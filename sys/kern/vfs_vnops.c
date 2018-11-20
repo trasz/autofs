@@ -2371,18 +2371,20 @@ vn_fill_kinfo_vnode(struct vnode *vp, struct kinfo_file *kif)
 
 int
 vn_mmap(struct file *fp, vm_map_t map, vm_offset_t *addr, vm_size_t size,
-    vm_prot_t prot, vm_prot_t cap_maxprot, int flags, vm_ooffset_t foff,
-    struct thread *td)
+    vm_prot_t prot, vm_prot_t cap_maxprot, int flags, vm_ooffset_t foff)
 {
 #ifdef HWPMC_HOOKS
 	struct pmckern_map_in pkm;
 #endif
 	struct mount *mp;
+	struct thread *td;
 	struct vnode *vp;
 	vm_object_t object;
 	vm_prot_t maxprot;
 	boolean_t writecounted;
 	int error;
+
+	td = curthread;
 
 #if defined(COMPAT_FREEBSD7) || defined(COMPAT_FREEBSD6) || \
     defined(COMPAT_FREEBSD5) || defined(COMPAT_FREEBSD4)

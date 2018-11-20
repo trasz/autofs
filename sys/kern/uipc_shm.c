@@ -877,14 +877,15 @@ sys_shm_unlink(struct thread *td, struct shm_unlink_args *uap)
 
 int
 shm_mmap(struct file *fp, vm_map_t map, vm_offset_t *addr, vm_size_t objsize,
-    vm_prot_t prot, vm_prot_t cap_maxprot, int flags,
-    vm_ooffset_t foff, struct thread *td)
+    vm_prot_t prot, vm_prot_t cap_maxprot, int flags, vm_ooffset_t foff)
 {
 	struct shmfd *shmfd;
+	struct thread *td;
 	vm_prot_t maxprot;
 	int error;
 
 	shmfd = fp->f_data;
+	td = curthread;
 	maxprot = VM_PROT_NONE;
 
 	/* FREAD should always be set. */

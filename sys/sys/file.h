@@ -121,7 +121,7 @@ typedef int fo_fill_kinfo_t(struct file *fp, struct kinfo_file *kif,
 		    struct filedesc *fdp);
 typedef int fo_mmap_t(struct file *fp, vm_map_t map, vm_offset_t *addr,
 		    vm_size_t size, vm_prot_t prot, vm_prot_t cap_maxprot,
-		    int flags, vm_ooffset_t foff, struct thread *td);
+		    int flags, vm_ooffset_t foff);
 typedef int fo_aio_queue_t(struct file *fp, struct kaiocb *job);
 typedef	int fo_flags_t;
 
@@ -402,14 +402,13 @@ fo_fill_kinfo(struct file *fp, struct kinfo_file *kif, struct filedesc *fdp)
 
 static __inline int
 fo_mmap(struct file *fp, vm_map_t map, vm_offset_t *addr, vm_size_t size,
-    vm_prot_t prot, vm_prot_t cap_maxprot, int flags, vm_ooffset_t foff,
-    struct thread *td)
+    vm_prot_t prot, vm_prot_t cap_maxprot, int flags, vm_ooffset_t foff)
 {
 
 	if (fp->f_ops->fo_mmap == NULL)
 		return (ENODEV);
 	return ((*fp->f_ops->fo_mmap)(fp, map, addr, size, prot, cap_maxprot,
-	    flags, foff, td));
+	    flags, foff));
 }
 
 static __inline int

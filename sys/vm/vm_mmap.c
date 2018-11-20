@@ -362,7 +362,7 @@ kern_mmap(uintptr_t addr0, size_t size, int prot, int flags,
 
 		/* This relies on VM_PROT_* matching PROT_*. */
 		error = fo_mmap(fp, &vms->vm_map, &addr, size, prot,
-		    cap_maxprot, flags, pos, td);
+		    cap_maxprot, flags, pos);
 	}
 
 	if (error == 0)
