@@ -271,7 +271,7 @@ ffs_mount(struct mount *mp)
 			if (mp->mnt_flag & MNT_FORCE)
 				flags |= FORCECLOSE;
 			if (MOUNTEDSOFTDEP(mp)) {
-				error = softdep_flushfiles(mp, flags, td);
+				error = softdep_flushfiles(mp, flags);
 			} else {
 				error = ffs_flushfiles(mp, flags, td);
 			}
@@ -1229,7 +1229,7 @@ ffs_unmount(mp, mntflags)
 			goto fail1;
 	}
 	if (MOUNTEDSOFTDEP(mp))
-		error = softdep_flushfiles(mp, flags, td);
+		error = softdep_flushfiles(mp, flags);
 	else
 		error = ffs_flushfiles(mp, flags, td);
 	if (error != 0 && error != ENXIO)

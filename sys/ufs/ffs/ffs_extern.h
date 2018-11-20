@@ -153,7 +153,7 @@ int	softdep_mount(struct vnode *, struct mount *, struct fs *,
 void	softdep_unmount(struct mount *);
 int	softdep_move_dependencies(struct buf *, struct buf *);
 int	softdep_flushworklist(struct mount *, int *, struct thread *);
-int	softdep_flushfiles(struct mount *, int, struct thread *);
+int	softdep_flushfiles(struct mount *, int);
 void	softdep_update_inodeblock(struct inode *, struct buf *, int);
 void	softdep_load_inodeblock(struct inode *);
 void	softdep_freefile(struct vnode *, ino_t, int);

@@ -102,10 +102,9 @@ __FBSDID("$FreeBSD$");
 #ifndef SOFTUPDATES
 
 int
-softdep_flushfiles(oldmnt, flags, td)
+softdep_flushfiles(oldmnt, flags)
 	struct mount *oldmnt;
 	int flags;
-	struct thread *td;
 {
 
 	panic("softdep_flushfiles called");
@@ -1962,11 +1961,11 @@ softdep_waitidle(struct mount *mp, int flags __unused)
  * Flush all vnodes and worklist items associated with a specified mount point.
  */
 int
-softdep_flushfiles(oldmnt, flags, td)
+softdep_flushfiles(oldmnt, flags)
 	struct mount *oldmnt;
 	int flags;
-	struct thread *td;
 {
+	struct thread *td;
 #ifdef QUOTA
 	struct ufsmount *ump;
 	int i;
@@ -1978,6 +1977,7 @@ softdep_flushfiles(oldmnt, flags, td)
 	    ("softdep_flushfiles called on non-softdep filesystem"));
 	loopcnt = 10;
 	retry_flush_count = 3;
+	td = curthread;
 retry_flush:
 	error = 0;
 
