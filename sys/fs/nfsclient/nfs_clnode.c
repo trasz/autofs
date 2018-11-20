@@ -293,7 +293,7 @@ ncl_reclaim(struct vop_reclaim_args *ap)
 		nfs_reclaim_p(ap);
 
 	mtx_lock(&np->n_mtx);
-	ncl_releasesillyrename(vp, ap->a_td);
+	ncl_releasesillyrename(vp, curthread);
 	mtx_unlock(&np->n_mtx);
 
 	/*
@@ -308,7 +308,7 @@ ncl_reclaim(struct vop_reclaim_args *ap)
 		 * ncl_inactive(), but there are cases where it is not
 		 * called, so we need to do it again here.
 		 */
-		(void) nfsrpc_close(vp, 1, ap->a_td);
+		(void) nfsrpc_close(vp, 1, curthread);
 
 	vfs_hash_remove(vp);
 
