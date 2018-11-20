@@ -73,7 +73,7 @@ void	ffs_clrblock(struct fs *, u_char *, ufs1_daddr_t);
 void	ffs_clusteracct(struct fs *, struct cg *, ufs1_daddr_t, int);
 void	ffs_bdflush(struct bufobj *, struct buf *);
 int	ffs_copyonwrite(struct vnode *, struct buf *);
-int	ffs_flushfiles(struct mount *, int, struct thread *);
+int	ffs_flushfiles(struct mount *, int);
 void	ffs_fragacct(struct fs *, int, int32_t [], int);
 int	ffs_freefile(struct ufsmount *, struct fs *, struct vnode *, ino_t,
 	    int, struct workhead *);

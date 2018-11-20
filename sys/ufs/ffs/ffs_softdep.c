@@ -1994,7 +1994,7 @@ retry_flush:
 		 */
 		early = retry_flush_count == 1 || (oldmnt->mnt_kern_flag &
 		    MNTK_UNMOUNT) == 0 ? 0 : EARLYFLUSH;
-		if ((error = ffs_flushfiles(oldmnt, flags | early, td)) != 0)
+		if ((error = ffs_flushfiles(oldmnt, flags | early)) != 0)
 			break;
 		if ((error = softdep_flushworklist(oldmnt, &depcount, td)) != 0 ||
 		    depcount == 0)

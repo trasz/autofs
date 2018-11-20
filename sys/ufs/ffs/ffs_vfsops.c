@@ -242,7 +242,7 @@ ffs_mount(struct mount *mp)
 		fs = ump->um_fs;
 		devvp = ump->um_devvp;
 		if (fsckpid == -1 && ump->um_fsckpid > 0) {
-			if ((error = ffs_flushfiles(mp, WRITECLOSE, td)) != 0 ||
+			if ((error = ffs_flushfiles(mp, WRITECLOSE)) != 0 ||
 			    (error = ffs_sbupdate(ump, MNT_WAIT, 0)) != 0)
 				return (error);
 			g_topology_lock();
@@ -273,7 +273,7 @@ ffs_mount(struct mount *mp)
 			if (MOUNTEDSOFTDEP(mp)) {
 				error = softdep_flushfiles(mp, flags);
 			} else {
-				error = ffs_flushfiles(mp, flags, td);
+				error = ffs_flushfiles(mp, flags);
 			}
 			if (error) {
 				vfs_write_resume(mp, 0);
@@ -1018,7 +1018,7 @@ ffs_mountfs(devvp, mp)
 		fs->fs_mtime = time_second;
 		if ((fs->fs_flags & FS_DOSOFTDEP) &&
 		    (error = softdep_mount(devvp, mp, fs, cred)) != 0) {
-			ffs_flushfiles(mp, FORCECLOSE, td);
+			ffs_flushfiles(mp, FORCECLOSE);
 			goto out;
 		}
 		if (fs->fs_snapinum[0] != 0)
@@ -1232,7 +1232,7 @@ ffs_unmount(mp, mntflags)
 	if (MOUNTEDSOFTDEP(mp))
 		error = softdep_flushfiles(mp, flags);
 	else
-		error = ffs_flushfiles(mp, flags, td);
+		error = ffs_flushfiles(mp, flags);
 	if (error != 0 && error != ENXIO)
 		goto fail;
 
@@ -1315,14 +1315,15 @@ fail1:
  * Flush out all the files in a filesystem.
  */
 int
-ffs_flushfiles(mp, flags, td)
+ffs_flushfiles(mp, flags)
 	struct mount *mp;
 	int flags;
-	struct thread *td;
 {
+	struct thread *td;
 	struct ufsmount *ump;
 	int qerror, error;
 
+	td = curthread;
 	ump = VFSTOUFS(mp);
 	qerror = 0;
 #ifdef QUOTA
