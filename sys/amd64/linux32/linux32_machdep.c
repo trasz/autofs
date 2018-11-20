@@ -131,7 +131,7 @@ linux_execve(struct thread *td, struct linux_execve_args *args)
 	char *path;
 	int error;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 
 #ifdef DEBUG
 	if (ldebug(execve))

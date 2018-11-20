@@ -75,7 +75,7 @@ linux_creat(struct thread *td, struct linux_creat_args *args)
 	char *path;
 	int error;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 #ifdef DEBUG
 	if (ldebug(creat))
 		printf(ARGS(creat, "%s, %d"), path, args->mode);
@@ -185,9 +185,9 @@ linux_openat(struct thread *td, struct linux_openat_args *args)
 
 	dfd = (args->dfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->dfd;
 	if (args->flags & LINUX_O_CREAT)
-		LCONVPATH_AT(td, args->filename, &path, 1, dfd);
+		LCONVPATH_AT(args->filename, &path, 1, dfd);
 	else
-		LCONVPATH_AT(td, args->filename, &path, 0, dfd);
+		LCONVPATH_AT(args->filename, &path, 0, dfd);
 #ifdef DEBUG
 	if (ldebug(openat))
 		printf(ARGS(openat, "%i, %s, 0x%x, 0x%x"), args->dfd,
@@ -203,9 +203,9 @@ linux_open(struct thread *td, struct linux_open_args *args)
 	char *path;
 
 	if (args->flags & LINUX_O_CREAT)
-		LCONVPATHCREAT(td, args->path, &path);
+		LCONVPATHCREAT(args->path, &path);
 	else
-		LCONVPATHEXIST(td, args->path, &path);
+		LCONVPATHEXIST(args->path, &path);
 #ifdef DEBUG
 	if (ldebug(open))
 		printf(ARGS(open, "%s, 0x%x, 0x%x"),
@@ -537,7 +537,7 @@ linux_access(struct thread *td, struct linux_access_args *args)
 	if (args->amode & ~(F_OK | X_OK | W_OK | R_OK))
 		return (EINVAL);
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 
 #ifdef DEBUG
 	if (ldebug(access))
@@ -562,7 +562,7 @@ linux_faccessat(struct thread *td, struct linux_faccessat_args *args)
 		return (EINVAL);
 
 	dfd = (args->dfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->dfd;
-	LCONVPATHEXIST_AT(td, args->filename, &path, dfd);
+	LCONVPATHEXIST_AT(args->filename, &path, dfd);
 
 #ifdef DEBUG
 	if (ldebug(faccessat))
@@ -583,7 +583,7 @@ linux_unlink(struct thread *td, struct linux_unlink_args *args)
 	int error;
 	struct stat st;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 
 #ifdef DEBUG
 	if (ldebug(unlink))
@@ -615,7 +615,7 @@ linux_unlinkat(struct thread *td, struct linux_unlinkat_args *args)
 		return (EINVAL);
 
 	dfd = (args->dfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->dfd;
-	LCONVPATHEXIST_AT(td, args->pathname, &path, dfd);
+	LCONVPATHEXIST_AT(args->pathname, &path, dfd);
 
 #ifdef DEBUG
 	if (ldebug(unlinkat))
@@ -641,7 +641,7 @@ linux_chdir(struct thread *td, struct linux_chdir_args *args)
 	char *path;
 	int error;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 
 #ifdef DEBUG
 	if (ldebug(chdir))
@@ -659,7 +659,7 @@ linux_chmod(struct thread *td, struct linux_chmod_args *args)
 	char *path;
 	int error;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 
 #ifdef DEBUG
 	if (ldebug(chmod))
@@ -679,7 +679,7 @@ linux_fchmodat(struct thread *td, struct linux_fchmodat_args *args)
 	int error, dfd;
 
 	dfd = (args->dfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->dfd;
-	LCONVPATHEXIST_AT(td, args->filename, &path, dfd);
+	LCONVPATHEXIST_AT(args->filename, &path, dfd);
 
 #ifdef DEBUG
 	if (ldebug(fchmodat))
@@ -698,7 +698,7 @@ linux_mkdir(struct thread *td, struct linux_mkdir_args *args)
 	char *path;
 	int error;
 
-	LCONVPATHCREAT(td, args->path, &path);
+	LCONVPATHCREAT(args->path, &path);
 
 #ifdef DEBUG
 	if (ldebug(mkdir))
@@ -717,7 +717,7 @@ linux_mkdirat(struct thread *td, struct linux_mkdirat_args *args)
 	int error, dfd;
 
 	dfd = (args->dfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->dfd;
-	LCONVPATHCREAT_AT(td, args->pathname, &path, dfd);
+	LCONVPATHCREAT_AT(args->pathname, &path, dfd);
 
 #ifdef DEBUG
 	if (ldebug(mkdirat))
@@ -735,7 +735,7 @@ linux_rmdir(struct thread *td, struct linux_rmdir_args *args)
 	char *path;
 	int error;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 
 #ifdef DEBUG
 	if (ldebug(rmdir))
@@ -752,7 +752,7 @@ linux_rename(struct thread *td, struct linux_rename_args *args)
 	char *from, *to;
 	int error;
 
-	LCONVPATHEXIST(td, args->from, &from);
+	LCONVPATHEXIST(args->from, &from);
 	/* Expand LCONVPATHCREATE so that `from' can be freed on errors */
 	error = linux_emul_convpath(td, args->to, UIO_USERSPACE, &to, 1, AT_FDCWD);
 	if (to == NULL) {
@@ -779,7 +779,7 @@ linux_renameat(struct thread *td, struct linux_renameat_args *args)
 
 	olddfd = (args->olddfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->olddfd;
 	newdfd = (args->newdfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->newdfd;
-	LCONVPATHEXIST_AT(td, args->oldname, &from, olddfd);
+	LCONVPATHEXIST_AT(args->oldname, &from, olddfd);
 	/* Expand LCONVPATHCREATE so that `from' can be freed on errors */
 	error = linux_emul_convpath(td, args->newname, UIO_USERSPACE, &to, 1, newdfd);
 	if (to == NULL) {
@@ -804,7 +804,7 @@ linux_symlink(struct thread *td, struct linux_symlink_args *args)
 	char *path, *to;
 	int error;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 	/* Expand LCONVPATHCREATE so that `path' can be freed on errors */
 	error = linux_emul_convpath(td, args->to, UIO_USERSPACE, &to, 1, AT_FDCWD);
 	if (to == NULL) {
@@ -830,7 +830,7 @@ linux_symlinkat(struct thread *td, struct linux_symlinkat_args *args)
 	int error, dfd;
 
 	dfd = (args->newdfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->newdfd;
-	LCONVPATHEXIST(td, args->oldname, &path);
+	LCONVPATHEXIST(args->oldname, &path);
 	/* Expand LCONVPATHCREATE so that `path' can be freed on errors */
 	error = linux_emul_convpath(td, args->newname, UIO_USERSPACE, &to, 1, dfd);
 	if (to == NULL) {
@@ -856,7 +856,7 @@ linux_readlink(struct thread *td, struct linux_readlink_args *args)
 	char *name;
 	int error;
 
-	LCONVPATHEXIST(td, args->name, &name);
+	LCONVPATHEXIST(args->name, &name);
 
 #ifdef DEBUG
 	if (ldebug(readlink))
@@ -877,7 +877,7 @@ linux_readlinkat(struct thread *td, struct linux_readlinkat_args *args)
 	int error, dfd;
 
 	dfd = (args->dfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->dfd;
-	LCONVPATHEXIST_AT(td, args->path, &name, dfd);
+	LCONVPATHEXIST_AT(args->path, &name, dfd);
 
 #ifdef DEBUG
 	if (ldebug(readlinkat))
@@ -897,7 +897,7 @@ linux_truncate(struct thread *td, struct linux_truncate_args *args)
 	char *path;
 	int error;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 
 #ifdef DEBUG
 	if (ldebug(truncate))
@@ -916,7 +916,7 @@ linux_truncate64(struct thread *td, struct linux_truncate64_args *args)
 	char *path;
 	int error;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 
 #ifdef DEBUG
 	if (ldebug(truncate64))
@@ -943,7 +943,7 @@ linux_link(struct thread *td, struct linux_link_args *args)
 	char *path, *to;
 	int error;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 	/* Expand LCONVPATHCREATE so that `path' can be freed on errors */
 	error = linux_emul_convpath(td, args->to, UIO_USERSPACE, &to, 1, AT_FDCWD);
 	if (to == NULL) {
@@ -974,7 +974,7 @@ linux_linkat(struct thread *td, struct linux_linkat_args *args)
 
 	olddfd = (args->olddfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->olddfd;
 	newdfd = (args->newdfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->newdfd;
-	LCONVPATHEXIST_AT(td, args->oldname, &path, olddfd);
+	LCONVPATHEXIST_AT(args->oldname, &path, olddfd);
 	/* Expand LCONVPATHCREATE so that `path' can be freed on errors */
 	error = linux_emul_convpath(td, args->newname, UIO_USERSPACE, &to, 1, newdfd);
 	if (to == NULL) {
@@ -1492,7 +1492,7 @@ linux_chown(struct thread *td, struct linux_chown_args *args)
 	char *path;
 	int error;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 
 #ifdef DEBUG
 	if (ldebug(chown))
@@ -1515,7 +1515,7 @@ linux_fchownat(struct thread *td, struct linux_fchownat_args *args)
 		return (EINVAL);
 
 	dfd = (args->dfd == LINUX_AT_FDCWD) ? AT_FDCWD :  args->dfd;
-	LCONVPATHEXIST_AT(td, args->filename, &path, dfd);
+	LCONVPATHEXIST_AT(args->filename, &path, dfd);
 
 #ifdef DEBUG
 	if (ldebug(fchownat))
@@ -1537,7 +1537,7 @@ linux_lchown(struct thread *td, struct linux_lchown_args *args)
 	char *path;
 	int error;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 
 #ifdef DEBUG
 	if (ldebug(lchown))

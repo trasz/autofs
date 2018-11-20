@@ -265,7 +265,7 @@ linux_uselib(struct thread *td, struct linux_uselib_args *args)
 	ssize_t aresid;
 	int error, locked, writecount;
 
-	LCONVPATHEXIST(td, args->library, &library);
+	LCONVPATHEXIST(args->library, &library);
 
 #ifdef DEBUG
 	if (ldebug(uselib))
@@ -772,7 +772,7 @@ linux_utime(struct thread *td, struct linux_utime_args *args)
 	char *fname;
 	int error;
 
-	LCONVPATHEXIST(td, args->fname, &fname);
+	LCONVPATHEXIST(args->fname, &fname);
 
 #ifdef DEBUG
 	if (ldebug(utime))
@@ -808,7 +808,7 @@ linux_utimes(struct thread *td, struct linux_utimes_args *args)
 	char *fname;
 	int error;
 
-	LCONVPATHEXIST(td, args->fname, &fname);
+	LCONVPATHEXIST(args->fname, &fname);
 
 #ifdef DEBUG
 	if (ldebug(utimes))
@@ -909,7 +909,7 @@ linux_utimensat(struct thread *td, struct linux_utimensat_args *args)
 	}
 
 	if (args->pathname != NULL)
-		LCONVPATHEXIST_AT(td, args->pathname, &path, dfd);
+		LCONVPATHEXIST_AT(args->pathname, &path, dfd);
 	else if (args->flags != 0)
 		return (EINVAL);
 
@@ -937,7 +937,7 @@ linux_futimesat(struct thread *td, struct linux_futimesat_args *args)
 	int error, dfd;
 
 	dfd = (args->dfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->dfd;
-	LCONVPATHEXIST_AT(td, args->filename, &fname, dfd);
+	LCONVPATHEXIST_AT(args->filename, &fname, dfd);
 
 #ifdef DEBUG
 	if (ldebug(futimesat))
@@ -1109,7 +1109,7 @@ linux_mknod(struct thread *td, struct linux_mknod_args *args)
 	char *path;
 	int error;
 
-	LCONVPATHCREAT(td, args->path, &path);
+	LCONVPATHCREAT(args->path, &path);
 
 #ifdef DEBUG
 	if (ldebug(mknod))
@@ -1160,7 +1160,7 @@ linux_mknodat(struct thread *td, struct linux_mknodat_args *args)
 	int error, dfd;
 
 	dfd = (args->dfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->dfd;
-	LCONVPATHCREAT_AT(td, args->filename, &path, dfd);
+	LCONVPATHCREAT_AT(args->filename, &path, dfd);
 
 #ifdef DEBUG
 	if (ldebug(mknodat))

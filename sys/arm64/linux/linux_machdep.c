@@ -67,7 +67,7 @@ linux_execve(struct thread *td, struct linux_execve_args *uap)
 	char *path;
 	int error;
 
-	LCONVPATHEXIST(td, uap->path, &path);
+	LCONVPATHEXIST(uap->path, &path);
 
 	error = exec_copyin_args(&eargs, path, UIO_SYSSPACE, uap->argp,
 	    uap->envp);

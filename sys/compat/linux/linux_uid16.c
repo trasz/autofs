@@ -112,7 +112,7 @@ linux_chown16(struct thread *td, struct linux_chown16_args *args)
 	char *path;
 	int error;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 
 	/*
 	 * The DTrace probes have to be after the LCONVPATHEXIST, as
@@ -137,7 +137,7 @@ linux_lchown16(struct thread *td, struct linux_lchown16_args *args)
 	char *path;
 	int error;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 
 	/*
 	 * The DTrace probes have to be after the LCONVPATHEXIST, as

@@ -183,7 +183,7 @@ linux_newstat(struct thread *td, struct linux_newstat_args *args)
 	char *path;
 	int error;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 
 #ifdef DEBUG
 	if (ldebug(newstat))
@@ -204,7 +204,7 @@ linux_newlstat(struct thread *td, struct linux_newlstat_args *args)
 	char *path;
 	int error;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 
 #ifdef DEBUG
 	if (ldebug(newlstat))
@@ -274,7 +274,7 @@ linux_stat(struct thread *td, struct linux_stat_args *args)
 	char *path;
 	int error;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 
 #ifdef DEBUG
 	if (ldebug(stat))
@@ -296,7 +296,7 @@ linux_lstat(struct thread *td, struct linux_lstat_args *args)
 	char *path;
 	int error;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 
 #ifdef DEBUG
 	if (ldebug(lstat))
@@ -409,7 +409,7 @@ linux_statfs(struct thread *td, struct linux_statfs_args *args)
 	char *path;
 	int error;
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 
 #ifdef DEBUG
 	if (ldebug(statfs))
@@ -457,7 +457,7 @@ linux_statfs64(struct thread *td, struct linux_statfs64_args *args)
 	if (args->bufsize != sizeof(struct l_statfs64))
 		return (EINVAL);
 
-	LCONVPATHEXIST(td, args->path, &path);
+	LCONVPATHEXIST(args->path, &path);
 
 #ifdef DEBUG
 	if (ldebug(statfs64))
@@ -584,7 +584,7 @@ linux_stat64(struct thread *td, struct linux_stat64_args *args)
 	char *filename;
 	int error;
 
-	LCONVPATHEXIST(td, args->filename, &filename);
+	LCONVPATHEXIST(args->filename, &filename);
 
 #ifdef DEBUG
 	if (ldebug(stat64))
@@ -605,7 +605,7 @@ linux_lstat64(struct thread *td, struct linux_lstat64_args *args)
 	char *filename;
 	int error;
 
-	LCONVPATHEXIST(td, args->filename, &filename);
+	LCONVPATHEXIST(args->filename, &filename);
 
 #ifdef DEBUG
 	if (ldebug(lstat64))
@@ -651,7 +651,7 @@ linux_fstatat64(struct thread *td, struct linux_fstatat64_args *args)
 	    AT_SYMLINK_NOFOLLOW : 0;
 
 	dfd = (args->dfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->dfd;
-	LCONVPATHEXIST_AT(td, args->pathname, &path, dfd);
+	LCONVPATHEXIST_AT(args->pathname, &path, dfd);
 
 #ifdef DEBUG
 	if (ldebug(fstatat64))
@@ -681,7 +681,7 @@ linux_newfstatat(struct thread *td, struct linux_newfstatat_args *args)
 	    AT_SYMLINK_NOFOLLOW : 0;
 
 	dfd = (args->dfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->dfd;
-	LCONVPATHEXIST_AT(td, args->pathname, &path, dfd);
+	LCONVPATHEXIST_AT(args->pathname, &path, dfd);
 
 #ifdef DEBUG
 	if (ldebug(newfstatat))
