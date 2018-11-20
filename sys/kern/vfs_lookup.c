@@ -1369,14 +1369,16 @@ NDFREE(struct nameidata *ndp, const u_int flags)
  * the M_TEMP bucket if one is returned.
  */
 int
-kern_alternate_path(struct thread *td, const char *prefix, const char *path,
+kern_alternate_path(const char *prefix, const char *path,
     enum uio_seg pathseg, char **pathbuf, int create, int dirfd)
 {
 	struct nameidata nd, ndroot;
+	struct thread *td;
 	char *ptr, *buf, *cp;
 	size_t len, sz;
 	int error;
 
+	td = curthread;
 	buf = (char *) malloc(MAXPATHLEN, M_TEMP, M_WAITOK);
 	*pathbuf = buf;
 
