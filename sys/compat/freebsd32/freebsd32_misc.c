@@ -497,7 +497,7 @@ freebsd32_mmap(struct thread *td, struct freebsd32_mmap_args *uap)
 		prot |= PROT_EXEC;
 #endif
 
-	return (kern_mmap(td, (uintptr_t)uap->addr, uap->len, prot,
+	return (kern_mmap((uintptr_t)uap->addr, uap->len, prot,
 	    uap->flags, uap->fd, PAIR32TO64(off_t, uap->pos)));
 }
 
@@ -514,7 +514,7 @@ freebsd6_freebsd32_mmap(struct thread *td,
 		prot |= PROT_EXEC;
 #endif
 
-	return (kern_mmap(td, (uintptr_t)uap->addr, uap->len, prot,
+	return (kern_mmap((uintptr_t)uap->addr, uap->len, prot,
 	    uap->flags, uap->fd, PAIR32TO64(off_t, uap->pos)));
 }
 #endif
