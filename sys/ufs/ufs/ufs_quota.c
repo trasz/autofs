@@ -775,10 +775,13 @@ quotaoff_inchange(struct thread *td, struct mount *mp, int type)
  * Q_QUOTAOFF - turn off disk quotas for a filesystem.
  */
 int
-quotaoff(struct thread *td, struct mount *mp, int type)
+quotaoff(struct mount *mp, int type)
 {
+	struct thread *td;
 	struct ufsmount *ump;
 	int error;
+
+	td = curthread;
 
 	error = priv_check(td, PRIV_UFS_QUOTAOFF);
 	if (error)

@@ -231,7 +231,7 @@ void	dquninit(void);
 int	getinoquota(struct inode *);
 int	qsync(struct mount *);
 int	qsyncvp(struct vnode *);
-int	quotaoff(struct thread *, struct mount *, int);
+int	quotaoff(struct mount *, int);
 int	quotaon(struct mount *, int, void *);
 int	getquota32(struct thread *, struct mount *, u_long, int, void *);
 int	setquota32(struct thread *, struct mount *, u_long, int, void *);

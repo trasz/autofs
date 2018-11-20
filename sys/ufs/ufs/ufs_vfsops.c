@@ -138,7 +138,7 @@ ufs_quotactl(mp, cmds, id, arg)
 		vfs_ref(mp);
 		vfs_unbusy(mp);
 		vn_start_write(NULL, &mp, V_WAIT | V_MNTREF);
-		error = quotaoff(td, mp, type);
+		error = quotaoff(mp, type);
 		vn_finished_write(mp);
 		break;
 

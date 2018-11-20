@@ -1333,7 +1333,7 @@ ffs_flushfiles(mp, flags)
 		if (error)
 			return (error);
 		for (i = 0; i < MAXQUOTAS; i++) {
-			error = quotaoff(td, mp, i);
+			error = quotaoff(mp, i);
 			if (error != 0) {
 				if ((flags & EARLYFLUSH) == 0)
 					return (error);
