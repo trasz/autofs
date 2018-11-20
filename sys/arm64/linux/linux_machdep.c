@@ -92,7 +92,7 @@ linux_mmap2(struct thread *td, struct linux_mmap2_args *uap)
 {
 
 	LIN_SDT_PROBE0(machdep, linux_mmap2, todo);
-	return (linux_mmap_common(td, PTROUT(uap->addr), uap->len, uap->prot,
+	return (linux_mmap_common(PTROUT(uap->addr), uap->len, uap->prot,
 	    uap->flags, uap->fd, uap->pgoff));
 }
 

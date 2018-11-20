@@ -129,7 +129,7 @@ int
 linux_mmap2(struct thread *td, struct linux_mmap2_args *args)
 {
 
-	return (linux_mmap_common(td, PTROUT(args->addr), args->len, args->prot,
+	return (linux_mmap_common(PTROUT(args->addr), args->len, args->prot,
 		args->flags, args->fd, args->pgoff));
 }
 

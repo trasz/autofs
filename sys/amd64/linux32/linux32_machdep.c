@@ -461,7 +461,7 @@ linux_mmap2(struct thread *td, struct linux_mmap2_args *args)
 		    args->flags, args->fd, args->pgoff);
 #endif
 
-	return (linux_mmap_common(td, PTROUT(args->addr), args->len, args->prot,
+	return (linux_mmap_common(PTROUT(args->addr), args->len, args->prot,
 		args->flags, args->fd, (uint64_t)(uint32_t)args->pgoff *
 		PAGE_SIZE));
 }
@@ -483,7 +483,7 @@ linux_mmap(struct thread *td, struct linux_mmap_args *args)
 		    linux_args.flags, linux_args.fd, linux_args.pgoff);
 #endif
 
-	return (linux_mmap_common(td, linux_args.addr, linux_args.len,
+	return (linux_mmap_common(linux_args.addr, linux_args.len,
 	    linux_args.prot, linux_args.flags, linux_args.fd,
 	    (uint32_t)linux_args.pgoff));
 }

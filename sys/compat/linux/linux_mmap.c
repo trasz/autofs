@@ -64,9 +64,10 @@ static void linux_fixup_prot(struct thread *td, int *prot);
 
 
 int
-linux_mmap_common(struct thread *td, uintptr_t addr, size_t len, int prot,
+linux_mmap_common(uintptr_t addr, size_t len, int prot,
     int flags, int fd, off_t pos)
 {
+	struct thread *td = curthread;
 	struct proc *p = td->td_proc;
 	struct vmspace *vms = td->td_proc->p_vmspace;
 	int bsd_flags, error;
@@ -211,13 +212,13 @@ linux_mmap_common(struct thread *td, uintptr_t addr, size_t len, int prot,
 	 */
 	if (addr != 0 && (bsd_flags & MAP_FIXED) == 0 &&
 	    (bsd_flags & MAP_EXCL) == 0) {
-		error = kern_mmap(td, addr, len, prot,
+		error = kern_mmap(addr, len, prot,
 		    bsd_flags | MAP_FIXED | MAP_EXCL, fd, pos);
 		if (error == 0)
 			goto out;
 	}
 
-	error = kern_mmap(td, addr, len, prot, bsd_flags, fd, pos);
+	error = kern_mmap(addr, len, prot, bsd_flags, fd, pos);
 out:
 	LINUX_CTR2(mmap2, "return: %d (%p)", error, td->td_retval[0]);
 

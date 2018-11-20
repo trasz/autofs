@@ -42,8 +42,7 @@
 #define	LINUX_MAP_GROWSDOWN	0x0100
 
 
-int linux_mmap_common(struct thread *, uintptr_t, size_t, int, int,
-			int, off_t);
+int linux_mmap_common(uintptr_t, size_t, int, int, int, off_t);
 int linux_mprotect_common(struct thread *, uintptr_t, size_t, int);
 
 #endif	/* _LINUX_MMAP_H_ */
