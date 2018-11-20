@@ -83,8 +83,8 @@ static int dqget(struct vnode *,
 	u_long, struct ufsmount *, int, struct dquot **);
 static int dqsync(struct vnode *, struct dquot *);
 static int dqflush(struct vnode *);
-static int quotaoff1(struct thread *td, struct mount *mp, int type);
-static int quotaoff_inchange(struct thread *td, struct mount *mp, int type);
+static int quotaoff1(struct mount *mp, int type);
+static int quotaoff_inchange(struct mount *mp, int type);
 
 /* conversion functions - from_to() */
 static void dqb32_dq(const struct dqblk32 *, struct dquot *);
@@ -567,7 +567,7 @@ quotaon(struct mount *mp, int type, void *fname)
 
 	vpp = &ump->um_quotas[type];
 	if (*vpp != vp)
-		quotaoff1(td, mp, type);
+		quotaoff1(mp, type);
 
 	/*
 	 * When the directory vnode containing the quota file is
@@ -633,7 +633,7 @@ again:
 	}
 
         if (error)
-		quotaoff_inchange(td, mp, type);
+		quotaoff_inchange(mp, type);
 	UFS_LOCK(ump);
 	ump->um_qflags[type] &= ~QTF_OPENING;
 	KASSERT((ump->um_qflags[type] & QTF_CLOSING) == 0,
@@ -649,8 +649,9 @@ again:
  * flags.
  */
 static int
-quotaoff1(struct thread *td, struct mount *mp, int type)
+quotaoff1(struct mount *mp, int type)
 {
+	struct thread *td;
 	struct vnode *vp;
 	struct vnode *qvp, *mvp;
 	struct ufsmount *ump;
@@ -659,6 +660,7 @@ quotaoff1(struct thread *td, struct mount *mp, int type)
 	struct ucred *cr;
 	int error;
 
+	td = curthread;
 	ump = VFSTOUFS(mp);
 
 	UFS_LOCK(ump);
@@ -716,7 +718,7 @@ again:
 }
 
 static int
-quotaoff_inchange1(struct thread *td, struct mount *mp, int type)
+quotaoff_inchange1(struct mount *mp, int type)
 {
 	int error;
 	bool need_resume;
@@ -729,7 +731,7 @@ quotaoff_inchange1(struct thread *td, struct mount *mp, int type)
 	 * would cause quota accounting leak and asserts otherwise.
 	 * Note that the thread has already called vn_start_write().
 	 */
-	if (mp->mnt_susp_owner == td) {
+	if (mp->mnt_susp_owner == curthread) {
 		need_resume = false;
 	} else {
 		error = vfs_write_suspend_umnt(mp);
@@ -737,7 +739,7 @@ quotaoff_inchange1(struct thread *td, struct mount *mp, int type)
 			return (error);
 		need_resume = true;
 	}
-	error = quotaoff1(td, mp, type);
+	error = quotaoff1(mp, type);
 	if (need_resume)
 		vfs_write_resume(mp, VR_START_WRITE);
 	return (error);
@@ -748,13 +750,13 @@ quotaoff_inchange1(struct thread *td, struct mount *mp, int type)
  * and QTF_CLOSING is set to indicate operation in progress. Fixes
  * ump->um_qflags and mp->mnt_flag after.
  */
-int
-quotaoff_inchange(struct thread *td, struct mount *mp, int type)
+static int
+quotaoff_inchange(struct mount *mp, int type)
 {
 	struct ufsmount *ump;
 	int error, i;
 
-	error = quotaoff_inchange1(td, mp, type);
+	error = quotaoff_inchange1(mp, type);
 
 	ump = VFSTOUFS(mp);
 	UFS_LOCK(ump);
@@ -777,13 +779,10 @@ quotaoff_inchange(struct thread *td, struct mount *mp, int type)
 int
 quotaoff(struct mount *mp, int type)
 {
-	struct thread *td;
 	struct ufsmount *ump;
 	int error;
 
-	td = curthread;
-
-	error = priv_check(td, PRIV_UFS_QUOTAOFF);
+	error = priv_check(curthread, PRIV_UFS_QUOTAOFF);
 	if (error)
 		return (error);
 
@@ -796,7 +795,7 @@ quotaoff(struct mount *mp, int type)
 	ump->um_qflags[type] |= QTF_CLOSING;
 	UFS_UNLOCK(ump);
 
-	return (quotaoff_inchange(td, mp, type));
+	return (quotaoff_inchange(mp, type));
 }
 
 /*
