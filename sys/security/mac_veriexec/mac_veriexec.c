@@ -615,21 +615,23 @@ mac_veriexec_init(struct mac_policy_conf *mpc __unused)
  *        Check if the file referenced by a file descriptor has a fingerprint
  *        registered in the meta-data store.
  *
- * @param td		calling thread
  * @param call		system call number
  * @param arg		arugments to the syscall
  *
  * @return 0 on success, otherwise an error code.
  */
 static int
-mac_veriexec_syscall(struct thread *td, int call, void *arg)
+mac_veriexec_syscall(int call, void *arg)
 {
 	struct image_params img;
 	struct nameidata nd;
 	cap_rights_t rights;
 	struct vattr va;
 	struct file *fp;
+	struct thread *td;
 	int error;
+
+	td = curthread;
 
 	switch (call) {
 	case MAC_VERIEXEC_CHECK_FD_SYSCALL:

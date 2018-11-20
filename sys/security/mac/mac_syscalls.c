@@ -564,7 +564,7 @@ sys_mac_syscall(struct thread *td, struct mac_syscall_args *uap)
 	LIST_FOREACH(mpc, &mac_static_policy_list, mpc_list) {
 		if (strcmp(mpc->mpc_name, target) == 0 &&
 		    mpc->mpc_ops->mpo_syscall != NULL) {
-			error = mpc->mpc_ops->mpo_syscall(td,
+			error = mpc->mpc_ops->mpo_syscall(
 			    uap->call, uap->arg);
 			goto out;
 		}
@@ -575,7 +575,7 @@ sys_mac_syscall(struct thread *td, struct mac_syscall_args *uap)
 		LIST_FOREACH(mpc, &mac_policy_list, mpc_list) {
 			if (strcmp(mpc->mpc_name, target) == 0 &&
 			    mpc->mpc_ops->mpo_syscall != NULL) {
-				error = mpc->mpc_ops->mpo_syscall(td,
+				error = mpc->mpc_ops->mpo_syscall(
 				    uap->call, uap->arg);
 				break;
 			}
