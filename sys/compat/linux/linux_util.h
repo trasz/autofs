@@ -52,13 +52,13 @@ MALLOC_DECLARE(M_FUTEX_WP);
 
 extern const char linux_emul_path[];
 
-int linux_emul_convpath(struct thread *, const char *, enum uio_seg, char **, int, int);
+int linux_emul_convpath(const char *, enum uio_seg, char **, int, int);
 
 #define LCONVPATH_AT(upath, pathp, i, dfd)				\
 	do {								\
 		int _error;						\
 									\
-		_error = linux_emul_convpath(curthread, upath,		\
+		_error = linux_emul_convpath(upath,			\
 		    UIO_USERSPACE, pathp, i, dfd);			\
 		if (*(pathp) == NULL)					\
 			return (_error);				\

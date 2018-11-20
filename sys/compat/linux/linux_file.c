@@ -754,7 +754,7 @@ linux_rename(struct thread *td, struct linux_rename_args *args)
 
 	LCONVPATHEXIST(args->from, &from);
 	/* Expand LCONVPATHCREATE so that `from' can be freed on errors */
-	error = linux_emul_convpath(td, args->to, UIO_USERSPACE, &to, 1, AT_FDCWD);
+	error = linux_emul_convpath(args->to, UIO_USERSPACE, &to, 1, AT_FDCWD);
 	if (to == NULL) {
 		LFREEPATH(from);
 		return (error);
@@ -781,7 +781,7 @@ linux_renameat(struct thread *td, struct linux_renameat_args *args)
 	newdfd = (args->newdfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->newdfd;
 	LCONVPATHEXIST_AT(args->oldname, &from, olddfd);
 	/* Expand LCONVPATHCREATE so that `from' can be freed on errors */
-	error = linux_emul_convpath(td, args->newname, UIO_USERSPACE, &to, 1, newdfd);
+	error = linux_emul_convpath(args->newname, UIO_USERSPACE, &to, 1, newdfd);
 	if (to == NULL) {
 		LFREEPATH(from);
 		return (error);
@@ -806,7 +806,7 @@ linux_symlink(struct thread *td, struct linux_symlink_args *args)
 
 	LCONVPATHEXIST(args->path, &path);
 	/* Expand LCONVPATHCREATE so that `path' can be freed on errors */
-	error = linux_emul_convpath(td, args->to, UIO_USERSPACE, &to, 1, AT_FDCWD);
+	error = linux_emul_convpath(args->to, UIO_USERSPACE, &to, 1, AT_FDCWD);
 	if (to == NULL) {
 		LFREEPATH(path);
 		return (error);
@@ -832,7 +832,7 @@ linux_symlinkat(struct thread *td, struct linux_symlinkat_args *args)
 	dfd = (args->newdfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->newdfd;
 	LCONVPATHEXIST(args->oldname, &path);
 	/* Expand LCONVPATHCREATE so that `path' can be freed on errors */
-	error = linux_emul_convpath(td, args->newname, UIO_USERSPACE, &to, 1, dfd);
+	error = linux_emul_convpath(args->newname, UIO_USERSPACE, &to, 1, dfd);
 	if (to == NULL) {
 		LFREEPATH(path);
 		return (error);
@@ -945,7 +945,7 @@ linux_link(struct thread *td, struct linux_link_args *args)
 
 	LCONVPATHEXIST(args->path, &path);
 	/* Expand LCONVPATHCREATE so that `path' can be freed on errors */
-	error = linux_emul_convpath(td, args->to, UIO_USERSPACE, &to, 1, AT_FDCWD);
+	error = linux_emul_convpath(args->to, UIO_USERSPACE, &to, 1, AT_FDCWD);
 	if (to == NULL) {
 		LFREEPATH(path);
 		return (error);
@@ -976,7 +976,7 @@ linux_linkat(struct thread *td, struct linux_linkat_args *args)
 	newdfd = (args->newdfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->newdfd;
 	LCONVPATHEXIST_AT(args->oldname, &path, olddfd);
 	/* Expand LCONVPATHCREATE so that `path' can be freed on errors */
-	error = linux_emul_convpath(td, args->newname, UIO_USERSPACE, &to, 1, newdfd);
+	error = linux_emul_convpath(args->newname, UIO_USERSPACE, &to, 1, newdfd);
 	if (to == NULL) {
 		LFREEPATH(path);
 		return (error);
